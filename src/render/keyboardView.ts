@@ -1,5 +1,4 @@
 import { isBlackKey, pitchClass, whiteKeyName } from "../music/pitch";
-import type { NamingConvention } from "../music/types";
 
 export type KeyFlash = "correct" | "wrong" | "hint";
 
@@ -28,7 +27,6 @@ export class KeyboardView {
   private keys = new Map<number, HTMLElement>();
   private flashTimers = new Map<string, number>();
   private range = { lowest: 0, highest: -1 };
-  private convention: NamingConvention = "english";
 
   constructor(private readonly root: HTMLElement) {}
 
@@ -59,9 +57,8 @@ export class KeyboardView {
     this.updateLabelText();
   }
 
-  setLabels(visible: boolean, convention: NamingConvention): void {
+  setLabels(visible: boolean): void {
     this.root.classList.toggle("show-labels", visible);
-    this.convention = convention;
     this.updateLabelText();
   }
 
@@ -84,7 +81,7 @@ export class KeyboardView {
   private updateLabelText(): void {
     for (const [midi, key] of this.keys) {
       const label = key.querySelector(".label");
-      if (label) label.textContent = whiteKeyName(midi, this.convention);
+      if (label) label.textContent = whiteKeyName(midi);
     }
   }
 }

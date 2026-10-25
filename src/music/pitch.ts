@@ -1,4 +1,4 @@
-import type { Letter, NamingConvention, Spelling } from "./types";
+import type { Letter, Spelling } from "./types";
 
 export const LETTERS: readonly Letter[] = ["C", "D", "E", "F", "G", "A", "B"];
 
@@ -41,22 +41,13 @@ export function naturalFromStaffStep(step: number): Spelling {
 
 const ALTER_SYMBOLS = { [-1]: "♭", 0: "", 1: "♯" } as const;
 
-/**
- * Swedish uses H for B natural and B for B flat; everything else matches English.
- */
-export function noteName(spelling: Spelling, convention: NamingConvention): string {
-  const { letter, alter } = spelling;
-  if (convention === "swedish" && letter === "B") {
-    if (alter === 0) return "H";
-    if (alter === -1) return "B";
-    return "H♯";
-  }
-  return letter + ALTER_SYMBOLS[alter];
+export function noteName(spelling: Spelling): string {
+  return spelling.letter + ALTER_SYMBOLS[spelling.alter];
 }
 
 /** Label for a white piano key. */
-export function whiteKeyName(midi: number, convention: NamingConvention): string {
+export function whiteKeyName(midi: number): string {
   const letter = LETTERS.find((l) => LETTER_SEMITONES[l] === pitchClass(midi));
   if (!letter) throw new Error(`MIDI ${midi} is not a white key`);
-  return noteName({ letter, alter: 0, octave: 0 }, convention);
+  return noteName({ letter, alter: 0, octave: 0 });
 }

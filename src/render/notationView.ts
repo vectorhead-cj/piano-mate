@@ -9,14 +9,14 @@ import {
   StaveNote,
 } from "vexflow/bravura";
 import { accidentalsForBar } from "../music/accidentals";
+import { keyById } from "../music/keys";
 import { noteName } from "../music/pitch";
-import type { Exercise, NamingConvention, Note } from "../music/types";
+import type { Exercise, Note } from "../music/types";
 
 export type NoteState = "pending" | "current" | "correct" | "wrong";
 
 export interface NotationOptions {
   showNames: boolean;
-  convention: NamingConvention;
 }
 
 const COLORS: Record<NoteState, string> = {
@@ -29,7 +29,9 @@ const COLORS: Record<NoteState, string> = {
 // Layout in VexFlow units (before scaling to the screen).
 const MARGIN = 10;
 const BAR_WIDTH = 170;
-const CLEF_AND_TIME_WIDTH = 70;
+const CLEF_WIDTH = 40;
+const TIME_WIDTH = 30;
+const ACCIDENTAL_WIDTH = 10;
 const ROW_HEIGHT = 130;
 const MAX_SCALE = 2.2;
 const MIN_COMFORTABLE_SCALE = 0.85;
@@ -44,7 +46,7 @@ interface Layout {
 export class NotationView {
   private exercise: Exercise | null = null;
   private states: NoteState[] = [];
-  private options: NotationOptions = { showNames: false, convention: "english" };
+  private options: NotationOptions = { showNames: false };
   private wrongFlashTimer: number | undefined;
 
   constructor(private readonly root: HTMLElement) {}
@@ -82,16 +84,18 @@ export class NotationView {
     const exercise = this.exercise;
     if (!exercise) return;
 
+    const key = keyById(exercise.key);
+    const preface = prefaceWidth(Math.abs(key.signature));
     const width = this.root.clientWidth;
     const height = this.root.clientHeight;
-    const { barsPerRow, rows, scale } = chooseLayout(exercise.bars.length, width, height);
+    const { barsPerRow, rows, scale } = chooseLayout(exercise.bars.length, preface, width, height);
 
     const renderer = new Renderer(this.root as HTMLDivElement, Renderer.Backends.SVG);
     renderer.resize(width, height);
     const context = renderer.getContext();
     context.scale(scale, scale);
 
-    const rowWidth = rowWidthFor(barsPerRow);
+    const rowWidth = rowWidthFor(barsPerRow, preface);
     const offsetX = (width / scale - rowWidth) / 2;
     const offsetY = (height / scale - rows * ROW_HEIGHT) / 2;
     const lastBar = exercise.bars.length - 1;
@@ -101,16 +105,19 @@ export class NotationView {
       const row = Math.floor(barIndex / barsPerRow);
       const column = barIndex % barsPerRow;
       const startsRow = column === 0;
-      const x = offsetX + MARGIN + (startsRow ? 0 : CLEF_AND_TIME_WIDTH + column * BAR_WIDTH);
-      const staveWidth = BAR_WIDTH + (startsRow ? CLEF_AND_TIME_WIDTH : 0);
+      const x = offsetX + MARGIN + (startsRow ? 0 : preface + column * BAR_WIDTH);
+      const staveWidth = BAR_WIDTH + (startsRow ? preface : 0);
 
       const stave = new Stave(x, offsetY + row * ROW_HEIGHT, staveWidth);
-      if (startsRow) stave.addClef(exercise.clef);
+      if (startsRow) {
+        stave.addClef(exercise.clef);
+        stave.addKeySignature(exercise.key);
+      }
       if (barIndex === 0) stave.addTimeSignature(`${exercise.beatsPerBar}/4`);
       if (barIndex === lastBar) stave.setEndBarType(BarlineType.END);
       stave.setContext(context).draw();
 
-      const accidentals = accidentalsForBar(bar);
+      const accidentals = accidentalsForBar(bar, key);
       const staveNotes = bar.map((note, i) =>
         this.buildStaveNote(note, accidentals[i], this.states[noteIndex++], exercise.clef),
       );
@@ -132,7 +139,7 @@ export class NotationView {
     });
     if (accidental) staveNote.addModifier(new Accidental(accidental), 0);
     if (this.options.showNames) {
-      const name = new Annotation(noteName(note, this.options.convention));
+      const name = new Annotation(noteName(note));
       name.setVerticalJustification(AnnotationVerticalJustify.BOTTOM);
       staveNote.addModifier(name, 0);
     }
@@ -142,20 +149,24 @@ export class NotationView {
   }
 }
 
-function rowWidthFor(barsPerRow: number): number {
-  return 2 * MARGIN + CLEF_AND_TIME_WIDTH + barsPerRow * BAR_WIDTH;
+function prefaceWidth(accidentalCount: number): number {
+  return CLEF_WIDTH + TIME_WIDTH + accidentalCount * ACCIDENTAL_WIDTH;
+}
+
+function rowWidthFor(barsPerRow: number, preface: number): number {
+  return 2 * MARGIN + preface + barsPerRow * BAR_WIDTH;
 }
 
 /**
  * Prefer as few rows as possible; wrap only when a line would have to shrink
  * below a comfortable size (e.g. 4 bars on a phone become 2 + 2).
  */
-function chooseLayout(barCount: number, width: number, height: number): Layout {
+function chooseLayout(barCount: number, preface: number, width: number, height: number): Layout {
   const candidates: Layout[] = [];
   for (let barsPerRow = barCount; barsPerRow >= 1; barsPerRow--) {
     const rows = Math.ceil(barCount / barsPerRow);
     const scale = Math.min(
-      width / rowWidthFor(barsPerRow),
+      width / rowWidthFor(barsPerRow, preface),
       height / (rows * ROW_HEIGHT),
       MAX_SCALE,
     );

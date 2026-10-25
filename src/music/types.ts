@@ -18,8 +18,13 @@ export interface Note extends Spelling {
 
 export type Clef = "treble";
 
+/** How often non-diatonic note accidentals (including naturals that cancel the key) appear. */
+export type AccidentalFrequency = "none" | "rare" | "medium" | "common";
+
 export interface Exercise {
   clef: Clef;
+  /** VexFlow major-key spec for the staff key signature. */
+  key: string;
   beatsPerBar: number;
   bars: Note[][];
 }
@@ -46,5 +51,3 @@ export interface NoteEvent {
   velocity?: number;
   source: NoteSource;
 }
-
-export type NamingConvention = "english" | "swedish";

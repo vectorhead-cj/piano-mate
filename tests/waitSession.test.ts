@@ -5,6 +5,7 @@ import type { Exercise } from "../src/music/types";
 
 const exercise: Exercise = {
   clef: "treble",
+  key: "C",
   beatsPerBar: 4,
   bars: [
     [

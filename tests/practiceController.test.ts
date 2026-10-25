@@ -41,10 +41,10 @@ describe("PracticeController (wait mode)", () => {
     const { controller, notation } = setup();
     expect(notation.show).toHaveBeenCalledWith(controller.exercise, {
       showNames: false,
-      convention: "english",
     });
     expect(notation.setState).toHaveBeenCalledWith(0, "current");
     expect(controller.exercise.bars).toHaveLength(DEFAULT_SETTINGS.bars);
+    expect(controller.exercise.key).toBe("C");
   });
 
   it("walks through a full sequence of correct notes", () => {
@@ -56,7 +56,10 @@ describe("PracticeController (wait mode)", () => {
 
     const expectedStateCalls = pitches.flatMap((_, i) =>
       i < pitches.length - 1
-        ? [[i, "correct"], [i + 1, "current"]]
+        ? [
+            [i, "correct"],
+            [i + 1, "current"],
+          ]
         : [[i, "correct"]],
     );
     expect(notation.setState.mock.calls).toEqual(expectedStateCalls);
@@ -118,23 +121,34 @@ describe("PracticeController (wait mode)", () => {
     expect(notation.flashWrong).toHaveBeenCalledTimes(1);
   });
 
-  it("regenerates on bar/accidental changes but only redraws for name changes", () => {
+  it("regenerates on bar/key/frequency changes but only redraws for name changes", () => {
     const { controller, notation, keyboard } = setup();
 
     controller.updateSettings({ ...DEFAULT_SETTINGS, bars: 4 }, "bars");
     expect(controller.exercise.bars).toHaveLength(4);
     expect(notation.show).toHaveBeenCalledTimes(2);
 
-    const swedishNames: Settings = {
+    controller.updateSettings({ ...DEFAULT_SETTINGS, bars: 4, key: "G" }, "key");
+    expect(controller.exercise.key).toBe("G");
+    expect(notation.show).toHaveBeenCalledTimes(3);
+
+    controller.updateSettings(
+      { ...DEFAULT_SETTINGS, bars: 4, key: "G", accidentalFrequency: "common" },
+      "accidentalFrequency",
+    );
+    expect(notation.show).toHaveBeenCalledTimes(4);
+
+    const named: Settings = {
       ...DEFAULT_SETTINGS,
       bars: 4,
+      key: "G",
+      accidentalFrequency: "common",
       namesOnNotes: true,
       namesOnKeys: true,
-      convention: "swedish",
     };
-    controller.updateSettings(swedishNames, "convention");
-    expect(notation.show).toHaveBeenCalledTimes(2);
-    expect(notation.setOptions).toHaveBeenLastCalledWith({ showNames: true, convention: "swedish" });
-    expect(keyboard.setLabels).toHaveBeenLastCalledWith(true, "swedish");
+    controller.updateSettings(named, "namesOnNotes");
+    expect(notation.show).toHaveBeenCalledTimes(4);
+    expect(notation.setOptions).toHaveBeenLastCalledWith({ showNames: true });
+    expect(keyboard.setLabels).toHaveBeenLastCalledWith(true);
   });
 });
