@@ -10,38 +10,62 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Piano Mate" />
-    <meta name="theme-color" content="#faf8f4" />
+    <meta name="theme-color" content="#e8eef4" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Source+Sans+3:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <title>Piano Mate</title>
   </head>
   <body>
-    <header class="toolbar">
-      <form id="settings" class="settings">
-        <label><input type="checkbox" name="namesOnNotes" /> Names on notes</label>
-        <label><input type="checkbox" name="namesOnKeys" /> Names on keys</label>
-        <label>
-          <select name="convention" aria-label="Note names">
-            <option value="english">C D E F G A B</option>
-            <option value="swedish">C D E F G A H</option>
-          </select>
-        </label>
-        <label><input type="checkbox" name="accidentals" /> ♯ ♭</label>
-        <label>
-          Bars
-          <select name="bars">
-            <option>1</option>
-            <option>2</option>
-            <option>3</option>
-            <option>4</option>
-          </select>
-        </label>
-      </form>
-      <button id="next" type="button">New</button>
-    </header>
+    <div class="app">
+      <header class="app-header">
+        <div class="brand">
+          <h1 class="brand-name">Piano Mate</h1>
+        </div>
 
-    <main id="notation" class="notation"></main>
+        <form id="settings" class="settings" aria-label="Practice settings">
+          <label class="setting">
+            <input type="checkbox" name="namesOnNotes" />
+            <span>Names on notes</span>
+          </label>
+          <label class="setting">
+            <input type="checkbox" name="namesOnKeys" />
+            <span>Names on keys</span>
+          </label>
+          <label class="setting setting-select">
+            <span class="setting-caption">Names</span>
+            <select name="convention" aria-label="Note names">
+              <option value="english">C D E F G A B</option>
+              <option value="swedish">C D E F G A H</option>
+            </select>
+          </label>
+          <label class="setting">
+            <input type="checkbox" name="accidentals" />
+            <span>♯ ♭</span>
+          </label>
+          <label class="setting setting-select">
+            <span class="setting-caption">Bars</span>
+            <select name="bars" aria-label="Bars">
+              <option>1</option>
+              <option>2</option>
+              <option>3</option>
+              <option>4</option>
+            </select>
+          </label>
+        </form>
 
-    <div class="keyboard-area">
-      <div id="keyboard" class="keyboard"></div>
+        <button id="next" class="btn-primary" type="button">New phrase</button>
+      </header>
+
+      <main class="stage">
+        <section id="notation" class="notation" aria-label="Notation"></section>
+        <section class="keyboard-area" aria-label="Keyboard">
+          <div id="keyboard" class="keyboard"></div>
+        </section>
+      </main>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

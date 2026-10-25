@@ -20,10 +20,10 @@ export interface NotationOptions {
 }
 
 const COLORS: Record<NoteState, string> = {
-  pending: "#222",
-  current: "#1e6fd9",
-  correct: "#1a9a4a",
-  wrong: "#d33",
+  pending: "#1a2330",
+  current: "#0f6e6a",
+  correct: "#2f9b6a",
+  wrong: "#d45b5b",
 };
 
 // Layout in VexFlow units (before scaling to the screen).
