@@ -58,9 +58,9 @@ body::before {
   height: 100dvh;
   max-width: 1100px;
   margin: 0 auto;
-  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
-    max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
-  gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+  gap: 14px;
   animation: app-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -79,7 +79,8 @@ body::before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 10px 18px;
+  min-height: 44px;
   animation: header-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
 }
 
@@ -105,6 +106,7 @@ body::before {
   font-optical-sizing: auto;
   font-weight: 650;
   font-size: clamp(1.35rem, 2.4vw, 1.7rem);
+  line-height: 1;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
@@ -114,7 +116,7 @@ body::before {
   flex: 1 1 280px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 4px;
+  gap: 4px;
   margin: 0;
   min-width: 0;
 }
@@ -123,11 +125,13 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  min-height: 36px;
+  padding: 0 10px;
   border-radius: 8px;
   color: var(--muted);
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition: color 160ms ease, background-color 160ms ease;
@@ -186,8 +190,10 @@ body::before {
 
 .btn-primary {
   flex: 0 0 auto;
+  align-self: center;
   margin-left: auto;
-  padding: 9px 16px;
+  min-height: 36px;
+  padding: 0 16px;
   border: none;
   border-radius: 10px;
   background: var(--accent);
@@ -195,6 +201,7 @@ body::before {
   font: inherit;
   font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.01em;
   cursor: pointer;
   transition: transform 140ms ease, background-color 160ms ease, filter 160ms ease;
