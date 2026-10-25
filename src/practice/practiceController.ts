@@ -1,6 +1,7 @@
 import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
-import type { Exercise, Level } from "../music/types";
+import { levelById } from "../music/levels";
+import type { Exercise } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
 import { exactPitch } from "./matcher";
@@ -33,7 +34,6 @@ export interface PracticeDependencies {
   notation: NotationDisplay;
   keyboard: KeyboardDisplay;
   sound: SoundOutput;
-  level: Level;
   settings: Settings;
   random?: Random;
 }
@@ -65,7 +65,7 @@ export class PracticeController {
   startNewExercise(): void {
     clearTimeout(this.nextExerciseTimer);
     this.currentExercise = generateExercise(
-      this.deps.level,
+      levelById(this.settings.range),
       {
         bars: this.settings.bars,
         key: this.settings.key,
@@ -81,7 +81,12 @@ export class PracticeController {
   updateSettings(settings: Settings, changed: keyof Settings): void {
     this.settings = settings;
     this.deps.keyboard.setLabels(settings.namesOnKeys);
-    if (changed === "bars" || changed === "key" || changed === "accidentalFrequency") {
+    if (
+      changed === "bars" ||
+      changed === "key" ||
+      changed === "accidentalFrequency" ||
+      changed === "range"
+    ) {
       this.startNewExercise();
     } else {
       this.deps.notation.setOptions(this.notationOptions());

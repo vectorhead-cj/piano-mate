@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accidentalsForBar } from "../src/music/accidentals";
 import { generateExercise } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
-import { LEVEL_1 } from "../src/music/levels";
+import { LEVEL_1, LEVELS } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
 import type { Note } from "../src/music/types";
 import { seeded } from "./helpers";
@@ -25,19 +25,21 @@ describe("generateExercise", () => {
     }
   });
 
-  it("stays within the level's staff range", () => {
-    const low = staffStep(LEVEL_1.lowest);
-    const high = staffStep(LEVEL_1.highest);
-    for (const seed of SEEDS) {
-      const notes = generateExercise(
-        LEVEL_1,
-        { bars: 4, key: "C", accidentalFrequency: "none" },
-        seeded(seed),
-      ).bars.flat();
-      for (const note of notes) {
-        expect(staffStep(note)).toBeGreaterThanOrEqual(low);
-        expect(staffStep(note)).toBeLessThanOrEqual(high);
-        expect(note.alter).toBe(0);
+  it("stays within each level's staff range", () => {
+    for (const level of LEVELS) {
+      const low = staffStep(level.lowest);
+      const high = staffStep(level.highest);
+      for (const seed of SEEDS) {
+        const notes = generateExercise(
+          level,
+          { bars: 4, key: "C", accidentalFrequency: "none" },
+          seeded(seed),
+        ).bars.flat();
+        for (const note of notes) {
+          expect(staffStep(note)).toBeGreaterThanOrEqual(low);
+          expect(staffStep(note)).toBeLessThanOrEqual(high);
+          expect(note.alter).toBe(0);
+        }
       }
     }
   });

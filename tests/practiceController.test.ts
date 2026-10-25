@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NoteStream } from "../src/input/noteStream";
-import { LEVEL_1 } from "../src/music/levels";
-import { midiOf } from "../src/music/pitch";
+import { midiOf, staffStep } from "../src/music/pitch";
+import { levelById } from "../src/music/levels";
 import {
   NEXT_EXERCISE_DELAY_MS,
   PracticeController,
@@ -19,7 +19,6 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
     notation,
     keyboard,
     sound,
-    level: LEVEL_1,
     settings,
     random: seeded(42),
   });
@@ -121,7 +120,7 @@ describe("PracticeController (wait mode)", () => {
     expect(notation.flashWrong).toHaveBeenCalledTimes(1);
   });
 
-  it("regenerates on bar/key/frequency changes but only redraws for name changes", () => {
+  it("regenerates on bar/key/frequency/range changes but only redraws for name changes", () => {
     const { controller, notation, keyboard } = setup();
 
     controller.updateSettings({ ...DEFAULT_SETTINGS, bars: 4 }, "bars");
@@ -138,16 +137,30 @@ describe("PracticeController (wait mode)", () => {
     );
     expect(notation.show).toHaveBeenCalledTimes(4);
 
+    controller.updateSettings(
+      { ...DEFAULT_SETTINGS, bars: 4, key: "G", accidentalFrequency: "common", range: "octave" },
+      "range",
+    );
+    expect(notation.show).toHaveBeenCalledTimes(5);
+    const level = levelById("octave");
+    const low = staffStep(level.lowest);
+    const high = staffStep(level.highest);
+    for (const note of controller.exercise.bars.flat()) {
+      expect(staffStep(note)).toBeGreaterThanOrEqual(low);
+      expect(staffStep(note)).toBeLessThanOrEqual(high);
+    }
+
     const named: Settings = {
       ...DEFAULT_SETTINGS,
       bars: 4,
       key: "G",
       accidentalFrequency: "common",
+      range: "octave",
       namesOnNotes: true,
       namesOnKeys: true,
     };
     controller.updateSettings(named, "namesOnNotes");
-    expect(notation.show).toHaveBeenCalledTimes(4);
+    expect(notation.show).toHaveBeenCalledTimes(5);
     expect(notation.setOptions).toHaveBeenLastCalledWith({ showNames: true });
     expect(keyboard.setLabels).toHaveBeenLastCalledWith(true);
   });

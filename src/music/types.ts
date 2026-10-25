@@ -30,7 +30,7 @@ export interface Exercise {
 }
 
 export interface Level {
-  id: number;
+  id: string;
   name: string;
   clef: Clef;
   lowest: Spelling;

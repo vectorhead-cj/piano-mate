@@ -1,4 +1,5 @@
 import { ACCIDENTAL_FREQUENCY_LABELS, KEYS } from "../music/keys";
+import { LEVELS } from "../music/levels";
 import type { AccidentalFrequency } from "../music/types";
 import type { Settings } from "../practice/settings";
 
@@ -31,11 +32,22 @@ export function bindSettingsBar(
     }
   }
 
+  const rangeSelect = select("range");
+  if (rangeSelect.options.length === 0) {
+    for (const level of LEVELS) {
+      const option = document.createElement("option");
+      option.value = level.id;
+      option.textContent = level.name;
+      rangeSelect.append(option);
+    }
+  }
+
   checkbox("namesOnNotes").checked = initial.namesOnNotes;
   checkbox("namesOnKeys").checked = initial.namesOnKeys;
   keySelect.value = initial.key;
   frequencySelect.value = initial.accidentalFrequency;
   select("bars").value = String(initial.bars);
+  rangeSelect.value = initial.range;
 
   form.addEventListener("change", (event) => {
     const changed = (event.target as HTMLInputElement | HTMLSelectElement).name as keyof Settings;
@@ -46,6 +58,7 @@ export function bindSettingsBar(
         key: keySelect.value,
         accidentalFrequency: frequencySelect.value as AccidentalFrequency,
         bars: Number(select("bars").value),
+        range: rangeSelect.value,
       },
       changed,
     );

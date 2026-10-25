@@ -2,7 +2,7 @@ import "./styles.css";
 import { Synth } from "./audio/synth";
 import { NoteStream } from "./input/noteStream";
 import { attachScreenInput } from "./input/screenInput";
-import { LEVEL_1 } from "./music/levels";
+import { levelById } from "./music/levels";
 import { midiOf } from "./music/pitch";
 import { PracticeController } from "./practice/practiceController";
 import { DEFAULT_SETTINGS } from "./practice/settings";
@@ -29,10 +29,13 @@ async function main(): Promise<void> {
   const keyboard = new KeyboardView(keyboardElement);
   attachScreenInput(keyboardElement, stream);
 
+  let rangeId = DEFAULT_SETTINGS.range;
+
   function updateKeyboardRange(): void {
+    const level = levelById(rangeId);
     const { lowest, highest } = keyboardRangeFor(
-      midiOf(LEVEL_1.lowest),
-      midiOf(LEVEL_1.highest),
+      midiOf(level.lowest),
+      midiOf(level.highest),
       keyboardElement.clientWidth,
     );
     keyboard.setRange(lowest, highest);
@@ -44,13 +47,16 @@ async function main(): Promise<void> {
     notation,
     keyboard,
     sound: synth,
-    level: LEVEL_1,
     settings: DEFAULT_SETTINGS,
   });
 
-  bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) =>
-    practice.updateSettings(settings, changed),
-  );
+  bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
+    if (changed === "range") {
+      rangeId = settings.range;
+      updateKeyboardRange();
+    }
+    practice.updateSettings(settings, changed);
+  });
   element("next").addEventListener("click", () => practice.startNewExercise());
 
   // Older iOS versions only unlock audio on touchend, not on pointerdown.
