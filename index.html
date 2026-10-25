@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Piano Mate" />
+    <meta name="theme-color" content="#faf8f4" />
+    <title>Piano Mate</title>
+  </head>
+  <body>
+    <header class="toolbar">
+      <form id="settings" class="settings">
+        <label><input type="checkbox" name="namesOnNotes" /> Names on notes</label>
+        <label><input type="checkbox" name="namesOnKeys" /> Names on keys</label>
+        <label>
+          <select name="convention" aria-label="Note names">
+            <option value="english">C D E F G A B</option>
+            <option value="swedish">C D E F G A H</option>
+          </select>
+        </label>
+        <label><input type="checkbox" name="accidentals" /> ♯ ♭</label>
+        <label>
+          Bars
+          <select name="bars">
+            <option>1</option>
+            <option>2</option>
+            <option>3</option>
+            <option>4</option>
+          </select>
+        </label>
+      </form>
+      <button id="next" type="button">New</button>
+    </header>
+
+    <main id="notation" class="notation"></main>
+
+    <div class="keyboard-area">
+      <div id="keyboard" class="keyboard"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

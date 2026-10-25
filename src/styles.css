@@ -1,0 +1,154 @@
+:root {
+  --bg: #faf8f4;
+  --ink: #222;
+  --muted: #666;
+  --correct: #6fd08c;
+  --wrong: #f07a7a;
+  --hint: #1e6fd9;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  /* Stop double-tap zoom and long-press callouts while practising. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.toolbar select,
+.toolbar button {
+  font: inherit;
+}
+
+.toolbar button {
+  padding: 6px 14px;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  background: white;
+}
+
+.notation {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.notation svg {
+  display: block;
+}
+
+.keyboard-area {
+  padding: 0 8px 8px;
+}
+
+.keyboard {
+  position: relative;
+  display: flex;
+  height: clamp(120px, 32dvh, 260px);
+  touch-action: none;
+}
+
+.key {
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.key.white {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  margin-left: -1px;
+  background: white;
+  border: 1px solid #333;
+  border-radius: 0 0 6px 6px;
+}
+
+.key.white:first-child {
+  margin-left: 0;
+}
+
+/* Centred on the boundary after the white keys to its left. */
+.key.black {
+  --white-width: calc(100% / var(--white-count));
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  width: calc(var(--white-width) * 0.6);
+  height: 60%;
+  left: calc(var(--white-width) * var(--white-before) - var(--white-width) * 0.3);
+  background: #222;
+  border-radius: 0 0 4px 4px;
+}
+
+.key.white.pressed {
+  background: #ddd;
+}
+
+.key.black.pressed {
+  background: #555;
+}
+
+.key.white.flash-correct,
+.key.black.flash-correct {
+  background: var(--correct);
+}
+
+.key.white.flash-wrong,
+.key.black.flash-wrong {
+  background: var(--wrong);
+}
+
+.key.flash-hint {
+  box-shadow: inset 0 0 0 4px var(--hint);
+}
+
+.label {
+  display: none;
+  padding-bottom: 10px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.keyboard.show-labels .label {
+  display: block;
+}
