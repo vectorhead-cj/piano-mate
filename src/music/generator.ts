@@ -1,9 +1,18 @@
-import { naturalFromStaffStep, staffStep } from "./pitch";
-import type { Alter, Duration, Exercise, Level, Note, Spelling } from "./types";
+import {
+  ACCIDENTAL_FREQUENCY_CHANCE,
+  keyAlter,
+  keyById,
+  majorTriadLetters,
+  relativeMinorTonic,
+  type KeyInfo,
+} from "./keys";
+import { midiOf, naturalFromStaffStep, staffStep } from "./pitch";
+import type { AccidentalFrequency, Alter, Duration, Exercise, Level, Note, Spelling } from "./types";
 
 export interface GeneratorOptions {
   bars: number;
-  accidentals: boolean;
+  key: string;
+  accidentalFrequency: AccidentalFrequency;
 }
 
 export type Random = () => number;
@@ -25,26 +34,24 @@ const INTERVAL_WEIGHTS: readonly (readonly [number, number])[] = [
   [-4, 0.5],
 ];
 
-const ACCIDENTAL_PROBABILITY = 0.2;
-const TONIC_TRIAD_LETTERS = new Set(["C", "E", "G"]);
-
 export function generateExercise(
   level: Level,
   options: GeneratorOptions,
   random: Random = Math.random,
 ): Exercise {
+  const key = keyById(options.key);
   const rhythms = Array.from({ length: options.bars }, (_, i) =>
     generateBarRhythm(level.durations, i === options.bars - 1, random),
   );
   const noteCount = rhythms.reduce((sum, bar) => sum + bar.length, 0);
-  const pitches = generatePitches(level, noteCount, options.accidentals, random);
+  const pitches = generatePitches(level, key, noteCount, options.accidentalFrequency, random);
 
   let pitchIndex = 0;
   const bars: Note[][] = rhythms.map((rhythm) =>
     rhythm.map((duration) => ({ ...pitches[pitchIndex++], duration })),
   );
 
-  return { clef: level.clef, beatsPerBar: BEATS_PER_BAR, bars };
+  return { clef: level.clef, key: key.id, beatsPerBar: BEATS_PER_BAR, bars };
 }
 
 function generateBarRhythm(allowed: Duration[], isLastBar: boolean, random: Random): Duration[] {
@@ -78,8 +85,9 @@ function pickFinalDuration(allowed: Duration[]): Duration {
 
 function generatePitches(
   level: Level,
+  key: KeyInfo,
   count: number,
-  useAccidentals: boolean,
+  frequency: AccidentalFrequency,
   random: Random,
 ): Spelling[] {
   const low = staffStep(level.lowest);
@@ -87,12 +95,11 @@ function generatePitches(
   const inRange = (step: number) => step >= low && step <= high;
   const stepsInRange = Array.from({ length: high - low + 1 }, (_, i) => low + i);
 
-  const startOptions = stepsInRange.filter((s) =>
-    TONIC_TRIAD_LETTERS.has(naturalFromStaffStep(s).letter),
-  );
-  const tonics = stepsInRange.filter((s) => naturalFromStaffStep(s).letter === "C");
+  const triad = new Set(majorTriadLetters(key.tonic));
+  const startOptions = stepsInRange.filter((s) => triad.has(naturalFromStaffStep(s).letter));
+  const endOptions = endingSteps(stepsInRange, key);
 
-  const steps: number[] = [pickUniform(startOptions, random)];
+  const steps: number[] = [pickUniform(startOptions.length > 0 ? startOptions : stepsInRange, random)];
   for (let i = 1; i < count - 1; i++) {
     const previous = steps[i - 1];
     const options = INTERVAL_WEIGHTS.filter(([interval]) => inRange(previous + interval));
@@ -100,30 +107,71 @@ function generatePitches(
   }
   if (count > 1) {
     const previous = steps[count - 2];
-    steps.push(nearest(tonics, previous));
+    steps.push(nearest(endOptions, previous));
   } else {
-    steps[0] = pickUniform(tonics, random);
+    steps[0] = pickUniform(endOptions, random);
   }
 
-  const spellings = steps.map(naturalFromStaffStep);
-  if (useAccidentals) addChromaticApproaches(spellings, steps, random);
+  const spellings = steps.map((step) => diatonicSpelling(step, key));
+  addChromaticApproaches(spellings, steps, key, frequency, random);
   return spellings;
 }
 
 /**
- * Sharpen a note that steps up to the next one, or flatten one that steps
- * down, so accidentals lean into where the melody is going (F♯→G, B♭→A).
- * First and last notes stay diatonic to keep the phrase anchored in C.
+ * Prefer the major tonic in range; else the relative-minor tonic; else the
+ * major triad. Extreme keys may have their tonic letter outside a narrow range.
  */
-function addChromaticApproaches(spellings: Spelling[], steps: number[], random: Random): void {
+function endingSteps(stepsInRange: number[], key: KeyInfo): number[] {
+  const byLetter = (letter: string) =>
+    stepsInRange.filter((s) => naturalFromStaffStep(s).letter === letter);
+  const tonic = byLetter(key.tonic);
+  if (tonic.length > 0) return tonic;
+  const relative = byLetter(relativeMinorTonic(key.tonic));
+  if (relative.length > 0) return relative;
+  const triad = new Set(majorTriadLetters(key.tonic));
+  const triadSteps = stepsInRange.filter((s) => triad.has(naturalFromStaffStep(s).letter));
+  return triadSteps.length > 0 ? triadSteps : stepsInRange;
+}
+
+function diatonicSpelling(step: number, key: KeyInfo): Spelling {
+  const natural = naturalFromStaffStep(step);
+  return { ...natural, alter: keyAlter(key, natural.letter) };
+}
+
+/**
+ * Raise a note that steps up to the next one, or lower one that steps down,
+ * relative to the key. That covers chromatic approaches (F♯→G in C) and
+ * "resets" that cancel the key (F♮→E in G). Only used when the diatonic
+ * step is a whole tone (so E→F and B→C never get an extra sharp/flat).
+ * First and last notes stay diatonic.
+ */
+function addChromaticApproaches(
+  spellings: Spelling[],
+  steps: number[],
+  key: KeyInfo,
+  frequency: AccidentalFrequency,
+  random: Random,
+): void {
+  const chance = ACCIDENTAL_FREQUENCY_CHANCE[frequency];
+  if (chance === 0) return;
+
   for (let i = 1; i < spellings.length - 1; i++) {
-    if (random() >= ACCIDENTAL_PROBABILITY) continue;
-    const { letter } = spellings[i];
+    if (random() >= chance) continue;
     const motion = steps[i + 1] - steps[i];
-    let alter: Alter = 0;
-    if (motion === 1 && letter !== "E" && letter !== "B") alter = 1;
-    if (motion === -1 && letter !== "F" && letter !== "C") alter = -1;
-    spellings[i] = { ...spellings[i], alter };
+    if (motion !== 1 && motion !== -1) continue;
+
+    const current = spellings[i];
+    const next = spellings[i + 1];
+    const diatonic = keyAlter(key, current.letter);
+    const gap = Math.abs(
+      midiOf({ ...next, alter: keyAlter(key, next.letter) }) -
+        midiOf({ ...current, alter: diatonic }),
+    );
+    if (gap !== 2) continue;
+
+    const alter = (diatonic + motion) as Alter;
+    if (alter < -1 || alter > 1 || alter === diatonic) continue;
+    spellings[i] = { ...current, alter };
   }
 }
 

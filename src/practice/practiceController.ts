@@ -1,6 +1,6 @@
 import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
-import type { Exercise, Level, NamingConvention } from "../music/types";
+import type { Exercise, Level } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
 import { exactPitch } from "./matcher";
@@ -21,7 +21,7 @@ export interface NotationDisplay {
 export interface KeyboardDisplay {
   setPressed(midi: number, pressed: boolean): void;
   flash(midi: number, kind: KeyFlash): void;
-  setLabels(visible: boolean, convention: NamingConvention): void;
+  setLabels(visible: boolean): void;
 }
 
 export interface SoundOutput {
@@ -54,7 +54,7 @@ export class PracticeController {
         this.handleNoteOn(event.pitch);
       }
     });
-    deps.keyboard.setLabels(this.settings.namesOnKeys, this.settings.convention);
+    deps.keyboard.setLabels(this.settings.namesOnKeys);
     this.startNewExercise();
   }
 
@@ -66,7 +66,11 @@ export class PracticeController {
     clearTimeout(this.nextExerciseTimer);
     this.currentExercise = generateExercise(
       this.deps.level,
-      { bars: this.settings.bars, accidentals: this.settings.accidentals },
+      {
+        bars: this.settings.bars,
+        key: this.settings.key,
+        accidentalFrequency: this.settings.accidentalFrequency,
+      },
       this.deps.random,
     );
     this.session = new WaitSession(this.currentExercise, exactPitch);
@@ -76,9 +80,12 @@ export class PracticeController {
 
   updateSettings(settings: Settings, changed: keyof Settings): void {
     this.settings = settings;
-    this.deps.keyboard.setLabels(settings.namesOnKeys, settings.convention);
-    if (changed === "bars" || changed === "accidentals") this.startNewExercise();
-    else this.deps.notation.setOptions(this.notationOptions());
+    this.deps.keyboard.setLabels(settings.namesOnKeys);
+    if (changed === "bars" || changed === "key" || changed === "accidentalFrequency") {
+      this.startNewExercise();
+    } else {
+      this.deps.notation.setOptions(this.notationOptions());
+    }
   }
 
   private handleNoteOn(pitch: number): void {
@@ -108,6 +115,6 @@ export class PracticeController {
   }
 
   private notationOptions(): NotationOptions {
-    return { showNames: this.settings.namesOnNotes, convention: this.settings.convention };
+    return { showNames: this.settings.namesOnNotes };
   }
 }
