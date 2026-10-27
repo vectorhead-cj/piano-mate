@@ -1,5 +1,6 @@
 :root {
-  /* Daylight studio — cool stone, deep ink, teal action */
+  /* Daylight studio — cool stone, deep ink, teal chrome.
+     Feedback hues are split on purpose: warm amber = next, sage = done. */
   --bg-top: #e8eef4;
   --bg-bottom: #f3f6f9;
   --surface: color-mix(in srgb, #ffffff 78%, #d7e2ec);
@@ -8,9 +9,10 @@
   --muted: #5b6b7c;
   --accent: #0f6e6a;
   --accent-soft: color-mix(in srgb, #0f6e6a 14%, transparent);
-  --correct: #2f9b6a;
-  --wrong: #d45b5b;
-  --hint: #2a6fbf;
+  --note-current: #c07828;
+  --correct: #2d8a68;
+  --wrong: #c45c5c;
+  --hint: #3a6ea8;
   --key-white: #fbfcfe;
   --key-white-edge: #2a3544;
   --key-black: #1c2430;

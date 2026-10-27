@@ -42,20 +42,20 @@ async function main(): Promise<void> {
   }
   updateKeyboardRange();
 
-  const practice = new PracticeController({
-    stream,
-    notation,
-    keyboard,
-    sound: synth,
-    settings: DEFAULT_SETTINGS,
-  });
-
   bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
     if (changed === "range") {
       rangeId = settings.range;
       updateKeyboardRange();
     }
     practice.updateSettings(settings, changed);
+  });
+
+  const practice = new PracticeController({
+    stream,
+    notation,
+    keyboard,
+    sound: synth,
+    settings: DEFAULT_SETTINGS,
   });
   element("next").addEventListener("click", () => practice.startNewExercise());
 

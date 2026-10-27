@@ -19,11 +19,12 @@ export interface NotationOptions {
   showNames: boolean;
 }
 
+/** Keep in sync with --ink / --note-current / --correct / --wrong in styles.css. */
 const COLORS: Record<NoteState, string> = {
   pending: "#1a2330",
-  current: "#0f6e6a",
-  correct: "#2f9b6a",
-  wrong: "#d45b5b",
+  current: "#c07828",
+  correct: "#2d8a68",
+  wrong: "#c45c5c",
 };
 
 // Layout in VexFlow units (before scaling to the screen).
