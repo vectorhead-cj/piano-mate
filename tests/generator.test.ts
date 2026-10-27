@@ -4,24 +4,59 @@ import { generateExercise } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
 import { LEVEL_1, LEVELS } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
-import type { Note } from "../src/music/types";
+import { BEATS, RHYTHM_PROFILES } from "../src/music/rhythms";
+import type { Note, RhythmFlavor } from "../src/music/types";
 import { seeded } from "./helpers";
 
-const BEATS = { w: 4, h: 2, q: 1 };
 const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
+const opts = (
+  overrides: Partial<{
+    bars: number;
+    key: string;
+    accidentalFrequency: "none" | "rare" | "medium" | "common";
+    rhythm: RhythmFlavor;
+  }> = {},
+) => ({
+  bars: 4,
+  key: "C",
+  accidentalFrequency: "none" as const,
+  rhythm: "basic" as const,
+  ...overrides,
+});
 
 describe("generateExercise", () => {
-  it("fills every bar exactly", () => {
-    for (const seed of SEEDS) {
-      const exercise = generateExercise(
-        LEVEL_1,
-        { bars: 4, key: "C", accidentalFrequency: "medium" },
-        seeded(seed),
-      );
-      expect(exercise.bars).toHaveLength(4);
-      for (const bar of exercise.bars) {
-        expect(bar.reduce((sum, n) => sum + BEATS[n.duration], 0)).toBe(4);
+  it("fills every bar exactly for each rhythm flavor", () => {
+    for (const profile of RHYTHM_PROFILES) {
+      for (const seed of SEEDS) {
+        const exercise = generateExercise(
+          LEVEL_1,
+          opts({ rhythm: profile.id, accidentalFrequency: "medium" }),
+          seeded(seed),
+        );
+        expect(exercise.bars).toHaveLength(4);
+        for (const bar of exercise.bars) {
+          expect(bar.reduce((sum, n) => sum + BEATS[n.duration], 0)).toBe(4);
+          for (const note of bar) {
+            expect(profile.durations).toContain(note.duration);
+          }
+        }
       }
+    }
+  });
+
+  it("uses eighth notes in eighths and busy flavors", () => {
+    for (const rhythm of ["eighths", "busy"] as const) {
+      const notes = SEEDS.flatMap(
+        (seed) => generateExercise(LEVEL_1, opts({ rhythm }), seeded(seed)).bars.flat(),
+      );
+      expect(notes.some((n) => n.duration === "8")).toBe(true);
+    }
+  });
+
+  it("keeps basic rhythm free of eighths", () => {
+    for (const seed of SEEDS) {
+      const notes = generateExercise(LEVEL_1, opts(), seeded(seed)).bars.flat();
+      expect(notes.every((n) => n.duration !== "8")).toBe(true);
     }
   });
 
@@ -30,11 +65,7 @@ describe("generateExercise", () => {
       const low = staffStep(level.lowest);
       const high = staffStep(level.highest);
       for (const seed of SEEDS) {
-        const notes = generateExercise(
-          level,
-          { bars: 4, key: "C", accidentalFrequency: "none" },
-          seeded(seed),
-        ).bars.flat();
+        const notes = generateExercise(level, opts(), seeded(seed)).bars.flat();
         for (const note of notes) {
           expect(staffStep(note)).toBeGreaterThanOrEqual(low);
           expect(staffStep(note)).toBeLessThanOrEqual(high);
@@ -48,7 +79,7 @@ describe("generateExercise", () => {
     for (const seed of SEEDS) {
       const notes = generateExercise(
         LEVEL_1,
-        { bars: 2, key: "C", accidentalFrequency: "medium" },
+        opts({ bars: 2, accidentalFrequency: "medium" }),
         seeded(seed),
       ).bars.flat();
       expect(["C", "E", "G"]).toContain(notes[0].letter);
@@ -60,11 +91,7 @@ describe("generateExercise", () => {
   it("applies the key signature to diatonic notes", () => {
     const key = keyById("G");
     for (const seed of SEEDS) {
-      const notes = generateExercise(
-        LEVEL_1,
-        { bars: 4, key: "G", accidentalFrequency: "none" },
-        seeded(seed),
-      ).bars.flat();
+      const notes = generateExercise(LEVEL_1, opts({ key: "G" }), seeded(seed)).bars.flat();
       for (const note of notes) {
         expect(note.alter).toBe(keyAlter(key, note.letter));
       }
@@ -77,7 +104,7 @@ describe("generateExercise", () => {
       const key = keyById("C");
       const notes = generateExercise(
         LEVEL_1,
-        { bars: 4, key: "C", accidentalFrequency: "common" },
+        opts({ accidentalFrequency: "common" }),
         seeded(seed),
       ).bars.flat();
       notes.forEach((note, i) => {
@@ -93,11 +120,7 @@ describe("generateExercise", () => {
     const key = keyById("C");
     const notes = SEEDS.flatMap(
       (seed) =>
-        generateExercise(
-          LEVEL_1,
-          { bars: 4, key: "C", accidentalFrequency: "common" },
-          seeded(seed),
-        ).bars.flat(),
+        generateExercise(LEVEL_1, opts({ accidentalFrequency: "common" }), seeded(seed)).bars.flat(),
     );
     expect(notes.some((n) => n.alter !== keyAlter(key, n.letter))).toBe(true);
   });
@@ -107,7 +130,7 @@ describe("generateExercise", () => {
       (seed) =>
         generateExercise(
           LEVEL_1,
-          { bars: 4, key: "G", accidentalFrequency: "common" },
+          opts({ key: "G", accidentalFrequency: "common" }),
           seeded(seed),
         ).bars.flat(),
     );
@@ -118,7 +141,7 @@ describe("generateExercise", () => {
     for (const key of KEYS) {
       const exercise = generateExercise(
         LEVEL_1,
-        { bars: 1, key: key.id, accidentalFrequency: "none" },
+        opts({ bars: 1, key: key.id }),
         seeded(1),
       );
       expect(exercise.key).toBe(key.id);

@@ -31,9 +31,13 @@
             <input type="checkbox" name="namesOnNotes" />
             <span>Names on notes</span>
           </label>
-          <label class="setting">
-            <input type="checkbox" name="namesOnKeys" />
-            <span>Names on keys</span>
+          <label class="setting setting-select">
+            <span class="setting-caption">Mode</span>
+            <select name="mode" aria-label="Practice mode"></select>
+          </label>
+          <label class="setting setting-select" id="tempo-setting">
+            <span class="setting-caption">Tempo</span>
+            <select name="tempo" aria-label="Tempo"></select>
           </label>
           <label class="setting setting-select">
             <span class="setting-caption">Range</span>
@@ -48,6 +52,10 @@
             <select name="accidentalFrequency" aria-label="Note accidentals"></select>
           </label>
           <label class="setting setting-select">
+            <span class="setting-caption">Rhythm</span>
+            <select name="rhythm" aria-label="Rhythm flavor"></select>
+          </label>
+          <label class="setting setting-select">
             <span class="setting-caption">Bars</span>
             <select name="bars" aria-label="Bars">
               <option>1</option>
@@ -58,11 +66,32 @@
           </label>
         </form>
 
-        <button id="next" class="btn-primary" type="button">New phrase</button>
+        <div class="header-actions">
+          <button id="transport" class="btn-secondary" type="button" disabled>Play</button>
+          <button id="restart" class="btn-secondary" type="button">Restart</button>
+          <button id="next" class="btn-primary" type="button">New phrase</button>
+        </div>
       </header>
 
       <main class="stage">
-        <section id="notation" class="notation" aria-label="Notation"></section>
+        <section id="phrase-score" class="phrase-score" data-mode="wait" aria-live="polite" aria-label="Score">
+          <div class="score-stat">
+            <span class="score-label">Notes</span>
+            <span class="score-value"
+              ><span data-score="notes">0</span><span class="score-of">/<span data-score="notes-total">0</span></span></span
+            >
+          </div>
+          <div class="score-divider" data-rhythm-only aria-hidden="true"></div>
+          <div class="score-stat" data-rhythm-only>
+            <span class="score-label">Rhythm</span>
+            <span class="score-value"
+              ><span data-score="rhythm">0</span><span class="score-of">/<span data-score="rhythm-total">0</span></span></span
+            >
+          </div>
+        </section>
+        <section class="notation-panel" aria-label="Notation">
+          <div id="notation" class="notation-sheet"></div>
+        </section>
         <section class="keyboard-area" aria-label="Keyboard">
           <div id="keyboard" class="keyboard"></div>
         </section>

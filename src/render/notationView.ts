@@ -3,6 +3,7 @@ import {
   Annotation,
   AnnotationVerticalJustify,
   BarlineType,
+  Beam,
   Formatter,
   Renderer,
   Stave,
@@ -13,17 +14,18 @@ import { keyById } from "../music/keys";
 import { noteName } from "../music/pitch";
 import type { Exercise, Note } from "../music/types";
 
-export type NoteState = "pending" | "current" | "correct" | "wrong";
+export type NoteState = "pending" | "current" | "correct" | "late" | "wrong";
 
 export interface NotationOptions {
   showNames: boolean;
 }
 
-/** Keep in sync with --ink / --note-current / --correct / --wrong in styles.css. */
+/** Keep in sync with --ink / --note-current / --correct / --late / --wrong in styles.css. */
 const COLORS: Record<NoteState, string> = {
   pending: "#1a2330",
   current: "#c07828",
   correct: "#2d8a68",
+  late: "#c07828",
   wrong: "#c45c5c",
 };
 
@@ -123,6 +125,9 @@ export class NotationView {
         this.buildStaveNote(note, accidentals[i], this.states[noteIndex++], exercise.clef),
       );
       Formatter.FormatAndDraw(context, stave, staveNotes);
+      for (const beam of Beam.generateBeams(staveNotes)) {
+        beam.setContext(context).draw();
+      }
     });
   }
 

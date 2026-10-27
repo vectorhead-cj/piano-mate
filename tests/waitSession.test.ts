@@ -36,4 +36,13 @@ describe("WaitSession", () => {
     expect(session.play(84).kind).toBe("correct");
     expect(session.play(54).kind).toBe("correct");
   });
+
+  it("scores notes correct only on the first try", () => {
+    const session = new WaitSession(exercise, exactPitch);
+    session.play(61);
+    session.play(60);
+    session.play(66);
+    session.play(67);
+    expect(session.score()).toEqual({ notesCorrect: 2, total: 3 });
+  });
 });

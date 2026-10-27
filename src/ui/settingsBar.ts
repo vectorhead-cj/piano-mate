@@ -1,7 +1,13 @@
 import { ACCIDENTAL_FREQUENCY_LABELS, KEYS } from "../music/keys";
 import { LEVELS } from "../music/levels";
-import type { AccidentalFrequency } from "../music/types";
-import type { Settings } from "../practice/settings";
+import { RHYTHM_PROFILES } from "../music/rhythms";
+import type { AccidentalFrequency, RhythmFlavor } from "../music/types";
+import {
+  PRACTICE_MODE_LABELS,
+  TEMPO_OPTIONS,
+  type PracticeMode,
+  type Settings,
+} from "../practice/settings";
 
 /** Wires the settings form in index.html to a Settings object. */
 export function bindSettingsBar(
@@ -11,6 +17,26 @@ export function bindSettingsBar(
 ): void {
   const checkbox = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
   const select = (name: string) => form.elements.namedItem(name) as HTMLSelectElement;
+
+  const modeSelect = select("mode");
+  if (modeSelect.options.length === 0) {
+    for (const [value, label] of Object.entries(PRACTICE_MODE_LABELS)) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      modeSelect.append(option);
+    }
+  }
+
+  const tempoSelect = select("tempo");
+  if (tempoSelect.options.length === 0) {
+    for (const bpm of TEMPO_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = String(bpm);
+      option.textContent = `${bpm}`;
+      tempoSelect.append(option);
+    }
+  }
 
   const keySelect = select("key");
   if (keySelect.options.length === 0) {
@@ -32,6 +58,16 @@ export function bindSettingsBar(
     }
   }
 
+  const rhythmSelect = select("rhythm");
+  if (rhythmSelect.options.length === 0) {
+    for (const profile of RHYTHM_PROFILES) {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = profile.label;
+      rhythmSelect.append(option);
+    }
+  }
+
   const rangeSelect = select("range");
   if (rangeSelect.options.length === 0) {
     for (const level of LEVELS) {
@@ -42,25 +78,37 @@ export function bindSettingsBar(
     }
   }
 
+  const syncTempoEnabled = (mode: PracticeMode) => {
+    tempoSelect.disabled = mode !== "rhythm";
+    const wrap = form.querySelector("#tempo-setting");
+    wrap?.classList.toggle("setting-disabled", mode !== "rhythm");
+  };
+
+  const readSettings = (): Settings => ({
+    namesOnNotes: checkbox("namesOnNotes").checked,
+    mode: modeSelect.value as PracticeMode,
+    tempo: Number(tempoSelect.value),
+    key: keySelect.value,
+    accidentalFrequency: frequencySelect.value as AccidentalFrequency,
+    rhythm: rhythmSelect.value as RhythmFlavor,
+    bars: Number(select("bars").value),
+    range: rangeSelect.value,
+  });
+
   checkbox("namesOnNotes").checked = initial.namesOnNotes;
-  checkbox("namesOnKeys").checked = initial.namesOnKeys;
+  modeSelect.value = initial.mode;
+  tempoSelect.value = String(initial.tempo);
   keySelect.value = initial.key;
   frequencySelect.value = initial.accidentalFrequency;
+  rhythmSelect.value = initial.rhythm;
   select("bars").value = String(initial.bars);
   rangeSelect.value = initial.range;
+  syncTempoEnabled(initial.mode);
 
   form.addEventListener("change", (event) => {
     const changed = (event.target as HTMLInputElement | HTMLSelectElement).name as keyof Settings;
-    onChange(
-      {
-        namesOnNotes: checkbox("namesOnNotes").checked,
-        namesOnKeys: checkbox("namesOnKeys").checked,
-        key: keySelect.value,
-        accidentalFrequency: frequencySelect.value as AccidentalFrequency,
-        bars: Number(select("bars").value),
-        range: rangeSelect.value,
-      },
-      changed,
-    );
+    const settings = readSettings();
+    if (changed === "mode") syncTempoEnabled(settings.mode);
+    onChange(settings, changed);
   });
 }

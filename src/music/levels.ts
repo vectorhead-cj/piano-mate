@@ -6,14 +6,7 @@ function level(
   lowest: Level["lowest"],
   highest: Level["highest"],
 ): Level {
-  return {
-    id,
-    name,
-    clef: "treble",
-    lowest,
-    highest,
-    durations: ["w", "h", "q"],
-  };
+  return { id, name, clef: "treble", lowest, highest };
 }
 
 /** Treble-clef range presets, from five-finger up through ledger lines. */

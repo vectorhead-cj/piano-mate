@@ -7,10 +7,18 @@ export type PlayResult =
   | { kind: "wrong"; index: number; expectedPitch: number }
   | { kind: "ignored" };
 
+export interface WaitScore {
+  notesCorrect: number;
+  total: number;
+}
+
 /** Wait mode: nothing advances until the expected note is played. */
 export class WaitSession {
   readonly notes: Note[];
   private index = 0;
+  /** True if the current note already had a wrong attempt. */
+  private missedCurrent = false;
+  private firstTryCorrect = 0;
 
   constructor(
     exercise: Exercise,
@@ -28,15 +36,22 @@ export class WaitSession {
     return this.index >= this.notes.length;
   }
 
+  score(): WaitScore {
+    return { notesCorrect: this.firstTryCorrect, total: this.notes.length };
+  }
+
   play(pitch: number): PlayResult {
     if (this.isComplete) return { kind: "ignored" };
 
     const index = this.index;
     const expectedPitch = midiOf(this.notes[index]);
     if (!this.matches(expectedPitch, pitch)) {
+      this.missedCurrent = true;
       return { kind: "wrong", index, expectedPitch };
     }
 
+    if (!this.missedCurrent) this.firstTryCorrect++;
+    this.missedCurrent = false;
     this.index++;
     return { kind: "correct", index, completed: this.isComplete };
   }

@@ -9,8 +9,8 @@ export interface Spelling {
   octave: number;
 }
 
-/** VexFlow duration codes: whole, half, quarter. */
-export type Duration = "w" | "h" | "q";
+/** VexFlow duration codes: whole, half, quarter, eighth. */
+export type Duration = "w" | "h" | "q" | "8";
 
 export interface Note extends Spelling {
   duration: Duration;
@@ -20,6 +20,9 @@ export type Clef = "treble";
 
 /** How often non-diatonic note accidentals (including naturals that cancel the key) appear. */
 export type AccidentalFrequency = "none" | "rare" | "medium" | "common";
+
+/** Note-value mix used when generating rhythms (independent of pitch range). */
+export type RhythmFlavor = "basic" | "eighths" | "busy";
 
 export interface Exercise {
   clef: Clef;
@@ -35,7 +38,6 @@ export interface Level {
   clef: Clef;
   lowest: Spelling;
   highest: Spelling;
-  durations: Duration[];
 }
 
 export type NoteSource = "screen" | "midi" | "mic";

@@ -7,19 +7,26 @@ import {
   type KeyInfo,
 } from "./keys";
 import { midiOf, naturalFromStaffStep, staffStep } from "./pitch";
-import type { AccidentalFrequency, Alter, Duration, Exercise, Level, Note, Spelling } from "./types";
+import { BEATS, BEATS_PER_BAR, rhythmById, type RhythmProfile } from "./rhythms";
+import type {
+  AccidentalFrequency,
+  Alter,
+  Duration,
+  Exercise,
+  Level,
+  Note,
+  RhythmFlavor,
+  Spelling,
+} from "./types";
 
 export interface GeneratorOptions {
   bars: number;
   key: string;
   accidentalFrequency: AccidentalFrequency;
+  rhythm: RhythmFlavor;
 }
 
 export type Random = () => number;
-
-const BEATS_PER_BAR = 4;
-const BEATS: Record<Duration, number> = { w: 4, h: 2, q: 1 };
-const DURATION_WEIGHTS: Record<Duration, number> = { q: 5, h: 3, w: 1 };
 
 /** Melodic motion in staff steps: mostly steps, some thirds, rare larger leaps. */
 const INTERVAL_WEIGHTS: readonly (readonly [number, number])[] = [
@@ -40,31 +47,36 @@ export function generateExercise(
   random: Random = Math.random,
 ): Exercise {
   const key = keyById(options.key);
+  const rhythm = rhythmById(options.rhythm);
   const rhythms = Array.from({ length: options.bars }, (_, i) =>
-    generateBarRhythm(level.durations, i === options.bars - 1, random),
+    generateBarRhythm(rhythm, i === options.bars - 1, random),
   );
   const noteCount = rhythms.reduce((sum, bar) => sum + bar.length, 0);
   const pitches = generatePitches(level, key, noteCount, options.accidentalFrequency, random);
 
   let pitchIndex = 0;
-  const bars: Note[][] = rhythms.map((rhythm) =>
-    rhythm.map((duration) => ({ ...pitches[pitchIndex++], duration })),
+  const bars: Note[][] = rhythms.map((barRhythm) =>
+    barRhythm.map((duration) => ({ ...pitches[pitchIndex++], duration })),
   );
 
   return { clef: level.clef, key: key.id, beatsPerBar: BEATS_PER_BAR, bars };
 }
 
-function generateBarRhythm(allowed: Duration[], isLastBar: boolean, random: Random): Duration[] {
+function generateBarRhythm(
+  profile: RhythmProfile,
+  isLastBar: boolean,
+  random: Random,
+): Duration[] {
   let remaining = BEATS_PER_BAR;
-  const finalDuration = isLastBar ? pickFinalDuration(allowed) : null;
+  const finalDuration = isLastBar ? pickFinalDuration(profile.durations) : null;
   if (finalDuration) remaining -= BEATS[finalDuration];
 
   const rhythm: Duration[] = [];
   while (remaining > 0) {
-    const fitting = allowed.filter((d) => BEATS[d] <= remaining);
-    if (fitting.length === 0) throw new Error("Level durations cannot fill a bar");
+    const fitting = profile.durations.filter((d) => BEATS[d] <= remaining);
+    if (fitting.length === 0) throw new Error("Rhythm flavor cannot fill a bar");
     const duration = pickWeighted(
-      fitting.map((d) => [d, DURATION_WEIGHTS[d]] as const),
+      fitting.map((d) => [d, profile.weights[d]] as const),
       random,
     );
     rhythm.push(duration);
@@ -76,11 +88,11 @@ function generateBarRhythm(allowed: Duration[], isLastBar: boolean, random: Rand
 }
 
 /** A phrase should end on a long-ish note, but not swallow the whole last bar. */
-function pickFinalDuration(allowed: Duration[]): Duration {
+function pickFinalDuration(allowed: readonly Duration[]): Duration {
   for (const preferred of ["h", "w", "q"] as const) {
     if (allowed.includes(preferred)) return preferred;
   }
-  throw new Error("Level has no durations");
+  throw new Error("Rhythm flavor has no long ending duration");
 }
 
 function generatePitches(
