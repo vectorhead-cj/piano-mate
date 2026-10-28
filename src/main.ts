@@ -105,6 +105,10 @@ async function main(): Promise<void> {
 
   // Older iOS versions only unlock audio on touchend, not on pointerdown.
   document.addEventListener("touchend", () => synth.unlock(), { once: true });
+  // Tab switches / iOS interruptions leave the context suspended; retry when visible again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") synth.unlock();
+  });
 
   new ResizeObserver(() => {
     updateKeyboardRange();
