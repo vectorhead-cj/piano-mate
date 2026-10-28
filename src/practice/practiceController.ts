@@ -74,10 +74,15 @@ export class PracticeController {
         : null;
 
     deps.stream.subscribe((event) => {
-      deps.keyboard.setPressed(event.pitch, event.kind === "on");
+      // Sound first, before any DOM/VexFlow work — heavy sync work in the same
+      // turn as AudioContext scheduling can delay the audible start.
       if (event.kind === "on") {
         deps.sound.play(event.pitch, event.velocity);
-        this.handleNoteOn(event.pitch, event.time);
+      }
+      deps.keyboard.setPressed(event.pitch, event.kind === "on");
+      if (event.kind === "on") {
+        const { pitch, time } = event;
+        setTimeout(() => this.handleNoteOn(pitch, time), 0);
       }
     });
     this.startNewExercise();

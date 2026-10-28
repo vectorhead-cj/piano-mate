@@ -4,7 +4,7 @@ import { generateExercise } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
 import { LEVEL_1, LEVELS } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
-import { BEATS, RHYTHM_PROFILES } from "../src/music/rhythms";
+import { BEATS, BEATS_PER_BAR, RHYTHM_PROFILES } from "../src/music/rhythms";
 import type { Note, RhythmFlavor } from "../src/music/types";
 import { seeded } from "./helpers";
 
@@ -24,6 +24,21 @@ const opts = (
   ...overrides,
 });
 
+describe("rhythm cells", () => {
+  it("defines cells that fill exactly one bar", () => {
+    for (const profile of RHYTHM_PROFILES) {
+      expect(profile.cells.length).toBeGreaterThan(0);
+      for (const cell of profile.cells) {
+        const beats = cell.pattern.reduce((sum, d) => sum + BEATS[d], 0);
+        expect(beats).toBe(BEATS_PER_BAR);
+        for (const duration of cell.pattern) {
+          expect(profile.durations).toContain(duration);
+        }
+      }
+    }
+  });
+});
+
 describe("generateExercise", () => {
   it("fills every bar exactly for each rhythm flavor", () => {
     for (const profile of RHYTHM_PROFILES) {
@@ -40,6 +55,21 @@ describe("generateExercise", () => {
             expect(profile.durations).toContain(note.duration);
           }
         }
+      }
+    }
+  });
+
+  it("ends the last bar on a half or whole note when the flavor allows it", () => {
+    for (const profile of RHYTHM_PROFILES) {
+      const canEndLong = profile.durations.some((d) => d === "h" || d === "w");
+      if (!canEndLong) continue;
+      for (const seed of SEEDS) {
+        const last = generateExercise(
+          LEVEL_1,
+          opts({ rhythm: profile.id }),
+          seeded(seed),
+        ).bars.at(-1)!;
+        expect(["h", "w"]).toContain(last.at(-1)!.duration);
       }
     }
   });
@@ -86,6 +116,70 @@ describe("generateExercise", () => {
       expect(notes[0].alter).toBe(0);
       expect(notes.at(-1)).toMatchObject({ letter: "C", alter: 0 });
     }
+  });
+
+  it("approaches the final tonic by step or third when the phrase has room", () => {
+    for (const seed of SEEDS) {
+      const notes = generateExercise(
+        LEVEL_1,
+        opts({ bars: 4 }),
+        seeded(seed),
+      ).bars.flat();
+      if (notes.length < 3) continue;
+      const approach = Math.abs(staffStep(notes.at(-2)!) - staffStep(notes.at(-1)!));
+      expect(approach).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("recovers from leaps with contrary stepwise motion when possible", () => {
+    for (const seed of SEEDS) {
+      const notes = generateExercise(
+        LEVELS[1],
+        opts({ bars: 4, rhythm: "basic" }),
+        seeded(seed),
+      ).bars.flat();
+      // Skip cadence notes: penultimate is approach-driven, final is the tonic.
+      for (let i = 2; i < notes.length - 2; i++) {
+        const incoming = staffStep(notes[i - 1]) - staffStep(notes[i - 2]);
+        if (Math.abs(incoming) < 3) continue;
+        const outgoing = staffStep(notes[i]) - staffStep(notes[i - 1]);
+        expect(Math.sign(outgoing)).toBe(-Math.sign(incoming));
+        expect(Math.abs(outgoing)).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("does not leap onto eighth notes", () => {
+    for (const seed of SEEDS) {
+      const notes = generateExercise(
+        LEVELS[1],
+        opts({ bars: 4, rhythm: "busy" }),
+        seeded(seed),
+      ).bars.flat();
+      for (let i = 1; i < notes.length; i++) {
+        if (notes[i].duration !== "8") continue;
+        const leap = Math.abs(staffStep(notes[i]) - staffStep(notes[i - 1]));
+        expect(leap).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("tends to arch: early notes sit below a mid-phrase high point", () => {
+    let arched = 0;
+    for (const seed of SEEDS) {
+      const notes = generateExercise(
+        LEVELS[2],
+        opts({ bars: 4, rhythm: "basic" }),
+        seeded(seed),
+      ).bars.flat();
+      if (notes.length < 6) continue;
+      const steps = notes.map(staffStep);
+      const peakAt = Math.max(1, Math.round((steps.length - 1) * 0.4));
+      const early = steps.slice(0, peakAt);
+      const aroundPeak = steps.slice(peakAt, Math.min(peakAt + 3, steps.length - 1));
+      if (Math.max(...aroundPeak) >= Math.max(...early)) arched++;
+    }
+    expect(arched).toBeGreaterThan(SEEDS.length * 0.55);
   });
 
   it("applies the key signature to diatonic notes", () => {

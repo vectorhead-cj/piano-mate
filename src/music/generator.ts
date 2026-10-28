@@ -7,7 +7,14 @@ import {
   type KeyInfo,
 } from "./keys";
 import { midiOf, naturalFromStaffStep, staffStep } from "./pitch";
-import { BEATS, BEATS_PER_BAR, rhythmById, type RhythmProfile } from "./rhythms";
+import {
+  BEATS,
+  BEATS_PER_BAR,
+  cellsForBar,
+  rhythmById,
+  type RhythmCell,
+  type RhythmProfile,
+} from "./rhythms";
 import type {
   AccidentalFrequency,
   Alter,
@@ -41,6 +48,15 @@ const INTERVAL_WEIGHTS: readonly (readonly [number, number])[] = [
   [-4, 0.5],
 ];
 
+/** Leap size (staff steps) that triggers opposite-step recovery. */
+const LEAP_RECOVER_AT = 3;
+
+/** Fraction of the phrase after which gravity toward the tonic ramps up. */
+const GRAVITY_START = 0.6;
+
+/** Peak of the phrase arch, as a fraction of note indices. */
+const ARCH_PEAK_AT = 0.4;
+
 export function generateExercise(
   level: Level,
   options: GeneratorOptions,
@@ -51,8 +67,8 @@ export function generateExercise(
   const rhythms = Array.from({ length: options.bars }, (_, i) =>
     generateBarRhythm(rhythm, i === options.bars - 1, random),
   );
-  const noteCount = rhythms.reduce((sum, bar) => sum + bar.length, 0);
-  const pitches = generatePitches(level, key, noteCount, options.accidentalFrequency, random);
+  const durations = rhythms.flat();
+  const pitches = generatePitches(level, key, durations, options.accidentalFrequency, random);
 
   let pitchIndex = 0;
   const bars: Note[][] = rhythms.map((barRhythm) =>
@@ -67,41 +83,25 @@ function generateBarRhythm(
   isLastBar: boolean,
   random: Random,
 ): Duration[] {
-  let remaining = BEATS_PER_BAR;
-  const finalDuration = isLastBar ? pickFinalDuration(profile.durations) : null;
-  if (finalDuration) remaining -= BEATS[finalDuration];
-
-  const rhythm: Duration[] = [];
-  while (remaining > 0) {
-    const fitting = profile.durations.filter((d) => BEATS[d] <= remaining);
-    if (fitting.length === 0) throw new Error("Rhythm flavor cannot fill a bar");
-    const duration = pickWeighted(
-      fitting.map((d) => [d, profile.weights[d]] as const),
-      random,
-    );
-    rhythm.push(duration);
-    remaining -= BEATS[duration];
-  }
-
-  if (finalDuration) rhythm.push(finalDuration);
-  return rhythm;
+  const cell = pickWeightedCell(cellsForBar(profile, isLastBar), random);
+  return [...cell.pattern];
 }
 
-/** A phrase should end on a long-ish note, but not swallow the whole last bar. */
-function pickFinalDuration(allowed: readonly Duration[]): Duration {
-  for (const preferred of ["h", "w", "q"] as const) {
-    if (allowed.includes(preferred)) return preferred;
-  }
-  throw new Error("Rhythm flavor has no long ending duration");
+function pickWeightedCell(cells: readonly RhythmCell[], random: Random): RhythmCell {
+  return pickWeighted(
+    cells.map((c) => [c, c.weight] as const),
+    random,
+  );
 }
 
 function generatePitches(
   level: Level,
   key: KeyInfo,
-  count: number,
+  durations: readonly Duration[],
   frequency: AccidentalFrequency,
   random: Random,
 ): Spelling[] {
+  const count = durations.length;
   const low = staffStep(level.lowest);
   const high = staffStep(level.highest);
   const inRange = (step: number) => step >= low && step <= high;
@@ -110,23 +110,119 @@ function generatePitches(
   const triad = new Set(majorTriadLetters(key.tonic));
   const startOptions = stepsInRange.filter((s) => triad.has(naturalFromStaffStep(s).letter));
   const endOptions = endingSteps(stepsInRange, key);
+  const endTarget = pickUniform(endOptions, random);
+  const peakTarget = pickPeakTarget(stepsInRange, low, high, random);
+  const peakIndex = Math.max(1, Math.round((count - 1) * ARCH_PEAK_AT));
 
-  const steps: number[] = [pickUniform(startOptions.length > 0 ? startOptions : stepsInRange, random)];
+  if (count === 1) {
+    return [diatonicSpelling(endTarget, key)];
+  }
+
+  // Prefer a lower start so the arch has room to rise (when the range allows).
+  const startPool = startOptions.length > 0 ? startOptions : stepsInRange;
+  const lowerStarts = startPool.filter((s) => s <= (low + high) / 2);
+  const steps: number[] = [
+    pickUniform(lowerStarts.length > 0 ? lowerStarts : startPool, random),
+  ];
+
   for (let i = 1; i < count - 1; i++) {
     const previous = steps[i - 1];
-    const options = INTERVAL_WEIGHTS.filter(([interval]) => inRange(previous + interval));
-    steps.push(previous + pickWeighted(options, random));
+    if (i === count - 2) {
+      const maxApproach = BEATS[durations[i]] <= 0.5 ? 2 : 4;
+      steps.push(pickApproach(previous, endTarget, inRange, random, maxApproach));
+      continue;
+    }
+
+    const incoming = i >= 2 ? previous - steps[i - 2] : 0;
+    const guide = i <= peakIndex ? peakTarget : endTarget;
+    const strength =
+      i <= peakIndex ? 0.35 + 0.45 * (i / peakIndex) : melodicGravity(i, count);
+
+    let options = INTERVAL_WEIGHTS.filter(([interval]) => inRange(previous + interval));
+
+    // No wide leaps onto the shortest note values (eighths).
+    if (BEATS[durations[i]] <= 0.5) {
+      const stepwise = options.filter(([interval]) => Math.abs(interval) <= 2);
+      if (stepwise.length > 0) {
+        options = stepwise;
+      } else {
+        // Range edge: only leaps fit — take the smallest available motion.
+        const smallest = Math.min(...options.map(([interval]) => Math.abs(interval)));
+        options = options.filter(([interval]) => Math.abs(interval) === smallest);
+      }
+    }
+
+    // After a leap, recover with a step (or third) the other way when possible.
+    if (Math.abs(incoming) >= LEAP_RECOVER_AT) {
+      const recoverDir = -Math.sign(incoming);
+      const recovery = options.filter(
+        ([interval]) => Math.sign(interval) === recoverDir && Math.abs(interval) <= 2,
+      );
+      if (recovery.length > 0) options = recovery;
+    }
+
+    const weighted = options.map(([interval, weight]) => {
+      const next = previous + interval;
+      const before = Math.abs(previous - guide);
+      const after = Math.abs(next - guide);
+      let factor = 1;
+      if (after < before) factor = 1 + strength * 3;
+      else if (after > before) factor = 1 / (1 + strength * 2);
+      return [interval, weight * factor] as const;
+    });
+
+    steps.push(previous + pickWeighted(weighted, random));
   }
-  if (count > 1) {
-    const previous = steps[count - 2];
-    steps.push(nearest(endOptions, previous));
-  } else {
-    steps[0] = pickUniform(endOptions, random);
-  }
+
+  steps.push(endTarget);
 
   const spellings = steps.map((step) => diatonicSpelling(step, key));
   addChromaticApproaches(spellings, steps, key, frequency, random);
   return spellings;
+}
+
+/** Soft peak in the upper half of the range (falls back to midrange if tiny). */
+function pickPeakTarget(
+  stepsInRange: number[],
+  low: number,
+  high: number,
+  random: Random,
+): number {
+  const mid = Math.ceil((low + high) / 2);
+  const upper = stepsInRange.filter((s) => s >= mid);
+  return pickUniform(upper.length > 0 ? upper : stepsInRange, random);
+}
+
+/** 0 before GRAVITY_START, then ramps to 1 at the penultimate note. */
+function melodicGravity(index: number, count: number): number {
+  const start = Math.floor((count - 1) * GRAVITY_START);
+  if (index < start) return 0;
+  const span = count - 2 - start;
+  if (span <= 0) return 1;
+  return (index - start) / span;
+}
+
+/**
+ * Prefer a step into the tonic, then a third, else the closest in-range pitch
+ * that still ends on endTarget (caller appends endTarget separately).
+ */
+function pickApproach(
+  previous: number,
+  endTarget: number,
+  inRange: (step: number) => boolean,
+  random: Random,
+  maxApproach = 4,
+): number {
+  const deltas = [-1, 1, -2, 2, -3, 3, -4, 4].filter((d) => Math.abs(d) <= maxApproach);
+  for (const maxDelta of [1, 2, maxApproach]) {
+    const candidates = deltas
+      .filter((d) => Math.abs(d) <= maxDelta)
+      .map((d) => endTarget - d)
+      .filter((step) => inRange(step) && Math.abs(step - previous) <= maxApproach);
+    if (candidates.length > 0) return pickUniform(candidates, random);
+  }
+  // Stay put rather than leaping onto a short note; the final tonic may then leap.
+  return previous;
 }
 
 /**
@@ -185,10 +281,6 @@ function addChromaticApproaches(
     if (alter < -1 || alter > 1 || alter === diatonic) continue;
     spellings[i] = { ...current, alter };
   }
-}
-
-function nearest(candidates: number[], target: number): number {
-  return candidates.reduce((best, c) => (Math.abs(c - target) < Math.abs(best - target) ? c : best));
 }
 
 function pickUniform<T>(items: readonly T[], random: Random): T {

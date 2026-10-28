@@ -30,6 +30,8 @@ async function main(): Promise<void> {
   const notation = new NotationView(notationElement);
   const keyboard = new KeyboardView(keyboardElement);
   attachScreenInput(keyboardElement, stream);
+  // Unlock on the same gesture as the keypress so the first note isn't waiting on resume.
+  keyboardElement.addEventListener("pointerdown", () => synth.unlock(), { capture: true });
 
   let rangeId = DEFAULT_SETTINGS.range;
   let mode: PracticeMode = DEFAULT_SETTINGS.mode;

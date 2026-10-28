@@ -30,6 +30,8 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
   const press = (pitch: number, time = 0) => {
     stream.emit({ kind: "on", pitch, time, source: "screen" });
     stream.emit({ kind: "off", pitch, time, source: "screen" });
+    // handleNoteOn is deferred so sound can start before VexFlow work.
+    vi.advanceTimersByTime(0);
   };
 
   return { controller, notation, keyboard, sound, score, expectedPitches, press, stream };

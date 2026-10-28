@@ -51,6 +51,7 @@ export class NotationView {
   private states: NoteState[] = [];
   private options: NotationOptions = { showNames: false };
   private wrongFlashTimer: number | undefined;
+  private drawHandle = 0;
 
   constructor(private readonly root: HTMLElement) {}
 
@@ -59,17 +60,34 @@ export class NotationView {
     this.exercise = exercise;
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
-    this.draw();
+    this.drawNow();
   }
 
   setOptions(options: NotationOptions): void {
     this.options = options;
-    this.draw();
+    this.scheduleDraw();
   }
 
   setState(index: number, state: NoteState): void {
     if (index >= this.states.length) return;
     this.states[index] = state;
+    this.scheduleDraw();
+  }
+
+  /** Coalesce rapid setState calls (note + current highlight) into one frame. */
+  private scheduleDraw(): void {
+    if (this.drawHandle) return;
+    this.drawHandle = requestAnimationFrame(() => {
+      this.drawHandle = 0;
+      this.drawNow();
+    });
+  }
+
+  private drawNow(): void {
+    if (this.drawHandle) {
+      cancelAnimationFrame(this.drawHandle);
+      this.drawHandle = 0;
+    }
     this.draw();
   }
 
