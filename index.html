@@ -64,6 +64,10 @@
               <option>4</option>
             </select>
           </label>
+          <label class="setting">
+            <input type="checkbox" name="showPhraseXml" />
+            <span>debug: show phrase string</span>
+          </label>
         </form>
 
         <div class="header-actions">
@@ -89,8 +93,17 @@
             >
           </div>
         </section>
+        <section id="phrase-debug" class="phrase-debug" hidden aria-label="Phrase MusicXML">
+          <div class="phrase-debug-header">
+            <span class="phrase-debug-title">Phrase (MusicXML)</span>
+            <button type="button" class="btn-secondary phrase-debug-copy" data-copy-phrase>Copy</button>
+          </div>
+          <pre class="phrase-debug-xml" data-phrase-xml></pre>
+        </section>
         <section class="notation-panel" aria-label="Notation">
-          <div id="notation" class="notation-sheet"></div>
+          <div class="notation-sheet">
+            <div id="notation"></div>
+          </div>
         </section>
         <section class="keyboard-area" aria-label="Keyboard">
           <div id="keyboard" class="keyboard"></div>

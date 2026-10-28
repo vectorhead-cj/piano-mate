@@ -1,18 +1,6 @@
-import {
-  Accidental,
-  Annotation,
-  AnnotationVerticalJustify,
-  BarlineType,
-  Beam,
-  Formatter,
-  Renderer,
-  Stave,
-  StaveNote,
-} from "vexflow/bravura";
-import { accidentalsForBar } from "../music/accidentals";
-import { keyById } from "../music/keys";
-import { noteName } from "../music/pitch";
-import type { Exercise, Note } from "../music/types";
+import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
+import { exerciseToMusicXml } from "../music/musicXml";
+import type { Exercise } from "../music/types";
 
 export type NoteState = "pending" | "current" | "correct" | "late" | "wrong";
 
@@ -29,66 +17,80 @@ const COLORS: Record<NoteState, string> = {
   wrong: "#c45c5c",
 };
 
-// Layout in VexFlow units (before scaling to the screen).
-const MARGIN = 10;
-const BAR_WIDTH = 170;
-const CLEF_WIDTH = 40;
-const TIME_WIDTH = 30;
-const ACCIDENTAL_WIDTH = 10;
-const ROW_HEIGHT = 130;
-const MAX_SCALE = 2.2;
-const MIN_COMFORTABLE_SCALE = 0.85;
+const COLOR_OPTS = {
+  applyToNoteheads: true,
+  applyToStem: true,
+  applyToFlag: true,
+  applyToLedgerLines: true,
+  applyToModifiers: true,
+  applyToLyrics: true,
+} as const;
+
 const WRONG_FLASH_MS = 500;
+/** OSMD lays out at containerWidth/zoom then scales — higher zoom = bigger notes. */
+const MAX_ZOOM = 2.8;
+const FIT_PADDING_PX = 24;
 
-interface Layout {
-  barsPerRow: number;
-  rows: number;
-  scale: number;
-}
-
+/**
+ * Renders phrases via MusicXML → OpenSheetMusicDisplay (standard web engraving stack).
+ * Note states are applied with GraphicalNote.setColor without a full re-render.
+ */
 export class NotationView {
+  private readonly root: HTMLElement;
+  private readonly osmd: OpenSheetMusicDisplay;
   private exercise: Exercise | null = null;
   private states: NoteState[] = [];
   private options: NotationOptions = { showNames: false };
+  private graphicalNotes: GraphicalNote[] = [];
   private wrongFlashTimer: number | undefined;
-  private drawHandle = 0;
+  private renderGeneration = 0;
+  private ready = false;
 
-  constructor(private readonly root: HTMLElement) {}
+  constructor(root: HTMLElement) {
+    this.root = root;
+    this.osmd = new OpenSheetMusicDisplay(root, {
+      backend: "svg",
+      autoResize: false,
+      autoBeam: true,
+      drawingParameters: "compacttight",
+      drawTitle: false,
+      drawSubtitle: false,
+      drawComposer: false,
+      drawLyricist: false,
+      drawCredits: false,
+      drawPartNames: false,
+      drawMeasureNumbers: false,
+      disableCursor: true,
+      defaultColorMusic: COLORS.pending,
+    });
+    const rules = this.osmd.EngravingRules;
+    // Equal bar widths (experimental OSMD option) — steadier grid for practice phrases.
+    rules.FixedMeasureWidth = true;
+    // compacttight shrinks page margins; keep room for ledger lines (e.g. C4 below the staff).
+    rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 2.5);
+    rules.PageTopMargin = Math.max(rules.PageTopMargin, 1.5);
+    rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
+  }
 
   show(exercise: Exercise, options: NotationOptions): void {
     clearTimeout(this.wrongFlashTimer);
     this.exercise = exercise;
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
-    this.drawNow();
+    void this.reload();
   }
 
   setOptions(options: NotationOptions): void {
+    const namesChanged = options.showNames !== this.options.showNames;
     this.options = options;
-    this.scheduleDraw();
+    if (namesChanged) void this.reload();
+    else this.applyColors();
   }
 
   setState(index: number, state: NoteState): void {
     if (index >= this.states.length) return;
     this.states[index] = state;
-    this.scheduleDraw();
-  }
-
-  /** Coalesce rapid setState calls (note + current highlight) into one frame. */
-  private scheduleDraw(): void {
-    if (this.drawHandle) return;
-    this.drawHandle = requestAnimationFrame(() => {
-      this.drawHandle = 0;
-      this.drawNow();
-    });
-  }
-
-  private drawNow(): void {
-    if (this.drawHandle) {
-      cancelAnimationFrame(this.drawHandle);
-      this.drawHandle = 0;
-    }
-    this.draw();
+    this.applyColors();
   }
 
   flashWrong(index: number): void {
@@ -99,105 +101,126 @@ export class NotationView {
     }, WRONG_FLASH_MS);
   }
 
-  /** Redraws from scratch; cheap enough for 1–4 bars, and keeps colouring simple. */
+  /** Re-layout after container resize (OSMD autoResize is off so we own this). */
   draw(): void {
-    this.root.replaceChildren();
+    if (!this.ready || !this.exercise) return;
+    this.renderFitted();
+  }
+
+  private async reload(): Promise<void> {
     const exercise = this.exercise;
     if (!exercise) return;
 
-    const key = keyById(exercise.key);
-    const preface = prefaceWidth(Math.abs(key.signature));
-    const width = this.root.clientWidth;
-    const height = this.root.clientHeight;
-    const { barsPerRow, rows, scale } = chooseLayout(exercise.bars.length, preface, width, height);
+    const generation = ++this.renderGeneration;
+    this.ready = false;
+    const xml = exerciseToMusicXml(exercise, { noteNames: this.options.showNames });
 
-    const renderer = new Renderer(this.root as HTMLDivElement, Renderer.Backends.SVG);
-    renderer.resize(width, height);
-    const context = renderer.getContext();
-    context.scale(scale, scale);
+    await this.osmd.load(xml);
+    if (generation !== this.renderGeneration) return;
 
-    const rowWidth = rowWidthFor(barsPerRow, preface);
-    const offsetX = (width / scale - rowWidth) / 2;
-    const offsetY = (height / scale - rows * ROW_HEIGHT) / 2;
-    const lastBar = exercise.bars.length - 1;
-    let noteIndex = 0;
-
-    exercise.bars.forEach((bar, barIndex) => {
-      const row = Math.floor(barIndex / barsPerRow);
-      const column = barIndex % barsPerRow;
-      const startsRow = column === 0;
-      const x = offsetX + MARGIN + (startsRow ? 0 : preface + column * BAR_WIDTH);
-      const staveWidth = BAR_WIDTH + (startsRow ? preface : 0);
-
-      const stave = new Stave(x, offsetY + row * ROW_HEIGHT, staveWidth);
-      if (startsRow) {
-        stave.addClef(exercise.clef);
-        stave.addKeySignature(exercise.key);
-      }
-      if (barIndex === 0) stave.addTimeSignature(`${exercise.beatsPerBar}/4`);
-      if (barIndex === lastBar) stave.setEndBarType(BarlineType.END);
-      stave.setContext(context).draw();
-
-      const accidentals = accidentalsForBar(bar, key);
-      const staveNotes = bar.map((note, i) =>
-        this.buildStaveNote(note, accidentals[i], this.states[noteIndex++], exercise.clef),
-      );
-      Formatter.FormatAndDraw(context, stave, staveNotes);
-      for (const beam of Beam.generateBeams(staveNotes)) {
-        beam.setContext(context).draw();
-      }
-    });
+    this.renderFitted();
+    this.ready = true;
   }
 
-  private buildStaveNote(
-    note: Note,
-    accidental: string | null,
-    state: NoteState,
-    clef: string,
-  ): StaveNote {
-    const staveNote = new StaveNote({
-      keys: [`${note.letter.toLowerCase()}/${note.octave}`],
-      duration: note.duration,
-      clef,
-      autoStem: true,
-    });
-    if (accidental) staveNote.addModifier(new Accidental(accidental), 0);
-    if (this.options.showNames) {
-      const name = new Annotation(noteName(note));
-      name.setVerticalJustification(AnnotationVerticalJustify.BOTTOM);
-      staveNote.addModifier(name, 0);
+  /**
+   * Measure the music at zoom 1, size #notation to that width, zoom to fill the
+   * panel, and let `.notation-sheet` flexbox center the result. No SVG cropping.
+   */
+  private renderFitted(): void {
+    const sheet = this.root.parentElement ?? this.root;
+    const availW = Math.max(0, sheet.clientWidth - FIT_PADDING_PX * 2);
+    const availH = Math.max(0, sheet.clientHeight - FIT_PADDING_PX * 2);
+
+    this.root.style.width = `${Math.max(sheet.clientWidth, 1)}px`;
+    this.osmd.Zoom = 1;
+    this.osmd.render();
+
+    const size = musicContentSizePx(this.osmd);
+    if (!size || availW <= 0 || availH <= 0) {
+      this.graphicalNotes = collectGraphicalNotes(this.osmd);
+      this.applyColors();
+      return;
     }
-    const color = COLORS[state];
-    staveNote.setStyle({ fillStyle: color, strokeStyle: color });
-    return staveNote;
+
+    // Short phrases fill the panel too aggressively; ease 1–3 bars down a bit.
+    const bars = this.exercise?.bars.length ?? 4;
+    const shortPhraseScale = bars <= 3 ? 0.8 : 1;
+    const zoom =
+      Math.min(MAX_ZOOM, availW / size.width, availH / size.height) * shortPhraseScale;
+    this.osmd.Zoom = Math.max(zoom, 0.5);
+    this.root.style.width = `${Math.min(size.width * this.osmd.Zoom, availW)}px`;
+    this.osmd.render();
+
+    this.graphicalNotes = collectGraphicalNotes(this.osmd);
+    this.applyColors();
+  }
+
+  private applyColors(): void {
+    const count = Math.min(this.states.length, this.graphicalNotes.length);
+    for (let i = 0; i < count; i++) {
+      this.graphicalNotes[i].setColor(COLORS[this.states[i]], COLOR_OPTS);
+    }
   }
 }
 
-function prefaceWidth(accidentalCount: number): number {
-  return CLEF_WIDTH + TIME_WIDTH + accidentalCount * ACCIDENTAL_WIDTH;
-}
-
-function rowWidthFor(barsPerRow: number, preface: number): number {
-  return 2 * MARGIN + preface + barsPerRow * BAR_WIDTH;
+function collectGraphicalNotes(osmd: OpenSheetMusicDisplay): GraphicalNote[] {
+  const notes: GraphicalNote[] = [];
+  for (const staffMeasures of osmd.GraphicSheet.MeasureList) {
+    const measure = staffMeasures[0];
+    if (!measure) continue;
+    for (const staffEntry of measure.staffEntries) {
+      for (const voiceEntry of staffEntry.graphicalVoiceEntries) {
+        for (const note of voiceEntry.notes) {
+          notes.push(note);
+        }
+      }
+    }
+  }
+  return notes;
 }
 
 /**
- * Prefer as few rows as possible; wrap only when a line would have to shrink
- * below a comfortable size (e.g. 4 bars on a phone become 2 + 2).
+ * Inked score bounds from measures and notes (notes catch ledger lines measure
+ * boxes often omit). OSMD units are px/10 → CSS pixels at current zoom.
  */
-function chooseLayout(barCount: number, preface: number, width: number, height: number): Layout {
-  const candidates: Layout[] = [];
-  for (let barsPerRow = barCount; barsPerRow >= 1; barsPerRow--) {
-    const rows = Math.ceil(barCount / barsPerRow);
-    const scale = Math.min(
-      width / rowWidthFor(barsPerRow, preface),
-      height / (rows * ROW_HEIGHT),
-      MAX_SCALE,
-    );
-    candidates.push({ barsPerRow, rows, scale });
+function musicContentSizePx(
+  osmd: OpenSheetMusicDisplay,
+): { width: number; height: number } | null {
+  const measures = osmd.GraphicSheet?.MeasureList;
+  if (!measures?.length) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  const include = (box: { AbsolutePosition: { x: number; y: number }; BorderLeft: number; BorderRight: number; BorderTop: number; BorderBottom: number }) => {
+    const { x, y } = box.AbsolutePosition;
+    minX = Math.min(minX, x + box.BorderLeft);
+    maxX = Math.max(maxX, x + box.BorderRight);
+    minY = Math.min(minY, y + box.BorderTop);
+    maxY = Math.max(maxY, y + box.BorderBottom);
+  };
+
+  for (const staffMeasures of measures) {
+    const measure = staffMeasures[0];
+    if (!measure) continue;
+    include(measure.PositionAndShape);
+    for (const staffEntry of measure.staffEntries) {
+      for (const voiceEntry of staffEntry.graphicalVoiceEntries) {
+        for (const note of voiceEntry.notes) {
+          include(note.PositionAndShape);
+        }
+      }
+    }
   }
-  return (
-    candidates.find((layout) => layout.scale >= MIN_COMFORTABLE_SCALE) ??
-    candidates.reduce((best, layout) => (layout.scale > best.scale ? layout : best))
-  );
+
+  if (!(maxX > minX) || !(maxY > minY)) return null;
+
+  // Padding for clef/key and ledger-line stroke beyond notehead boxes.
+  const scale = 10 * osmd.Zoom;
+  return {
+    width: (maxX - minX) * scale + 24,
+    height: (maxY - minY) * scale + 36,
+  };
 }

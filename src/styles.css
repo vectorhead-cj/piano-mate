@@ -292,6 +292,61 @@ body::before {
   display: none;
 }
 
+.phrase-debug {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(280px, 36vh);
+  padding: 10px 12px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 92%, #e8f0f6), var(--surface));
+  box-shadow: var(--shadow-soft);
+}
+
+.phrase-debug[hidden] {
+  display: none;
+}
+
+.phrase-debug-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.phrase-debug-title {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phrase-debug-copy {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.8rem;
+}
+
+.phrase-debug-xml {
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #1a2330 92%, #0f6e6a);
+  color: #e8eef4;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .score-stat {
   display: flex;
   flex-direction: row;
@@ -345,12 +400,22 @@ body::before {
 }
 
 .notation-sheet {
+  display: flex;
   flex: 1;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
-.notation-sheet svg {
+/* OSMD mounts into #notation; sized to the music so the sheet can flex-center it. */
+#notation {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+#notation > svg,
+#notation > canvas {
   display: block;
 }
 

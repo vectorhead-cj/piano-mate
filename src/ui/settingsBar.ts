@@ -106,7 +106,10 @@ export function bindSettingsBar(
   syncTempoEnabled(initial.mode);
 
   form.addEventListener("change", (event) => {
-    const changed = (event.target as HTMLInputElement | HTMLSelectElement).name as keyof Settings;
+    const name = (event.target as HTMLInputElement | HTMLSelectElement).name;
+    // Ignore non-settings controls that share this form (e.g. debug toggles).
+    if (!(name in initial)) return;
+    const changed = name as keyof Settings;
     const settings = readSettings();
     if (changed === "mode") syncTempoEnabled(settings.mode);
     onChange(settings, changed);

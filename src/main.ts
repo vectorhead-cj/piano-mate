@@ -8,6 +8,7 @@ import { PracticeController } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type PracticeMode } from "./practice/settings";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
+import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindSettingsBar } from "./ui/settingsBar";
 
 function element<T extends HTMLElement>(id: string): T {
@@ -27,8 +28,25 @@ async function main(): Promise<void> {
 
   const stream = new NoteStream();
   const synth = new Synth();
-  const notation = new NotationView(notationElement);
+  const notationView = new NotationView(notationElement);
   const keyboard = new KeyboardView(keyboardElement);
+  let onPhraseShown: (() => void) | undefined;
+  // Refresh the MusicXML dump whenever a phrase is drawn.
+  const notation = {
+    show(...args: Parameters<NotationView["show"]>) {
+      notationView.show(...args);
+      onPhraseShown?.();
+    },
+    setOptions(...args: Parameters<NotationView["setOptions"]>) {
+      notationView.setOptions(...args);
+    },
+    setState(...args: Parameters<NotationView["setState"]>) {
+      notationView.setState(...args);
+    },
+    flashWrong(...args: Parameters<NotationView["flashWrong"]>) {
+      notationView.flashWrong(...args);
+    },
+  };
   attachScreenInput(keyboardElement, stream);
   // Unlock on the same gesture as the keypress so the first note isn't waiting on resume.
   keyboardElement.addEventListener("pointerdown", () => synth.unlock(), { capture: true });
@@ -49,6 +67,7 @@ async function main(): Promise<void> {
 
   function syncTransport(running: boolean): void {
     const rhythm = mode === "rhythm";
+    transport.hidden = !rhythm;
     transport.disabled = !rhythm;
     transport.textContent = running ? "Stop" : "Play";
     transport.setAttribute("aria-label", running ? "Stop rhythm" : "Play rhythm");
@@ -82,6 +101,13 @@ async function main(): Promise<void> {
   });
   syncTransport(practice.isRhythmRunning);
 
+  const phraseDebug = bindPhraseDebug(
+    element<HTMLFormElement>("settings").elements.namedItem("showPhraseXml") as HTMLInputElement,
+    element("phrase-debug"),
+    () => practice.exercise,
+  );
+  onPhraseShown = () => phraseDebug.refresh();
+
   bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
     if (changed === "range") {
       rangeId = settings.range;
@@ -114,7 +140,7 @@ async function main(): Promise<void> {
 
   new ResizeObserver(() => {
     updateKeyboardRange();
-    notation.draw();
+    notationView.draw();
   }).observe(document.body);
 }
 

@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "vexflow": "^5.0.0"
+    "opensheetmusicdisplay": "^2.2.1"
   },
   "devDependencies": {
     "happy-dom": "^21.0.4",
