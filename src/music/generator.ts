@@ -6,6 +6,7 @@ import {
   relativeMinorTonic,
   type KeyInfo,
 } from "./keys";
+import { lesserLevel } from "./levels";
 import { midiOf, naturalFromStaffStep, staffStep } from "./pitch";
 import {
   BEATS,
@@ -57,6 +58,13 @@ const GRAVITY_START = 0.6;
 /** Peak of the phrase arch, as a fraction of note indices. */
 const ARCH_PEAK_AT = 0.4;
 
+const PITCH_ATTEMPTS = 40;
+
+/** Minimum notes for an n-bar phrase: enough motion to feel like a phrase. */
+export function minNotesForBars(bars: number): number {
+  return bars * 2 + 1;
+}
+
 export function generateExercise(
   level: Level,
   options: GeneratorOptions,
@@ -64,9 +72,7 @@ export function generateExercise(
 ): Exercise {
   const key = keyById(options.key);
   const rhythm = rhythmById(options.rhythm);
-  const rhythms = Array.from({ length: options.bars }, (_, i) =>
-    generateBarRhythm(rhythm, i === options.bars - 1, random),
-  );
+  const rhythms = generatePhraseRhythm(rhythm, options.bars, random);
   const durations = rhythms.flat();
   const pitches = generatePitches(level, key, durations, options.accidentalFrequency, random);
 
@@ -78,13 +84,50 @@ export function generateExercise(
   return { clef: level.clef, key: key.id, beatsPerBar: BEATS_PER_BAR, bars };
 }
 
-function generateBarRhythm(
+function generatePhraseRhythm(
   profile: RhythmProfile,
-  isLastBar: boolean,
+  bars: number,
   random: Random,
-): Duration[] {
-  const cell = pickWeightedCell(cellsForBar(profile, isLastBar), random);
-  return [...cell.pattern];
+): Duration[][] {
+  const minNotes = minNotesForBars(bars);
+  const maxNotesByBar = Array.from({ length: bars }, (_, i) =>
+    maxNotesInBar(profile, i === bars - 1),
+  );
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const phrase: Duration[][] = [];
+    let notes = 0;
+    let failed = false;
+
+    for (let i = 0; i < bars; i++) {
+      const isLast = i === bars - 1;
+      const maxAfter = maxNotesByBar.slice(i + 1).reduce((sum, n) => sum + n, 0);
+      const pool = cellsForBar(profile, isLast).filter(
+        (c) => notes + c.pattern.length + maxAfter >= minNotes,
+      );
+      const cell = pickWeightedCell(pool.length > 0 ? pool : densestCells(profile, isLast), random);
+      phrase.push([...cell.pattern]);
+      notes += cell.pattern.length;
+      if (isLast && notes < minNotes) failed = true;
+    }
+
+    if (!failed && notes >= minNotes) return phrase;
+  }
+
+  // Deterministic fallback: densest cell each bar (still cadential on the last).
+  return Array.from({ length: bars }, (_, i) => [
+    ...pickWeightedCell(densestCells(profile, i === bars - 1), random).pattern,
+  ]);
+}
+
+function maxNotesInBar(profile: RhythmProfile, isLastBar: boolean): number {
+  return Math.max(...cellsForBar(profile, isLastBar).map((c) => c.pattern.length));
+}
+
+function densestCells(profile: RhythmProfile, isLastBar: boolean): readonly RhythmCell[] {
+  const pool = cellsForBar(profile, isLastBar);
+  const densest = Math.max(...pool.map((c) => c.pattern.length));
+  return pool.filter((c) => c.pattern.length === densest);
 }
 
 function pickWeightedCell(cells: readonly RhythmCell[], random: Random): RhythmCell {
@@ -106,91 +149,139 @@ function generatePitches(
   const high = staffStep(level.highest);
   const inRange = (step: number) => step >= low && step <= high;
   const stepsInRange = Array.from({ length: high - low + 1 }, (_, i) => low + i);
+  const lesser = lesserLevel(level);
+  const lesserLow = lesser ? staffStep(lesser.lowest) : null;
+  const lesserHigh = lesser ? staffStep(lesser.highest) : null;
+  const outsideLesser = (step: number) =>
+    lesserLow === null || lesserHigh === null || step < lesserLow || step > lesserHigh;
 
   const triad = new Set(majorTriadLetters(key.tonic));
   const startOptions = stepsInRange.filter((s) => triad.has(naturalFromStaffStep(s).letter));
   const endOptions = endingSteps(stepsInRange, key);
-  const endTarget = pickUniform(endOptions, random);
-  const peakTarget = pickPeakTarget(stepsInRange, low, high, random);
-  const peakIndex = Math.max(1, Math.round((count - 1) * ARCH_PEAK_AT));
 
-  if (count === 1) {
-    return [diatonicSpelling(endTarget, key)];
-  }
+  let bestSteps: number[] | null = null;
 
-  // Prefer a lower start so the arch has room to rise (when the range allows).
-  const startPool = startOptions.length > 0 ? startOptions : stepsInRange;
-  const lowerStarts = startPool.filter((s) => s <= (low + high) / 2);
-  const steps: number[] = [
-    pickUniform(lowerStarts.length > 0 ? lowerStarts : startPool, random),
-  ];
+  for (let attempt = 0; attempt < PITCH_ATTEMPTS; attempt++) {
+    const endTarget = pickUniform(endOptions, random);
+    const peakTarget = pickPeakTarget(stepsInRange, low, high, lesserLow, lesserHigh, random);
+    const peakIndex = Math.max(1, Math.round((count - 1) * ARCH_PEAK_AT));
 
-  for (let i = 1; i < count - 1; i++) {
-    const previous = steps[i - 1];
-    if (i === count - 2) {
-      const maxApproach = BEATS[durations[i]] <= 0.5 ? 2 : 4;
-      steps.push(pickApproach(previous, endTarget, inRange, random, maxApproach));
-      continue;
+    if (count === 1) {
+      const forced = forceOutsideLesser([endTarget], stepsInRange, lesserLow, lesserHigh);
+      return forced.map((step) => diatonicSpelling(step, key));
     }
 
-    const incoming = i >= 2 ? previous - steps[i - 2] : 0;
-    const guide = i <= peakIndex ? peakTarget : endTarget;
-    const strength =
-      i <= peakIndex ? 0.35 + 0.45 * (i / peakIndex) : melodicGravity(i, count);
+    // Prefer a lower start so the arch has room to rise (when the range allows).
+    const startPool = startOptions.length > 0 ? startOptions : stepsInRange;
+    const lowerStarts = startPool.filter((s) => s <= (low + high) / 2);
+    const steps: number[] = [
+      pickUniform(lowerStarts.length > 0 ? lowerStarts : startPool, random),
+    ];
 
-    let options = INTERVAL_WEIGHTS.filter(([interval]) => inRange(previous + interval));
-
-    // No wide leaps onto the shortest note values (eighths).
-    if (BEATS[durations[i]] <= 0.5) {
-      const stepwise = options.filter(([interval]) => Math.abs(interval) <= 2);
-      if (stepwise.length > 0) {
-        options = stepwise;
-      } else {
-        // Range edge: only leaps fit — take the smallest available motion.
-        const smallest = Math.min(...options.map(([interval]) => Math.abs(interval)));
-        options = options.filter(([interval]) => Math.abs(interval) === smallest);
+    for (let i = 1; i < count - 1; i++) {
+      const previous = steps[i - 1];
+      if (i === count - 2) {
+        const maxApproach = BEATS[durations[i]] <= 0.5 ? 2 : 4;
+        steps.push(pickApproach(previous, endTarget, inRange, random, maxApproach));
+        continue;
       }
+
+      const incoming = i >= 2 ? previous - steps[i - 2] : 0;
+      const guide = i <= peakIndex ? peakTarget : endTarget;
+      const strength =
+        i <= peakIndex ? 0.35 + 0.45 * (i / peakIndex) : melodicGravity(i, count);
+
+      let options = INTERVAL_WEIGHTS.filter(([interval]) => inRange(previous + interval));
+
+      // No wide leaps onto the shortest note values (eighths).
+      if (BEATS[durations[i]] <= 0.5) {
+        const stepwise = options.filter(([interval]) => Math.abs(interval) <= 2);
+        if (stepwise.length > 0) {
+          options = stepwise;
+        } else {
+          const smallest = Math.min(...options.map(([interval]) => Math.abs(interval)));
+          options = options.filter(([interval]) => Math.abs(interval) === smallest);
+        }
+      }
+
+      // After a leap, recover with a step (or third) the other way when possible.
+      if (Math.abs(incoming) >= LEAP_RECOVER_AT) {
+        const recoverDir = -Math.sign(incoming);
+        const recovery = options.filter(
+          ([interval]) => Math.sign(interval) === recoverDir && Math.abs(interval) <= 2,
+        );
+        if (recovery.length > 0) options = recovery;
+      }
+
+      const weighted = options.map(([interval, weight]) => {
+        const next = previous + interval;
+        const before = Math.abs(previous - guide);
+        const after = Math.abs(next - guide);
+        let factor = 1;
+        if (after < before) factor = 1 + strength * 3;
+        else if (after > before) factor = 1 / (1 + strength * 2);
+        // Nudge the walk to leave the lesser preset's box.
+        if (outsideLesser(next) && !outsideLesser(previous)) factor *= 1 + strength;
+        return [interval, weight * factor] as const;
+      });
+
+      steps.push(previous + pickWeighted(weighted, random));
     }
 
-    // After a leap, recover with a step (or third) the other way when possible.
-    if (Math.abs(incoming) >= LEAP_RECOVER_AT) {
-      const recoverDir = -Math.sign(incoming);
-      const recovery = options.filter(
-        ([interval]) => Math.sign(interval) === recoverDir && Math.abs(interval) <= 2,
-      );
-      if (recovery.length > 0) options = recovery;
-    }
-
-    const weighted = options.map(([interval, weight]) => {
-      const next = previous + interval;
-      const before = Math.abs(previous - guide);
-      const after = Math.abs(next - guide);
-      let factor = 1;
-      if (after < before) factor = 1 + strength * 3;
-      else if (after > before) factor = 1 / (1 + strength * 2);
-      return [interval, weight * factor] as const;
-    });
-
-    steps.push(previous + pickWeighted(weighted, random));
+    steps.push(endTarget);
+    bestSteps = steps;
+    if (steps.some(outsideLesser)) break;
   }
 
-  steps.push(endTarget);
-
+  const steps = forceOutsideLesser(bestSteps ?? [endOptions[0]], stepsInRange, lesserLow, lesserHigh);
   const spellings = steps.map((step) => diatonicSpelling(step, key));
   addChromaticApproaches(spellings, steps, key, frequency, random);
   return spellings;
 }
 
-/** Soft peak in the upper half of the range (falls back to midrange if tiny). */
+/**
+ * Soft peak in the upper half of the range; prefer a pitch that already sits
+ * outside the next-narrower level so the phrase can't collapse into it.
+ */
 function pickPeakTarget(
   stepsInRange: number[],
   low: number,
   high: number,
+  lesserLow: number | null,
+  lesserHigh: number | null,
   random: Random,
 ): number {
+  if (lesserLow !== null && lesserHigh !== null) {
+    const outside = stepsInRange.filter((s) => s < lesserLow || s > lesserHigh);
+    if (outside.length > 0) return pickUniform(outside, random);
+  }
   const mid = Math.ceil((low + high) / 2);
   const upper = stepsInRange.filter((s) => s >= mid);
   return pickUniform(upper.length > 0 ? upper : stepsInRange, random);
+}
+
+/** If every step still fits a lesser level, push a mid note just outside it. */
+function forceOutsideLesser(
+  steps: number[],
+  stepsInRange: number[],
+  lesserLow: number | null,
+  lesserHigh: number | null,
+): number[] {
+  if (lesserLow === null || lesserHigh === null) return steps;
+  if (steps.some((s) => s < lesserLow || s > lesserHigh)) return steps;
+
+  const outside = stepsInRange.filter((s) => s < lesserLow || s > lesserHigh);
+  if (outside.length === 0 || steps.length < 2) return steps;
+
+  // Prefer just above the lesser top (or just below its bottom); keep ends intact when possible.
+  const target =
+    outside.find((s) => s === lesserHigh + 1) ??
+    outside.find((s) => s === lesserLow - 1) ??
+    outside[0];
+  const index = steps.length >= 3 ? Math.floor(steps.length / 2) : 0;
+  const forced = [...steps];
+  forced[index] = target;
+  return forced;
 }
 
 /** 0 before GRAVITY_START, then ramps to 1 at the penultimate note. */

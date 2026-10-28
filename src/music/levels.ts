@@ -42,3 +42,9 @@ export function levelById(id: string): Level {
   if (!found) throw new Error(`Unknown level: ${id}`);
   return found;
 }
+
+/** The next-narrower preset, if any (ranges are nested). */
+export function lesserLevel(level: Level): Level | undefined {
+  const index = LEVELS.findIndex((l) => l.id === level.id);
+  return index > 0 ? LEVELS[index - 1] : undefined;
+}

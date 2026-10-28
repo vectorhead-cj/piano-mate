@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { accidentalsForBar } from "../src/music/accidentals";
-import { generateExercise } from "../src/music/generator";
+import { generateExercise, minNotesForBars } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
-import { LEVEL_1, LEVELS } from "../src/music/levels";
+import { LEVEL_1, LEVELS, lesserLevel } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
 import { BEATS, BEATS_PER_BAR, RHYTHM_PROFILES } from "../src/music/rhythms";
 import type { Note, RhythmFlavor } from "../src/music/types";
@@ -55,6 +55,34 @@ describe("generateExercise", () => {
             expect(profile.durations).toContain(note.duration);
           }
         }
+      }
+    }
+  });
+
+  it("uses at least n*2+1 notes in an n-bar phrase", () => {
+    for (const bars of [1, 2, 3, 4] as const) {
+      for (const profile of RHYTHM_PROFILES) {
+        for (const seed of SEEDS) {
+          const notes = generateExercise(
+            LEVEL_1,
+            opts({ bars, rhythm: profile.id }),
+            seeded(seed),
+          ).bars.flat();
+          expect(notes.length).toBeGreaterThanOrEqual(minNotesForBars(bars));
+        }
+      }
+    }
+  });
+
+  it("does not fit a wider level entirely inside the next-narrower level", () => {
+    for (const level of LEVELS) {
+      const lesser = lesserLevel(level);
+      if (!lesser) continue;
+      const lessLow = staffStep(lesser.lowest);
+      const lessHigh = staffStep(lesser.highest);
+      for (const seed of SEEDS) {
+        const steps = generateExercise(level, opts({ bars: 4 }), seeded(seed)).bars.flat().map(staffStep);
+        expect(steps.some((s) => s < lessLow || s > lessHigh)).toBe(true);
       }
     }
   });
