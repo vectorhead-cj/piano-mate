@@ -24,11 +24,15 @@
   --key-white-top: #ffffff;
   --key-white: #fbfcfe;
   --key-white-pressed: #e4eaf1;
-  --key-white-edge: #2a3544;
+  --key-white-edge: color-mix(in srgb, #1a2330 22%, transparent);
+  --key-white-lip: color-mix(in srgb, #1a2330 9%, transparent);
+  --key-white-shadow: color-mix(in srgb, #1a2330 10%, transparent);
   --key-label: #5b6b7c;
-  --key-black-top: #2c3646;
-  --key-black: #1c2430;
+  --key-black-top: #3a4556;
+  --key-black: #161d27;
   --key-black-pressed: #3a4658;
+  --key-black-lip: color-mix(in srgb, #000 35%, transparent);
+  --key-black-shadow: color-mix(in srgb, #1a2330 35%, transparent);
   --code-bg: color-mix(in srgb, #1a2330 92%, #0f6e6a);
   --code-ink: #e8eef4;
   --grain-opacity: 0.035;
@@ -68,14 +72,18 @@
     --late: #e6a55a;
     --wrong: #e57b7b;
     --hint: #6fa3dd;
-    --key-white-top: #dfe4ea;
+    --key-white-top: #e2e7ec;
     --key-white: #c9d0d8;
     --key-white-pressed: #aeb8c3;
-    --key-white-edge: #0a0e13;
+    --key-white-edge: color-mix(in srgb, #000 60%, transparent);
+    --key-white-lip: color-mix(in srgb, #000 14%, transparent);
+    --key-white-shadow: color-mix(in srgb, #000 35%, transparent);
     --key-label: #3f4c5b;
-    --key-black-top: #1b222c;
-    --key-black: #07090c;
+    --key-black-top: #252e3a;
+    --key-black: #05070a;
     --key-black-pressed: #2a3442;
+    --key-black-lip: color-mix(in srgb, #000 50%, transparent);
+    --key-black-shadow: color-mix(in srgb, #000 55%, transparent);
     --code-bg: #0b1016;
     --code-ink: #cfd8e1;
     --grain-opacity: 0.05;
@@ -107,14 +115,18 @@
   --late: #e6a55a;
   --wrong: #e57b7b;
   --hint: #6fa3dd;
-  --key-white-top: #dfe4ea;
+  --key-white-top: #e2e7ec;
   --key-white: #c9d0d8;
   --key-white-pressed: #aeb8c3;
-  --key-white-edge: #0a0e13;
+  --key-white-edge: color-mix(in srgb, #000 60%, transparent);
+  --key-white-lip: color-mix(in srgb, #000 14%, transparent);
+  --key-white-shadow: color-mix(in srgb, #000 35%, transparent);
   --key-label: #3f4c5b;
-  --key-black-top: #1b222c;
-  --key-black: #07090c;
+  --key-black-top: #252e3a;
+  --key-black: #05070a;
   --key-black-pressed: #2a3442;
+  --key-black-lip: color-mix(in srgb, #000 50%, transparent);
+  --key-black-shadow: color-mix(in srgb, #000 55%, transparent);
   --code-bg: #0b1016;
   --code-ink: #cfd8e1;
   --grain-opacity: 0.05;
@@ -182,11 +194,15 @@ body::before {
 }
 
 .app-header {
-  /* Above .stage, whose entry animation gives it its own stacking context. */
   position: relative;
-  z-index: 5;
   flex: 0 0 auto;
   animation: header-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
+}
+
+/* Lift the header above .stage (its entry animation gives it a stacking context) only while
+   the popover is open; raised all the time, the panel's shadow would shade the score row. */
+.app-header:has(.prefs:not([hidden])) {
+  z-index: 5;
 }
 
 @keyframes header-enter {
@@ -662,16 +678,20 @@ body::before {
   display: block;
 }
 
+/* The keys float on the page background with their own shading: white keys are split
+   by gaps, each with a darker front lip; black keys stand a little taller than the whites
+   and cast a shadow onto them, so they read as raised. */
 .keyboard-area {
   flex: 0 0 auto;
-  padding: 4px 2px 2px;
+  padding: 6px 2px 4px;
 }
 
 .keyboard {
+  --key-gap: 3px;
   position: relative;
   display: flex;
+  gap: var(--key-gap);
   height: clamp(128px, 30dvh, 250px);
-  filter: drop-shadow(0 10px 18px var(--shadow-key));
   touch-action: none;
 }
 
@@ -690,38 +710,53 @@ body::before {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  margin-left: -1px;
-  background: linear-gradient(180deg, var(--key-white-top), var(--key-white));
-  border: 1px solid var(--key-white-edge);
-  border-radius: 0 0 8px 8px;
+  /* A solid base color under the gradient, so state changes fade from the key's own color
+     rather than from transparent (which briefly showed what's behind the key). */
+  background: var(--key-white) linear-gradient(180deg, var(--key-white-top), var(--key-white));
+  border-radius: 7px;
+  box-shadow:
+    inset 0 -6px 0 var(--key-white-lip),
+    0 1px 0 var(--key-white-edge),
+    0 3px 6px var(--key-white-shadow);
 }
 
-.key.white:first-child {
-  margin-left: 0;
-}
-
-/* Centred on the boundary after the white keys to its left. */
+/* Centred on the gap after the white keys to its left; a key's pitch is its width plus one gap. */
 .key.black {
-  --white-width: calc(100% / var(--white-count));
+  --pitch: calc((100% + var(--key-gap)) / var(--white-count));
   position: absolute;
-  top: 0;
+  top: -6px;
   z-index: 1;
-  width: calc(var(--white-width) * 0.58);
-  height: 58%;
-  left: calc(var(--white-width) * var(--white-before) - var(--white-width) * 0.29);
-  background: linear-gradient(180deg, var(--key-black-top), var(--key-black));
-  border-radius: 0 0 5px 5px;
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, #fff 8%, transparent);
+  width: calc(var(--pitch) * 0.58);
+  height: calc(58% + 6px);
+  left: calc(var(--pitch) * var(--white-before) - var(--key-gap) / 2 - var(--pitch) * 0.29);
+  background: var(--key-black) linear-gradient(180deg, var(--key-black-top), var(--key-black) 70%);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 -5px 0 var(--key-black-lip),
+    inset 1px 0 0 color-mix(in srgb, #fff 6%, transparent),
+    inset -1px 0 0 color-mix(in srgb, #fff 6%, transparent),
+    0 4px 6px var(--key-black-shadow);
 }
 
+/* Pressed keys sink: the lip shrinks and the cast shadow tightens. Shadow lists keep the
+   same length as the resting state so they animate instead of jumping. */
 .key.white.pressed {
   background: var(--key-white-pressed);
-  transform: translateY(1px);
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 -2px 0 var(--key-white-lip),
+    0 1px 0 var(--key-white-edge),
+    0 1px 2px var(--key-white-shadow);
 }
 
 .key.black.pressed {
   background: var(--key-black-pressed);
-  transform: translateY(1px);
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 -2px 0 var(--key-black-lip),
+    inset 1px 0 0 color-mix(in srgb, #fff 6%, transparent),
+    inset -1px 0 0 color-mix(in srgb, #fff 6%, transparent),
+    0 1px 2px var(--key-black-shadow);
 }
 
 .key.white.flash-correct,
