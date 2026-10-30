@@ -3,14 +3,45 @@ import { Synth } from "./audio/synth";
 import { NoteStream } from "./input/noteStream";
 import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
+import {
+  COMPLETE_STREAK,
+  STAR_STREAK,
+  placedStage,
+  stageExercises,
+  tierMode,
+  tierTempo,
+  type Tier,
+} from "./curriculum/curriculum";
+import { openEventLog } from "./curriculum/eventLog";
+import {
+  countsForProgress,
+  firstFault,
+  isPerfect,
+  newId,
+  spellingText,
+  type InputKind,
+  type PhraseCompleted,
+  type PracticeContext,
+} from "./curriculum/events";
+import { milestoneBetween } from "./curriculum/progress";
+import { ProgressStore } from "./curriculum/progressStore";
+import { spanLevel, spanMidiRange } from "./curriculum/spans";
 import { levelById } from "./music/levels";
 import { midiOf } from "./music/pitch";
-import { PracticeController } from "./practice/practiceController";
-import { DEFAULT_SETTINGS, type PracticeMode } from "./practice/settings";
+import type { Clef, Level, NoteSource } from "./music/types";
+import { PracticeController, type PhraseResult } from "./practice/practiceController";
+import { DEFAULT_SETTINGS, type PracticeMode, type Settings } from "./practice/settings";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
 import { bindMidiDebug, type MidiDebug } from "./ui/midiDebug";
 import { bindPhraseDebug } from "./ui/phraseDebug";
+import {
+  PhraseResultBanner,
+  renderHome,
+  renderPracticeBar,
+  renderTrack,
+  type ResultTone,
+} from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
 import { bindPrefsPopover, bindTheme } from "./ui/theme";
 
@@ -21,7 +52,12 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 /** Shows MIDI status on the top-bar button; clicking it asks for MIDI access. */
-function bindMidi(button: HTMLButtonElement, stream: NoteStream, debug: MidiDebug): MidiInput {
+function bindMidi(
+  button: HTMLButtonElement,
+  stream: NoteStream,
+  debug: MidiDebug,
+  onDevices: (devices: string[] | null) => void,
+): MidiInput {
   const label = button.querySelector<HTMLElement>("[data-midi-label]")!;
   const show = (state: string, text: string, title = text) => {
     button.dataset.state = state;
@@ -46,6 +82,7 @@ function bindMidi(button: HTMLButtonElement, stream: NoteStream, debug: MidiDebu
         else show("ready", status.devices.join(", "), `Listening to ${status.devices.join(", ")}`);
         break;
     }
+    onDevices(status.state === "ready" ? status.devices : null);
     debug.onStatus(status);
   }, debug.onMessage);
   button.addEventListener("click", () => void midi.connect());
@@ -98,19 +135,46 @@ async function main(): Promise<void> {
       expectedPitch: () => late.practice?.expectedPitch,
     },
   );
-  late.midi = bindMidi(element<HTMLButtonElement>("midi-toggle"), stream, midiDebug);
+  let midiDevices: string[] | null = null;
+  // MIDI reports its first status while it is created, before the views exist.
+  let viewsReady = false;
+  late.midi = bindMidi(element<HTMLButtonElement>("midi-toggle"), stream, midiDebug, (devices) => {
+    midiDevices = devices;
+    if (viewsReady) renderView();
+  });
   element("midi-toggle").addEventListener("click", () => synth.unlock());
   // Unlock on the same gesture as the keypress so the first note isn't waiting on resume.
   keyboardElement.addEventListener("pointerdown", () => synth.unlock(), { capture: true });
 
-  let rangeId = DEFAULT_SETTINGS.range;
+  const app = document.querySelector<HTMLElement>(".app")!;
+  const menu = element("menu");
+  const practiceView = element("practice");
+  const practiceBar = element("practice-bar");
+  const customControls = element("custom-controls");
+  const navBack = element<HTMLButtonElement>("nav-back");
+  element("dev-notice").hidden = !import.meta.env.DEV;
+  const banner = new PhraseResultBanner(element("phrase-result"));
+  const store = new ProgressStore(openEventLog());
+  const session = newId();
+
+  type View = { name: "home" } | { name: "track"; clef: Clef; selected: string } | { name: "practice" };
+  let view: View = { name: "home" };
+  let context: PracticeContext = { kind: "custom" };
+  /** What the settings bar shows; curriculum stages override most of it while they run. */
+  let customSettings: Settings = DEFAULT_SETTINGS;
+  let settings: Settings = DEFAULT_SETTINGS;
+  let customStreak = 0;
+  let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
   let mode: PracticeMode = DEFAULT_SETTINGS.mode;
 
+  function levelMidiRange(level: Level): { lowest: number; highest: number } {
+    return { lowest: midiOf(level.lowest), highest: midiOf(level.highest) };
+  }
+
   function updateKeyboardRange(): void {
-    const level = levelById(rangeId);
     const { lowest, highest } = keyboardRangeFor(
-      midiOf(level.lowest),
-      midiOf(level.highest),
+      keyboardSpan.lowest,
+      keyboardSpan.highest,
       keyboardElement.clientWidth,
     );
     keyboard.setRange(lowest, highest);
@@ -150,6 +214,7 @@ async function main(): Promise<void> {
       },
     },
     onRhythmPlaybackChange: syncTransport,
+    onPhraseComplete: recordPhrase,
   });
   late.practice = practice;
   const lightMidiKeys = element<HTMLFormElement>("settings").elements.namedItem("lightMidiKeys") as HTMLInputElement;
@@ -162,6 +227,200 @@ async function main(): Promise<void> {
   staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
   syncTransport(practice.isRhythmRunning);
 
+  function inputKind(sources: NoteSource[]): InputKind {
+    if (sources.every((s) => s === "midi")) return "midi";
+    return sources.includes("midi") ? "mixed" : "screen";
+  }
+
+  /** Turns a finished phrase into an event, records it, and tells the player how it went. */
+  function recordPhrase(result: PhraseResult): void {
+    // Nothing played (rhythm mode left running), or practice hidden behind the menu.
+    if (result.sources.length === 0 || view.name !== "practice") return;
+    const { exercise } = result;
+    const stage = context.kind === "curriculum" ? placedStage(context.stageId)?.stage : undefined;
+    const level = stage ? spanLevel(exercise.clef, exercise.key, stage.span) : levelById(settings.range);
+    const notes = exercise.bars.flat();
+    const event: PhraseCompleted = {
+      type: "phrase-completed",
+      v: 1,
+      id: newId(),
+      at: Date.now(),
+      session,
+      context,
+      mode: result.mode,
+      tempo: result.tempo,
+      input: inputKind(result.sources),
+      devices: midiDevices && midiDevices.length > 0 ? midiDevices : undefined,
+      config: {
+        clef: exercise.clef,
+        key: exercise.key,
+        lowest: spellingText(level.lowest),
+        highest: spellingText(level.highest),
+        accidentals: settings.accidentalFrequency,
+        rhythm: settings.rhythm,
+        bars: settings.bars,
+      },
+      barSizes: exercise.bars.map((bar) => bar.length),
+      notes: notes.map((note, i) => ({
+        pitch: spellingText(note),
+        duration: note.duration,
+        ...result.notes[i],
+      })),
+    };
+
+    const before = store.progress;
+    store.record(event);
+    const perfect = isPerfect(event);
+    const fault = firstFault(event);
+    const faultText = fault
+      ? fault.kind === "wrong"
+        ? `Wrong note in bar ${fault.bar}`
+        : `Missed a note in bar ${fault.bar}`
+      : "";
+
+    if (context.kind === "custom") {
+      customStreak = perfect ? customStreak + 1 : 0;
+      banner.show(perfect ? `Perfect · streak ${customStreak}` : `${faultText} · streak back to 0`, perfect ? "perfect" : "fault");
+      renderStreak();
+      return;
+    }
+
+    const { clef, stageId, tier } = context;
+    let text: string;
+    let tone: ResultTone;
+    if (!countsForProgress(event)) {
+      text = `${perfect ? "Perfect" : faultText} · screen keys don't count towards progress`;
+      tone = "info";
+    } else {
+      const milestone = milestoneBetween(before, store.progress, clef, stageId);
+      const streak = store.progress[clef].stages[stageId].tiers[tier].streak;
+      if (milestone?.kind === "star") {
+        const opened = milestone.openedStageId ? placedStage(milestone.openedStageId) : undefined;
+        text = `${"★".repeat(milestone.stars)} earned · ${STAR_STREAK} in a row${opened ? ` · stage ${opened.number} is open` : ""}`;
+        tone = "milestone";
+      } else if (milestone?.kind === "complete") {
+        text = `Stage complete · ${COMPLETE_STREAK} in a row`;
+        tone = "milestone";
+      } else if (perfect) {
+        text = `Perfect · streak ${streak}`;
+        tone = "perfect";
+      } else {
+        text = `${faultText} · streak back to 0`;
+        tone = "fault";
+      }
+    }
+    banner.show(text, tone, tone === "milestone" ? 4000 : 2400);
+    renderView();
+  }
+
+  /** Streak in the score row: the curriculum goal for this tier, or a plain count in custom. */
+  function renderStreak(): void {
+    if (context.kind === "custom") {
+      setScoreText("streak", customStreak);
+      setScoreText("streak-goal", "");
+      return;
+    }
+    const stageProgress = store.progress[context.clef].stages[context.stageId];
+    const tierProgress = stageProgress.tiers[context.tier];
+    const starEarned = tierProgress.best >= STAR_STREAK;
+    const goal = !starEarned ? STAR_STREAK : context.tier !== "read" && !stageProgress.complete ? COMPLETE_STREAK : null;
+    setScoreText("streak", tierProgress.streak);
+    setScoreText("streak-goal", goal ? `/${goal}` : "");
+  }
+
+  function startStage(clef: Clef, stageId: string, tier: Tier): void {
+    const placed = placedStage(stageId);
+    if (!placed) return;
+    const { stage } = placed;
+    context = { kind: "curriculum", clef, stageId, tier };
+    settings = {
+      ...customSettings,
+      mode: tierMode(tier),
+      tempo: tierTempo(stage, tier) ?? customSettings.tempo,
+      clef,
+      key: stage.keys[0],
+      accidentalFrequency: stage.accidentals,
+      rhythm: stage.rhythm,
+      bars: stage.bars,
+    };
+    mode = settings.mode;
+    keyboardSpan = spanMidiRange(clef, stage.keys, stage.span);
+    practice.exerciseSource = stageExercises(clef, stage);
+    showView({ name: "practice" });
+    practice.updateSettings(settings, "mode");
+    syncTransport(practice.isRhythmRunning);
+  }
+
+  function openCustom(): void {
+    context = { kind: "custom" };
+    customStreak = 0;
+    settings = customSettings;
+    mode = settings.mode;
+    keyboardSpan = levelMidiRange(levelById(settings.range));
+    practice.exerciseSource = null;
+    showView({ name: "practice" });
+    practice.updateSettings(settings, "mode");
+    syncTransport(practice.isRhythmRunning);
+  }
+
+  function showView(next: View): void {
+    if (view.name === "practice" && next.name !== "practice") {
+      practice.stopRhythm();
+      banner.hide();
+    }
+    view = next;
+    renderView();
+    if (view.name === "practice") {
+      // The keyboard and staff measure themselves; they were hidden until now.
+      updateKeyboardRange();
+      notationView.draw();
+    }
+  }
+
+  function renderView(): void {
+    const practising = view.name === "practice";
+    menu.hidden = practising;
+    practiceView.hidden = !practising;
+    navBack.hidden = view.name === "home";
+    customControls.hidden = !(practising && context.kind === "custom");
+    practiceBar.hidden = !(practising && context.kind === "curriculum");
+    app.dataset.view = view.name;
+
+    if (view.name === "home") {
+      renderHome(menu, { progress: store.progress, status: store.status, storage: store.storage }, {
+        openTrack: (clef) => showView({ name: "track", clef, selected: store.progress[clef].currentStageId }),
+        openCustom,
+      });
+    } else if (view.name === "track") {
+      const { clef } = view;
+      renderTrack(menu, clef, store.progress, view.selected, {
+        select: (stageId) => showView({ name: "track", clef, selected: stageId }),
+        start: (stageId, tier) => startStage(clef, stageId, tier),
+      });
+    } else if (context.kind === "curriculum") {
+      const { clef, stageId, tier } = context;
+      renderPracticeBar(
+        practiceBar,
+        { clef, stageId, tier, progress: store.progress[clef].stages[stageId], midiReady: (midiDevices?.length ?? 0) > 0 },
+        (next) => startStage(clef, stageId, next),
+      );
+    }
+    if (practising) renderStreak();
+  }
+
+  navBack.addEventListener("click", () => {
+    if (view.name === "practice" && context.kind === "curriculum") {
+      showView({ name: "track", clef: context.clef, selected: context.stageId });
+    } else {
+      showView({ name: "home" });
+    }
+  });
+  store.subscribe(() => {
+    if (view.name !== "practice") renderView();
+  });
+  viewsReady = true;
+  renderView();
+
   const phraseDebug = bindPhraseDebug(
     element<HTMLFormElement>("settings").elements.namedItem("showPhraseXml") as HTMLInputElement,
     element("phrase-debug"),
@@ -172,13 +431,25 @@ async function main(): Promise<void> {
   bindTheme(element<HTMLFormElement>("settings"), () => notationView.refreshTheme());
   bindPrefsPopover(element<HTMLButtonElement>("prefs-toggle"), element("prefs"));
 
-  bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
+  bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (next, changed) => {
+    customSettings = next;
+    if (context.kind === "curriculum") {
+      // Only display options reach a stage; its music settings are fixed.
+      if (changed === "namesOnNotes") {
+        settings = { ...settings, namesOnNotes: next.namesOnNotes };
+        practice.updateSettings(settings, changed);
+      }
+      return;
+    }
+    settings = next;
     if (changed === "range" || changed === "clef") {
-      rangeId = settings.range;
+      keyboardSpan = levelMidiRange(levelById(next.range));
       updateKeyboardRange();
     }
-    if (changed === "mode") mode = settings.mode;
-    practice.updateSettings(settings, changed);
+    if (changed === "mode") mode = next.mode;
+    if (changed !== "namesOnNotes") customStreak = 0;
+    renderStreak();
+    practice.updateSettings(next, changed);
     syncTransport(practice.isRhythmRunning);
   });
 

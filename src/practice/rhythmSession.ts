@@ -2,6 +2,7 @@ import { midiOf } from "../music/pitch";
 import { BEATS_PER_BAR } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
 import type { PitchMatcher } from "./matcher";
+import type { NoteResult } from "./waitSession";
 import {
   acceptWindowMs,
   beatMs,
@@ -46,6 +47,8 @@ export class RhythmSession {
   private phraseStartAt: number | null = null;
   private readonly pitchOk: boolean[];
   private readonly timingOk: boolean[];
+  private readonly wrongs: number[];
+  private readonly offsets: (number | undefined)[];
 
   constructor(
     exercise: Exercise,
@@ -59,6 +62,8 @@ export class RhythmSession {
     this.phraseMs = phraseDurationMs(this.notes, tempo);
     this.pitchOk = this.notes.map(() => false);
     this.timingOk = this.notes.map(() => false);
+    this.wrongs = this.notes.map(() => 0);
+    this.offsets = this.notes.map(() => undefined);
   }
 
   /** Wall-clock time when the first note is expected. */
@@ -90,6 +95,14 @@ export class RhythmSession {
       rhythmOnTime: this.timingOk.filter(Boolean).length,
       total: this.notes.length,
     };
+  }
+
+  results(): NoteResult[] {
+    return this.notes.map((_, i) => ({
+      wrong: this.wrongs[i],
+      hit: this.pitchOk[i],
+      offsetMs: this.offsets[i],
+    }));
   }
 
   /**
@@ -135,10 +148,12 @@ export class RhythmSession {
 
     const expectedPitch = midiOf(this.notes[index]);
     if (!this.matches(expectedPitch, pitch)) {
+      this.wrongs[index]++;
       return { missed, result: { kind: "wrong", index, expectedPitch } };
     }
 
     const timing = timingGrade(time - expectedAt, this.tempo);
+    this.offsets[index] = Math.round(time - expectedAt);
     this.pitchOk[index] = true;
     this.timingOk[index] = timing === "on-time";
     this.index++;

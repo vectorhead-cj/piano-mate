@@ -3,7 +3,9 @@ import {
   keyAlter,
   keyById,
   majorTriadLetters,
+  relativeMajorTonic,
   relativeMinorTonic,
+  seventhDegreeLetter,
   type KeyInfo,
 } from "./keys";
 import { lesserLevel } from "./levels";
@@ -149,7 +151,7 @@ function generatePitches(
   const high = staffStep(level.highest);
   const inRange = (step: number) => step >= low && step <= high;
   const stepsInRange = Array.from({ length: high - low + 1 }, (_, i) => low + i);
-  const lesser = lesserLevel(level);
+  const lesser = level.inner ?? lesserLevel(level);
   const lesserLow = lesser ? staffStep(lesser.lowest) : null;
   const lesserHigh = lesser ? staffStep(lesser.highest) : null;
   const outsideLesser = (step: number) =>
@@ -235,6 +237,7 @@ function generatePitches(
 
   const steps = forceOutsideLesser(bestSteps ?? [endOptions[0]], stepsInRange, lesserLow, lesserHigh);
   const spellings = steps.map((step) => diatonicSpelling(step, key));
+  if (key.mode === "minor") raiseLeadingTones(spellings, steps, key);
   addChromaticApproaches(spellings, steps, key, frequency, random);
   return spellings;
 }
@@ -317,15 +320,17 @@ function pickApproach(
 }
 
 /**
- * Prefer the major tonic in range; else the relative-minor tonic; else the
- * major triad. Extreme keys may have their tonic letter outside a narrow range.
+ * Prefer the key's tonic in range; else the relative key's tonic; else the
+ * tonic triad. Extreme keys may have their tonic letter outside a narrow range.
  */
 function endingSteps(stepsInRange: number[], key: KeyInfo): number[] {
   const byLetter = (letter: string) =>
     stepsInRange.filter((s) => naturalFromStaffStep(s).letter === letter);
   const tonic = byLetter(key.tonic);
   if (tonic.length > 0) return tonic;
-  const relative = byLetter(relativeMinorTonic(key.tonic));
+  const relative = byLetter(
+    key.mode === "minor" ? relativeMajorTonic(key.tonic) : relativeMinorTonic(key.tonic),
+  );
   if (relative.length > 0) return relative;
   const triad = new Set(majorTriadLetters(key.tonic));
   const triadSteps = stepsInRange.filter((s) => triad.has(naturalFromStaffStep(s).letter));
@@ -335,6 +340,20 @@ function endingSteps(stepsInRange: number[], key: KeyInfo): number[] {
 function diatonicSpelling(step: number, key: KeyInfo): Spelling {
   const natural = naturalFromStaffStep(step);
   return { ...natural, alter: keyAlter(key, natural.letter) };
+}
+
+/**
+ * Minor keys: the 7th degree is raised a semitone where it steps up to the tonic
+ * (G♯→A in A minor), the leading tone of harmonic minor. Elsewhere it stays as the
+ * signature has it, which avoids the awkward augmented second from the 6th.
+ */
+function raiseLeadingTones(spellings: Spelling[], steps: number[], key: KeyInfo): void {
+  const seventh = seventhDegreeLetter(key.tonic);
+  for (let i = 0; i < spellings.length - 1; i++) {
+    if (spellings[i].letter !== seventh || steps[i + 1] - steps[i] !== 1) continue;
+    const alter = keyAlter(key, seventh) + 1;
+    if (alter <= 1) spellings[i] = { ...spellings[i], alter: alter as Alter };
+  }
 }
 
 /**

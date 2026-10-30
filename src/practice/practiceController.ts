@@ -4,13 +4,13 @@ import { generateExercise, type Random } from "../music/generator";
 import { levelById } from "../music/levels";
 import { midiOf } from "../music/pitch";
 import { BEATS } from "../music/rhythms";
-import type { Exercise } from "../music/types";
+import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
 import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
 import type { Settings } from "./settings";
-import { WaitSession } from "./waitSession";
+import { WaitSession, type NoteResult } from "./waitSession";
 
 export const PHRASE_SCORE_DELAY_MS = 2500;
 
@@ -39,6 +39,17 @@ export interface ScoreDisplay {
   setIncludeRhythm(include: boolean): void;
 }
 
+/** A phrase played to the end (stopped or skipped phrases never produce one). */
+export interface PhraseResult {
+  exercise: Exercise;
+  mode: "wait" | "rhythm";
+  /** Rhythm mode only. */
+  tempo?: number;
+  notes: NoteResult[];
+  /** Where the phrase's note-ons came from; empty when nothing was played. */
+  sources: NoteSource[];
+}
+
 export interface PracticeDependencies {
   stream: NoteStream;
   notation: NotationDisplay;
@@ -49,6 +60,7 @@ export interface PracticeDependencies {
   random?: Random;
   /** Fired when rhythm transport starts/stops (also false in wait mode). */
   onRhythmPlaybackChange?: (running: boolean) => void;
+  onPhraseComplete?: (result: PhraseResult) => void;
   /** Override for tests; defaults to performance.now. */
   now?: () => number;
 }
@@ -65,8 +77,11 @@ export class PracticeController {
   private rhythmRunning = false;
   private readonly metronome: Metronome | null;
   private readonly now: () => number;
+  private readonly phraseSources = new Set<NoteSource>();
   /** Whether keys played on a MIDI device also light up on the screen keyboard. */
   lightMidiKeys = false;
+  /** Makes each new phrase instead of the generator settings (used by curriculum stages). */
+  exerciseSource: (() => Exercise) | null = null;
 
   constructor(private readonly deps: PracticeDependencies) {
     this.settings = deps.settings;
@@ -87,6 +102,7 @@ export class PracticeController {
         deps.keyboard.setPressed(event.pitch, event.kind === "on");
       }
       if (event.kind === "on") {
+        this.phraseSources.add(event.source);
         const { pitch, time } = event;
         setTimeout(() => this.handleNoteOn(pitch, time), 0);
       }
@@ -118,16 +134,18 @@ export class PracticeController {
    *   (used to keep the metronome continuous across phrases).
    */
   startNewExercise(autoplay = false, countInAt?: number): void {
-    this.currentExercise = generateExercise(
-      levelById(this.settings.range),
-      {
-        bars: this.settings.bars,
-        key: this.settings.key,
-        accidentalFrequency: this.settings.accidentalFrequency,
-        rhythm: this.settings.rhythm,
-      },
-      this.deps.random,
-    );
+    this.currentExercise =
+      this.exerciseSource?.() ??
+      generateExercise(
+        levelById(this.settings.range),
+        {
+          bars: this.settings.bars,
+          key: this.settings.key,
+          accidentalFrequency: this.settings.accidentalFrequency,
+          rhythm: this.settings.rhythm,
+        },
+        this.deps.random,
+      );
     this.beginCurrentExercise(autoplay, countInAt);
   }
 
@@ -163,6 +181,7 @@ export class PracticeController {
   private beginCurrentExercise(autoplay: boolean, countInAt?: number): void {
     clearTimeout(this.nextExerciseTimer);
     this.finishingRhythm = false;
+    this.phraseSources.clear();
     // Keep clicks going when chaining into the next phrase; otherwise silence.
     this.teardownRhythm(!autoplay);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
@@ -351,6 +370,7 @@ export class PracticeController {
 
   private finishWaitPhrase(): void {
     this.publishLiveScore();
+    if (this.waitSession) this.reportPhrase("wait", this.waitSession.results());
     clearTimeout(this.nextExerciseTimer);
     this.nextExerciseTimer = setTimeout(() => this.startNewExercise(), PHRASE_SCORE_DELAY_MS);
   }
@@ -365,6 +385,7 @@ export class PracticeController {
     this.publishLiveScore();
 
     const session = this.rhythmSession;
+    if (session) this.reportPhrase("rhythm", session.results(), session.tempo);
     const phraseEnd =
       session?.phraseStart !== null && session?.phraseStart !== undefined
         ? session.phraseStart + session.phraseMs
@@ -374,6 +395,16 @@ export class PracticeController {
     this.nextExerciseTimer = setTimeout(() => {
       this.startNewExercise(true, phraseEnd);
     }, delay);
+  }
+
+  private reportPhrase(mode: PhraseResult["mode"], notes: NoteResult[], tempo?: number): void {
+    this.deps.onPhraseComplete?.({
+      exercise: this.currentExercise,
+      mode,
+      tempo,
+      notes,
+      sources: [...this.phraseSources],
+    });
   }
 
   private teardownRhythm(stopMetronome: boolean): void {

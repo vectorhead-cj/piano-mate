@@ -38,6 +38,11 @@ export interface Level {
   clef: Clef;
   lowest: Spelling;
   highest: Spelling;
+  /**
+   * The next-narrower range inside this one, which phrases are nudged to leave.
+   * Presets in LEVELS leave it out and use lesserLevel instead.
+   */
+  inner?: { lowest: Spelling; highest: Spelling };
 }
 
 export type NoteSource = "screen" | "midi" | "mic";

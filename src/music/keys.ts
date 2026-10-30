@@ -7,12 +7,15 @@ const LETTERS: readonly Letter[] = ["C", "D", "E", "F", "G", "A", "B"];
 const SHARP_ORDER: readonly Letter[] = ["F", "C", "G", "D", "A", "E", "B"];
 const FLAT_ORDER: readonly Letter[] = ["B", "E", "A", "D", "G", "C", "F"];
 
+export type KeyMode = "major" | "minor";
+
 export interface KeyInfo {
-  /** VexFlow major-key spec, e.g. "G", "Bb", "F#". */
+  /** Key id: "G", "Bb", "F#" for majors; "Em", "Gm", "F#m" for minors. */
   id: string;
   /** UI label pairing major with its relative minor. */
   label: string;
-  /** Major tonic letter (alter comes from `alters`). */
+  mode: KeyMode;
+  /** Tonic letter of this key's own mode (alter comes from `alters`). */
   tonic: Letter;
   /** How many sharps (>0) or flats (<0) the signature has. */
   signature: number;
@@ -31,7 +34,14 @@ function altersFor(signature: number): Record<Letter, Alter> {
 }
 
 function key(id: string, label: string, tonic: Letter, signature: number): KeyInfo {
-  return { id, label, tonic, signature, alters: altersFor(signature) };
+  return { id, label, mode: "major", tonic, signature, alters: altersFor(signature) };
+}
+
+/** The relative minor of a major key: same signature, tonic a sixth up ("C" → "Am"). */
+function relativeMinor(major: KeyInfo): KeyInfo {
+  const tonic = relativeMinorTonic(major.tonic);
+  const id = `${tonic}${{ [-1]: "b", 0: "", 1: "#" }[major.alters[tonic]]}m`;
+  return { ...major, id, label: major.label, mode: "minor", tonic };
 }
 
 /** Standard western major keys (with relative-minor labels), sharp then flat side. */
@@ -53,10 +63,13 @@ export const KEYS: readonly KeyInfo[] = [
   key("Cb", "C♭ / A♭m", "C", -7),
 ];
 
+/** Relative minors of KEYS, in the same order ("Am", "Em", …, "Dm", "Gm", …). */
+export const MINOR_KEYS: readonly KeyInfo[] = KEYS.map(relativeMinor);
+
 export const DEFAULT_KEY_ID = "C";
 
 export function keyById(id: string): KeyInfo {
-  const found = KEYS.find((k) => k.id === id);
+  const found = KEYS.find((k) => k.id === id) ?? MINOR_KEYS.find((k) => k.id === id);
   if (!found) throw new Error(`Unknown key: ${id}`);
   return found;
 }
@@ -65,7 +78,7 @@ export function keyAlter(key: KeyInfo, letter: Letter): Alter {
   return key.alters[letter];
 }
 
-/** Letters of the major tonic triad (root, third, fifth). */
+/** Letters of the triad on a tonic (root, third, fifth); the same letters in major and minor. */
 export function majorTriadLetters(tonic: Letter): readonly Letter[] {
   const i = LETTERS.indexOf(tonic);
   return [LETTERS[i], LETTERS[(i + 2) % 7], LETTERS[(i + 4) % 7]];
@@ -75,6 +88,18 @@ export function majorTriadLetters(tonic: Letter): readonly Letter[] {
 export function relativeMinorTonic(tonic: Letter): Letter {
   const i = LETTERS.indexOf(tonic);
   return LETTERS[(i + 5) % 7];
+}
+
+/** Relative major tonic letter for a minor key. */
+export function relativeMajorTonic(tonic: Letter): Letter {
+  const i = LETTERS.indexOf(tonic);
+  return LETTERS[(i + 2) % 7];
+}
+
+/** Letter of the 7th degree, raised to a leading tone in minor (G in A minor). */
+export function seventhDegreeLetter(tonic: Letter): Letter {
+  const i = LETTERS.indexOf(tonic);
+  return LETTERS[(i + 6) % 7];
 }
 
 export const ACCIDENTAL_FREQUENCY_CHANCE: Record<AccidentalFrequency, number> = {

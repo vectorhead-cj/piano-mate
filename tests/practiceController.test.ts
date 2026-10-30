@@ -329,3 +329,37 @@ describe("PracticeController (rhythm mode)", () => {
     expect(score.show).toHaveBeenCalledWith(0, expect.any(Number), 0);
   });
 });
+
+describe("PracticeController phrase reports", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("reports a finished wait phrase with wrong presses and input sources", () => {
+    const stream = new NoteStream();
+    const onPhraseComplete = vi.fn();
+    const controller = new PracticeController({
+      stream,
+      notation: { show: vi.fn(), setOptions: vi.fn(), setState: vi.fn(), flashWrong: vi.fn() },
+      keyboard: { setPressed: vi.fn(), flash: vi.fn() },
+      sound: { play: vi.fn() },
+      settings: DEFAULT_SETTINGS,
+      random: seeded(42),
+      onPhraseComplete,
+    });
+    const pitches = controller.exercise.bars.flat().map(midiOf);
+    const press = (pitch: number, source: "midi" | "screen") => {
+      stream.emit({ kind: "on", pitch, time: 0, source });
+      vi.advanceTimersByTime(0);
+    };
+
+    press(pitches[0] + 1, "midi");
+    pitches.forEach((p, i) => press(p, i === 0 ? "midi" : "screen"));
+
+    expect(onPhraseComplete).toHaveBeenCalledTimes(1);
+    const result = onPhraseComplete.mock.calls[0][0];
+    expect(result.mode).toBe("wait");
+    expect(result.notes[0]).toEqual({ wrong: 1, hit: true });
+    expect(result.notes.slice(1).every((n: { wrong: number }) => n.wrong === 0)).toBe(true);
+    expect(result.sources.sort()).toEqual(["midi", "screen"]);
+  });
+});

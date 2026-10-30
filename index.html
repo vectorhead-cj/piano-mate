@@ -23,6 +23,13 @@
       <header class="app-header">
         <form id="settings" class="settings" aria-label="Practice settings">
           <div class="topbar">
+            <div class="topbar-start">
+              <button id="nav-back" class="btn-icon" type="button" aria-label="Back" hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path d="M15 5l-7 7 7 7" />
+                </svg>
+              </button>
+            </div>
             <h1 class="brand-name">Piano Mate</h1>
             <div class="topbar-end">
               <button id="midi-toggle" class="midi-chip" type="button" data-state="idle" hidden>
@@ -86,7 +93,11 @@
             </div>
           </div>
 
-          <div class="controls">
+          <p id="dev-notice" class="dev-notice" hidden>Dev server · progress isn't stored</p>
+
+          <div id="practice-bar" class="practice-bar" hidden></div>
+
+          <div id="custom-controls" class="controls">
             <div class="control-group" aria-label="Practice">
               <div class="field" role="radiogroup" aria-labelledby="mode-caption">
                 <span class="field-caption" id="mode-caption">Mode</span>
@@ -135,7 +146,9 @@
         </form>
       </header>
 
-      <main class="stage">
+      <main id="menu" class="menu" hidden></main>
+
+      <main id="practice" class="stage">
         <div class="status-row">
           <section id="phrase-score" class="phrase-score" data-mode="wait" aria-live="polite" aria-label="Score">
             <div class="score-stat">
@@ -149,6 +162,13 @@
               <span class="score-label">Rhythm</span>
               <span class="score-value"
                 ><span data-score="rhythm">0</span><span class="score-of">/<span data-score="rhythm-total">0</span></span></span
+              >
+            </div>
+            <div class="score-divider" aria-hidden="true"></div>
+            <div class="score-stat">
+              <span class="score-label">Streak</span>
+              <span class="score-value"
+                ><span data-score="streak">0</span><span class="score-of" data-score="streak-goal"></span></span
               >
             </div>
           </section>
@@ -176,6 +196,7 @@
           </div>
         </section>
         <section class="notation-panel" aria-label="Notation">
+          <div id="phrase-result" class="phrase-result" role="status" hidden></div>
           <div class="notation-sheet">
             <div id="notation"></div>
           </div>

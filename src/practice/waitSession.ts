@@ -12,6 +12,14 @@ export interface WaitScore {
   total: number;
 }
 
+/** How one note went: wrong keys pressed before the right one, and (rhythm mode) its timing. */
+export interface NoteResult {
+  wrong: number;
+  hit: boolean;
+  /** Rhythm mode: press time minus expected onset, in ms. */
+  offsetMs?: number;
+}
+
 /** Wait mode: nothing advances until the expected note is played. */
 export class WaitSession {
   readonly notes: Note[];
@@ -19,12 +27,14 @@ export class WaitSession {
   /** True if the current note already had a wrong attempt. */
   private missedCurrent = false;
   private firstTryCorrect = 0;
+  private readonly wrongs: number[];
 
   constructor(
     exercise: Exercise,
     private readonly matches: PitchMatcher,
   ) {
     this.notes = exercise.bars.flat();
+    this.wrongs = this.notes.map(() => 0);
   }
 
   /** Index of the note to play next; equals notes.length once complete. */
@@ -40,6 +50,11 @@ export class WaitSession {
     return { notesCorrect: this.firstTryCorrect, total: this.notes.length };
   }
 
+  /** Per-note results; every note counts as hit once the phrase is complete. */
+  results(): NoteResult[] {
+    return this.notes.map((_, i) => ({ wrong: this.wrongs[i], hit: i < this.index }));
+  }
+
   play(pitch: number): PlayResult {
     if (this.isComplete) return { kind: "ignored" };
 
@@ -47,6 +62,7 @@ export class WaitSession {
     const expectedPitch = midiOf(this.notes[index]);
     if (!this.matches(expectedPitch, pitch)) {
       this.missedCurrent = true;
+      this.wrongs[index]++;
       return { kind: "wrong", index, expectedPitch };
     }
 

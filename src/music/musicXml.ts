@@ -1,5 +1,5 @@
 import { accidentalsForBar, type AccidentalSymbol } from "./accidentals";
-import { keyById } from "./keys";
+import { keyById, type KeyInfo } from "./keys";
 import { noteName } from "./pitch";
 import type { Clef, Duration, Exercise, Note } from "./types";
 
@@ -36,7 +36,7 @@ export function exerciseToMusicXml(
 ): string {
   const key = keyById(exercise.key);
   const measures = exercise.bars
-    .map((bar, index) => measureXml(bar, index + 1, exercise, key.signature, options, accidentalsForBar(bar, key)))
+    .map((bar, index) => measureXml(bar, index + 1, exercise, key, options, accidentalsForBar(bar, key)))
     .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -58,7 +58,7 @@ function measureXml(
   bar: readonly Note[],
   number: number,
   exercise: Exercise,
-  fifths: number,
+  key: KeyInfo,
   options: MusicXmlOptions,
   accidentals: readonly (AccidentalSymbol | null)[],
 ): string {
@@ -67,7 +67,8 @@ function measureXml(
       ? `      <attributes>
         <divisions>${DIVISIONS}</divisions>
         <key>
-          <fifths>${fifths}</fifths>
+          <fifths>${key.signature}</fifths>
+          <mode>${key.mode}</mode>
         </key>
         <time>
           <beats>${exercise.beatsPerBar}</beats>
