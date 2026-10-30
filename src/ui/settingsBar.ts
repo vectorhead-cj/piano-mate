@@ -3,7 +3,6 @@ import { LEVELS } from "../music/levels";
 import { RHYTHM_PROFILES } from "../music/rhythms";
 import type { AccidentalFrequency, RhythmFlavor } from "../music/types";
 import {
-  PRACTICE_MODE_LABELS,
   TEMPO_OPTIONS,
   type PracticeMode,
   type Settings,
@@ -18,15 +17,8 @@ export function bindSettingsBar(
   const checkbox = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
   const select = (name: string) => form.elements.namedItem(name) as HTMLSelectElement;
 
-  const modeSelect = select("mode");
-  if (modeSelect.options.length === 0) {
-    for (const [value, label] of Object.entries(PRACTICE_MODE_LABELS)) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      modeSelect.append(option);
-    }
-  }
+  // Mode is a segmented radio group in index.html; its labels come from the markup.
+  const modeRadios = form.elements.namedItem("mode") as RadioNodeList;
 
   const tempoSelect = select("tempo");
   if (tempoSelect.options.length === 0) {
@@ -81,12 +73,12 @@ export function bindSettingsBar(
   const syncTempoEnabled = (mode: PracticeMode) => {
     tempoSelect.disabled = mode !== "rhythm";
     const wrap = form.querySelector("#tempo-setting");
-    wrap?.classList.toggle("setting-disabled", mode !== "rhythm");
+    wrap?.classList.toggle("field-disabled", mode !== "rhythm");
   };
 
   const readSettings = (): Settings => ({
     namesOnNotes: checkbox("namesOnNotes").checked,
-    mode: modeSelect.value as PracticeMode,
+    mode: modeRadios.value as PracticeMode,
     tempo: Number(tempoSelect.value),
     key: keySelect.value,
     accidentalFrequency: frequencySelect.value as AccidentalFrequency,
@@ -96,7 +88,7 @@ export function bindSettingsBar(
   });
 
   checkbox("namesOnNotes").checked = initial.namesOnNotes;
-  modeSelect.value = initial.mode;
+  modeRadios.value = initial.mode;
   tempoSelect.value = String(initial.tempo);
   keySelect.value = initial.key;
   frequencySelect.value = initial.accidentalFrequency;

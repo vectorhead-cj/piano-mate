@@ -21,11 +21,6 @@ export const TEMPO_OPTIONS = [40, 50, 60, 72, 80, 96, 100, 120] as const;
 
 export const DEFAULT_TEMPO = 60;
 
-export const PRACTICE_MODE_LABELS: Record<PracticeMode, string> = {
-  wait: "Wait",
-  rhythm: "Rhythm",
-};
-
 export const DEFAULT_SETTINGS: Settings = {
   namesOnNotes: false,
   mode: "wait",

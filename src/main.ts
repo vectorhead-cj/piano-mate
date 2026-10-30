@@ -10,6 +10,7 @@ import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
 import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindSettingsBar } from "./ui/settingsBar";
+import { bindPrefsPopover, bindTheme } from "./ui/theme";
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -107,6 +108,9 @@ async function main(): Promise<void> {
     () => practice.exercise,
   );
   onPhraseShown = () => phraseDebug.refresh();
+
+  bindTheme(element<HTMLFormElement>("settings"), () => notationView.refreshTheme());
+  bindPrefsPopover(element<HTMLButtonElement>("prefs-toggle"), element("prefs"));
 
   bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
     if (changed === "range") {

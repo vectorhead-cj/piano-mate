@@ -8,14 +8,23 @@ export interface NotationOptions {
   showNames: boolean;
 }
 
-/** Keep in sync with --ink / --note-current / --correct / --late / --wrong in styles.css. */
-const COLORS: Record<NoteState, string> = {
-  pending: "#1a2330",
-  current: "#c07828",
-  correct: "#2d8a68",
-  late: "#c07828",
-  wrong: "#c45c5c",
+/** Note colors come from these styles.css tokens, so they follow the light/dark theme. */
+const COLOR_TOKENS: Record<NoteState, string> = {
+  pending: "--ink",
+  current: "--note-current",
+  correct: "--correct",
+  late: "--late",
+  wrong: "--wrong",
 };
+
+function readThemeColors(): Record<NoteState, string> {
+  const style = getComputedStyle(document.documentElement);
+  const colors = {} as Record<NoteState, string>;
+  for (const [state, token] of Object.entries(COLOR_TOKENS) as [NoteState, string][]) {
+    colors[state] = style.getPropertyValue(token).trim();
+  }
+  return colors;
+}
 
 const COLOR_OPTS = {
   applyToNoteheads: true,
@@ -45,6 +54,7 @@ export class NotationView {
   private wrongFlashTimer: number | undefined;
   private renderGeneration = 0;
   private ready = false;
+  private colors = readThemeColors();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -61,7 +71,7 @@ export class NotationView {
       drawPartNames: false,
       drawMeasureNumbers: false,
       disableCursor: true,
-      defaultColorMusic: COLORS.pending,
+      defaultColorMusic: this.colors.pending,
     });
     const rules = this.osmd.EngravingRules;
     // Equal bar widths (experimental OSMD option) — steadier grid for practice phrases.
@@ -99,6 +109,15 @@ export class NotationView {
     this.wrongFlashTimer = window.setTimeout(() => {
       if (this.states[index] === "wrong") this.setState(index, "current");
     }, WRONG_FLASH_MS);
+  }
+
+  /** Re-read the theme colors and redraw; staff lines and clefs only recolor on a reload. */
+  refreshTheme(): void {
+    const colors = readThemeColors();
+    if (colors.pending === this.colors.pending && colors.correct === this.colors.correct) return;
+    this.colors = colors;
+    this.osmd.EngravingRules.applyDefaultColorMusic(colors.pending);
+    void this.reload();
   }
 
   /** Re-layout after container resize (OSMD autoResize is off so we own this). */
@@ -158,7 +177,7 @@ export class NotationView {
   private applyColors(): void {
     const count = Math.min(this.states.length, this.graphicalNotes.length);
     for (let i = 0; i < count; i++) {
-      this.graphicalNotes[i].setColor(COLORS[this.states[i]], COLOR_OPTS);
+      this.graphicalNotes[i].setColor(this.colors[this.states[i]], COLOR_OPTS);
     }
   }
 }
