@@ -57,6 +57,11 @@ export class KeyboardView {
     this.updateLabelText();
   }
 
+  /** The drawn keys' lowest and highest MIDI pitch. */
+  get visibleRange(): { lowest: number; highest: number } {
+    return { ...this.range };
+  }
+
   setLabels(visible: boolean): void {
     this.root.classList.toggle("show-labels", visible);
     this.updateLabelText();

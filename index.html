@@ -25,6 +25,17 @@
           <div class="topbar">
             <h1 class="brand-name">Piano Mate</h1>
             <div class="topbar-end">
+              <button id="midi-toggle" class="midi-chip" type="button" data-state="idle" hidden>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <circle cx="7.5" cy="11" r="1" />
+                  <circle cx="16.5" cy="11" r="1" />
+                  <circle cx="9" cy="15" r="1" />
+                  <circle cx="15" cy="15" r="1" />
+                  <circle cx="12" cy="16.5" r="1" />
+                </svg>
+                <span data-midi-label>Connect MIDI</span>
+              </button>
               <button
                 id="prefs-toggle"
                 class="btn-icon"
@@ -53,8 +64,16 @@
                   <span>Names on notes</span>
                 </label>
                 <label class="toggle">
+                  <input type="checkbox" name="lightMidiKeys" />
+                  <span>Light keys from MIDI</span>
+                </label>
+                <label class="toggle">
                   <input type="checkbox" name="showPhraseXml" />
                   <span>Show phrase MusicXML</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" name="showMidiDebug" />
+                  <span>Show MIDI debug</span>
                 </label>
               </div>
             </div>
@@ -134,6 +153,16 @@
             <button type="button" class="btn-secondary phrase-debug-copy" data-copy-phrase>Copy</button>
           </div>
           <pre class="phrase-debug-xml" data-phrase-xml></pre>
+        </section>
+        <section id="midi-debug" class="phrase-debug midi-debug" hidden aria-label="MIDI debug">
+          <div class="phrase-debug-header">
+            <span class="phrase-debug-title">MIDI debug</span>
+            <button type="button" class="btn-secondary phrase-debug-copy" data-midi-clear>Clear</button>
+          </div>
+          <div class="midi-debug-body">
+            <pre class="phrase-debug-xml" data-midi-summary></pre>
+            <pre class="phrase-debug-xml" data-midi-log></pre>
+          </div>
         </section>
         <section class="notation-panel" aria-label="Notation">
           <div class="notation-sheet">

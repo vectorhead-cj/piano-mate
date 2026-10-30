@@ -51,3 +51,10 @@ export function whiteKeyName(midi: number): string {
   if (!letter) throw new Error(`MIDI ${midi} is not a white key`);
   return noteName({ letter, alter: 0, octave: 0 });
 }
+
+const SHARP_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+
+/** Scientific pitch name for a MIDI number, spelled with sharps (60 → "C4"). */
+export function midiNoteName(midi: number): string {
+  return `${SHARP_NAMES[pitchClass(midi)]}${Math.floor(midi / 12) - 1}`;
+}

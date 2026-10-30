@@ -196,13 +196,10 @@ body::before {
 .app-header {
   position: relative;
   flex: 0 0 auto;
-  animation: header-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
-}
-
-/* Lift the header above .stage (its entry animation gives it a stacking context) only while
-   the popover is open; raised all the time, the panel's shadow would shade the score row. */
-.app-header:has(.prefs:not([hidden])) {
-  z-index: 5;
+  /* "backwards", not "both": a fill that outlives the animation keeps a stacking context on the
+     header, trapping the prefs popover under .stage. Without it only the popover (z-index 20)
+     rises above the stage, and the header's own shadow stays beneath the score row. */
+  animation: header-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) 40ms backwards;
 }
 
 @keyframes header-enter {
@@ -245,6 +242,70 @@ body::before {
 
 .topbar-end {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* MIDI connect button / connection status. */
+.midi-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  max-width: 46vw;
+  padding: 0 12px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 10px;
+  background: var(--control-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.midi-chip[hidden] {
+  display: none;
+}
+
+.midi-chip span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.midi-chip svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.midi-chip:hover {
+  color: var(--accent);
+  background: var(--control-bg-hover);
+}
+
+.midi-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.midi-chip[data-state="ready"] {
+  color: var(--correct);
+  border-color: color-mix(in srgb, var(--correct) 45%, var(--surface-edge));
+  cursor: default;
+}
+
+.midi-chip[data-state="waiting"] {
+  color: var(--late);
+  cursor: default;
+}
+
+.midi-chip[data-state="blocked"] {
+  color: var(--wrong);
 }
 
 .controls {
@@ -568,6 +629,17 @@ body::before {
 
 .phrase-debug[hidden] {
   display: none;
+}
+
+/* Summary and message log sit side by side when there's room, stacked otherwise. */
+.midi-debug-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  /* Rows keep their full height; the body scrolls instead of squashing each block. */
+  grid-auto-rows: max-content;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .phrase-debug-header {

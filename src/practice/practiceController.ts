@@ -2,6 +2,7 @@ import { Metronome } from "../audio/metronome";
 import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
 import { levelById } from "../music/levels";
+import { midiOf } from "../music/pitch";
 import { BEATS } from "../music/rhythms";
 import type { Exercise } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
@@ -64,6 +65,8 @@ export class PracticeController {
   private rhythmRunning = false;
   private readonly metronome: Metronome | null;
   private readonly now: () => number;
+  /** Whether keys played on a MIDI device also light up on the screen keyboard. */
+  lightMidiKeys = false;
 
   constructor(private readonly deps: PracticeDependencies) {
     this.settings = deps.settings;
@@ -79,7 +82,10 @@ export class PracticeController {
       if (event.kind === "on") {
         deps.sound.play(event.pitch, event.velocity);
       }
-      deps.keyboard.setPressed(event.pitch, event.kind === "on");
+      // Releases always clear, so turning the option off mid-note can't leave a key stuck down.
+      if (event.kind === "off" || event.source !== "midi" || this.lightMidiKeys) {
+        deps.keyboard.setPressed(event.pitch, event.kind === "on");
+      }
       if (event.kind === "on") {
         const { pitch, time } = event;
         setTimeout(() => this.handleNoteOn(pitch, time), 0);
@@ -90,6 +96,13 @@ export class PracticeController {
 
   get exercise(): Exercise {
     return this.currentExercise;
+  }
+
+  /** Pitch the player should hit next in wait mode; undefined in rhythm mode or when done. */
+  get expectedPitch(): number | undefined {
+    const session = this.waitSession;
+    if (!session || session.isComplete) return undefined;
+    return midiOf(session.notes[session.currentIndex]);
   }
 
   /** True while rhythm count-in/phrase is actively running. */

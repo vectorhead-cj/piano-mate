@@ -1,6 +1,7 @@
 import "./styles.css";
 import { Synth } from "./audio/synth";
 import { NoteStream } from "./input/noteStream";
+import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
 import { levelById } from "./music/levels";
 import { midiOf } from "./music/pitch";
@@ -8,6 +9,7 @@ import { PracticeController } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type PracticeMode } from "./practice/settings";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
+import { bindMidiDebug, type MidiDebug } from "./ui/midiDebug";
 import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindSettingsBar } from "./ui/settingsBar";
 import { bindPrefsPopover, bindTheme } from "./ui/theme";
@@ -16,6 +18,42 @@ function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (!found) throw new Error(`Missing #${id} in index.html`);
   return found as T;
+}
+
+/** Shows MIDI status on the top-bar button; clicking it asks for MIDI access. */
+function bindMidi(button: HTMLButtonElement, stream: NoteStream, debug: MidiDebug): MidiInput {
+  const label = button.querySelector<HTMLElement>("[data-midi-label]")!;
+  const show = (state: string, text: string, title = text) => {
+    button.dataset.state = state;
+    label.textContent = text;
+    button.title = title;
+  };
+  const midi = new MidiInput(stream, (status) => {
+    // Browsers without Web MIDI (Safari, iOS) just don't get the button.
+    button.hidden = status.state === "unsupported";
+    switch (status.state) {
+      case "idle":
+        show("idle", "Connect MIDI");
+        break;
+      case "requesting":
+        show("waiting", "Connecting…");
+        break;
+      case "blocked":
+        show("blocked", "MIDI blocked", `MIDI access was refused: ${status.reason.replace(/\.$/, "")}. Click to retry.`);
+        break;
+      case "ready":
+        if (status.devices.length === 0) show("waiting", "No MIDI device", "MIDI is on; plug in or wake a device");
+        else show("ready", status.devices.join(", "), `Listening to ${status.devices.join(", ")}`);
+        break;
+    }
+    debug.onStatus(status);
+  }, debug.onMessage);
+  button.addEventListener("click", () => void midi.connect());
+  // Skip the click when the browser already remembers permission from an earlier visit.
+  void midi.isPermissionGranted().then((granted) => {
+    if (granted) void midi.connect();
+  });
+  return midi;
 }
 
 async function main(): Promise<void> {
@@ -49,6 +87,19 @@ async function main(): Promise<void> {
     },
   };
   attachScreenInput(keyboardElement, stream);
+  // The panel reads from MIDI, the keyboard and practice, which are created around it.
+  const late: { midi?: MidiInput; practice?: PracticeController } = {};
+  const midiDebug = bindMidiDebug(
+    element<HTMLFormElement>("settings").elements.namedItem("showMidiDebug") as HTMLInputElement,
+    element("midi-debug"),
+    {
+      ports: () => late.midi?.ports() ?? [],
+      keyboardRange: () => keyboard.visibleRange,
+      expectedPitch: () => late.practice?.expectedPitch,
+    },
+  );
+  late.midi = bindMidi(element<HTMLButtonElement>("midi-toggle"), stream, midiDebug);
+  element("midi-toggle").addEventListener("click", () => synth.unlock());
   // Unlock on the same gesture as the keypress so the first note isn't waiting on resume.
   keyboardElement.addEventListener("pointerdown", () => synth.unlock(), { capture: true });
 
@@ -100,6 +151,12 @@ async function main(): Promise<void> {
     },
     onRhythmPlaybackChange: syncTransport,
   });
+  late.practice = practice;
+  const lightMidiKeys = element<HTMLFormElement>("settings").elements.namedItem("lightMidiKeys") as HTMLInputElement;
+  practice.lightMidiKeys = lightMidiKeys.checked;
+  lightMidiKeys.addEventListener("change", () => {
+    practice.lightMidiKeys = lightMidiKeys.checked;
+  });
   syncTransport(practice.isRhythmRunning);
 
   const phraseDebug = bindPhraseDebug(
@@ -137,6 +194,9 @@ async function main(): Promise<void> {
 
   // Older iOS versions only unlock audio on touchend, not on pointerdown.
   document.addEventListener("touchend", () => synth.unlock(), { once: true });
+  // MIDI notes aren't user gestures, so audio for them relies on any earlier click or keypress.
+  document.addEventListener("pointerdown", () => synth.unlock(), { once: true, capture: true });
+  document.addEventListener("keydown", () => synth.unlock(), { once: true, capture: true });
   // Tab switches / iOS interruptions leave the context suspended; retry when visible again.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") synth.unlock();
