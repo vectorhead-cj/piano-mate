@@ -148,6 +148,10 @@ body {
 }
 
 body {
+  /* The Claude artifact host's skeleton sets body { color: #000; font: 14px system-ui }, which
+     would beat the ink and font inherited from :root. Restate them here. */
+  color: var(--ink);
+  font: inherit;
   box-sizing: border-box;
   min-height: 100dvh;
   /* Soft sky → desk gradient + quiet grain */
