@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accidentalsForBar } from "../src/music/accidentals";
 import { generateExercise, minNotesForBars } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
-import { LEVEL_1, LEVELS, lesserLevel } from "../src/music/levels";
+import { LEVEL_1, LEVELS, lesserLevel, levelsForClef } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
 import { BEATS, BEATS_PER_BAR, RHYTHM_PROFILES } from "../src/music/rhythms";
 import type { Note, RhythmFlavor } from "../src/music/types";
@@ -115,6 +115,24 @@ describe("generateExercise", () => {
     for (const seed of SEEDS) {
       const notes = generateExercise(LEVEL_1, opts(), seeded(seed)).bars.flat();
       expect(notes.every((n) => n.duration !== "8")).toBe(true);
+    }
+  });
+
+  it("nests ranges within a clef and never across clefs", () => {
+    expect(levelsForClef("treble").length).toBeGreaterThan(0);
+    expect(levelsForClef("bass").length).toBeGreaterThan(0);
+    for (const level of LEVELS) {
+      const lesser = lesserLevel(level);
+      if (!lesser) continue;
+      expect(lesser.clef).toBe(level.clef);
+      expect(staffStep(lesser.lowest)).toBeGreaterThanOrEqual(staffStep(level.lowest));
+      expect(staffStep(lesser.highest)).toBeLessThanOrEqual(staffStep(level.highest));
+    }
+  });
+
+  it("writes the level's clef on the exercise", () => {
+    for (const level of LEVELS) {
+      expect(generateExercise(level, opts(), seeded(1)).clef).toBe(level.clef);
     }
   });
 

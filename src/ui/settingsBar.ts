@@ -1,7 +1,7 @@
 import { ACCIDENTAL_FREQUENCY_LABELS, KEYS } from "../music/keys";
-import { LEVELS } from "../music/levels";
+import { CLEF_LABELS, levelById, levelsForClef } from "../music/levels";
 import { RHYTHM_PROFILES } from "../music/rhythms";
-import type { AccidentalFrequency, RhythmFlavor } from "../music/types";
+import type { AccidentalFrequency, Clef, RhythmFlavor } from "../music/types";
 import {
   TEMPO_OPTIONS,
   type PracticeMode,
@@ -60,15 +60,31 @@ export function bindSettingsBar(
     }
   }
 
-  const rangeSelect = select("range");
-  if (rangeSelect.options.length === 0) {
-    for (const level of LEVELS) {
+  const clefSelect = select("clef");
+  if (clefSelect.options.length === 0) {
+    for (const [value, label] of Object.entries(CLEF_LABELS)) {
       const option = document.createElement("option");
-      option.value = level.id;
-      option.textContent = level.name;
-      rangeSelect.append(option);
+      option.value = value;
+      option.textContent = label;
+      clefSelect.append(option);
     }
   }
+
+  // Range options follow the clef; switching clef keeps the same position in the list.
+  const rangeSelect = select("range");
+  const fillRanges = (clef: Clef) => {
+    const index = Math.max(rangeSelect.selectedIndex, 0);
+    const levels = levelsForClef(clef);
+    rangeSelect.replaceChildren(
+      ...levels.map((level) => {
+        const option = document.createElement("option");
+        option.value = level.id;
+        option.textContent = level.name;
+        return option;
+      }),
+    );
+    rangeSelect.selectedIndex = Math.min(index, levels.length - 1);
+  };
 
   const syncTempoEnabled = (mode: PracticeMode) => {
     tempoSelect.disabled = mode !== "rhythm";
@@ -84,6 +100,7 @@ export function bindSettingsBar(
     accidentalFrequency: frequencySelect.value as AccidentalFrequency,
     rhythm: rhythmSelect.value as RhythmFlavor,
     bars: Number(select("bars").value),
+    clef: clefSelect.value as Clef,
     range: rangeSelect.value,
   });
 
@@ -94,6 +111,8 @@ export function bindSettingsBar(
   frequencySelect.value = initial.accidentalFrequency;
   rhythmSelect.value = initial.rhythm;
   select("bars").value = String(initial.bars);
+  clefSelect.value = levelById(initial.range).clef;
+  fillRanges(clefSelect.value as Clef);
   rangeSelect.value = initial.range;
   syncTempoEnabled(initial.mode);
 
@@ -102,6 +121,7 @@ export function bindSettingsBar(
     // Ignore non-settings controls that share this form (e.g. debug toggles).
     if (!(name in initial)) return;
     const changed = name as keyof Settings;
+    if (changed === "clef") fillRanges(clefSelect.value as Clef);
     const settings = readSettings();
     if (changed === "mode") syncTempoEnabled(settings.mode);
     onChange(settings, changed);

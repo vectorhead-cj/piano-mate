@@ -157,6 +157,9 @@ async function main(): Promise<void> {
   lightMidiKeys.addEventListener("change", () => {
     practice.lightMidiKeys = lightMidiKeys.checked;
   });
+  const staffLetters = element<HTMLFormElement>("settings").elements.namedItem("staffLetters") as HTMLInputElement;
+  notationView.setStaffLetters(staffLetters.checked);
+  staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
   syncTransport(practice.isRhythmRunning);
 
   const phraseDebug = bindPhraseDebug(
@@ -170,7 +173,7 @@ async function main(): Promise<void> {
   bindPrefsPopover(element<HTMLButtonElement>("prefs-toggle"), element("prefs"));
 
   bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (settings, changed) => {
-    if (changed === "range") {
+    if (changed === "range" || changed === "clef") {
       rangeId = settings.range;
       updateKeyboardRange();
     }

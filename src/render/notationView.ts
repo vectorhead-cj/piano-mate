@@ -1,6 +1,6 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
 import { exerciseToMusicXml } from "../music/musicXml";
-import type { Exercise } from "../music/types";
+import type { Clef, Exercise } from "../music/types";
 
 export type NoteState = "pending" | "current" | "correct" | "late" | "wrong";
 
@@ -40,6 +40,16 @@ const WRONG_FLASH_MS = 500;
 const MAX_ZOOM = 2.8;
 const FIT_PADDING_PX = 24;
 
+/** Staff letters, bottom line upwards, alternating line/space. */
+const STAFF_LETTERS: Record<Clef, string[]> = {
+  treble: ["E", "F", "G", "A", "B", "C", "D", "E", "F"],
+  bass: ["G", "A", "B", "C", "D", "E", "F", "G", "A"],
+};
+/** Each margin holds two columns (lines nearest the staff, spaces outside), in staff spaces. */
+const LETTER_COLUMN_UNITS = 1.3;
+const LETTER_GAP_UNITS = 0.6;
+const LETTER_GUTTER_UNITS = LETTER_GAP_UNITS + LETTER_COLUMN_UNITS * 2;
+
 /**
  * Renders phrases via MusicXML → OpenSheetMusicDisplay (standard web engraving stack).
  * Note states are applied with GraphicalNote.setColor without a full re-render.
@@ -55,6 +65,8 @@ export class NotationView {
   private renderGeneration = 0;
   private ready = false;
   private colors = readThemeColors();
+  private staffLetters = false;
+  private readonly lettersLayer = document.createElement("div");
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -80,6 +92,8 @@ export class NotationView {
     rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 2.5);
     rules.PageTopMargin = Math.max(rules.PageTopMargin, 1.5);
     rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
+    this.lettersLayer.className = "staff-letters";
+    this.lettersLayer.setAttribute("aria-hidden", "true");
   }
 
   show(exercise: Exercise, options: NotationOptions): void {
@@ -95,6 +109,13 @@ export class NotationView {
     this.options = options;
     if (namesChanged) void this.reload();
     else this.applyColors();
+  }
+
+  /** Toggle note letters in the left and right margins of each staff. */
+  setStaffLetters(on: boolean): void {
+    if (on === this.staffLetters) return;
+    this.staffLetters = on;
+    this.draw();
   }
 
   setState(index: number, state: NoteState): void {
@@ -158,20 +179,71 @@ export class NotationView {
     if (!size || availW <= 0 || availH <= 0) {
       this.graphicalNotes = collectGraphicalNotes(this.osmd);
       this.applyColors();
+      this.drawStaffLetters();
       return;
     }
 
     // Short phrases fill the panel too aggressively; ease 1–3 bars down a bit.
     const bars = this.exercise?.bars.length ?? 4;
     const shortPhraseScale = bars <= 3 ? 0.8 : 1;
+    // Letter margins scale with the music, so they widen the width being fitted.
+    const gutterW = this.staffLetters ? LETTER_GUTTER_UNITS * 10 * 2 : 0;
     const zoom =
-      Math.min(MAX_ZOOM, availW / size.width, availH / size.height) * shortPhraseScale;
+      Math.min(MAX_ZOOM, availW / (size.width + gutterW), availH / size.height) * shortPhraseScale;
     this.osmd.Zoom = Math.max(zoom, 0.5);
     this.root.style.width = `${Math.min(size.width * this.osmd.Zoom, availW)}px`;
     this.osmd.render();
 
     this.graphicalNotes = collectGraphicalNotes(this.osmd);
     this.applyColors();
+    this.drawStaffLetters();
+  }
+
+  /** Lay letters beside every staff line and space, outside the clef and final barline. */
+  private drawStaffLetters(): void {
+    this.lettersLayer.replaceChildren();
+    if (!this.staffLetters || !this.exercise) {
+      this.lettersLayer.remove();
+      return;
+    }
+    const letters = STAFF_LETTERS[this.exercise.clef];
+    const unit = 10 * this.osmd.Zoom;
+    const column = LETTER_COLUMN_UNITS * unit;
+    const gap = LETTER_GAP_UNITS * unit;
+    const fontSize = `${0.9 * unit}px`;
+
+    for (const page of this.osmd.GraphicSheet.MusicPages) {
+      for (const system of page.MusicSystems) {
+        for (const staffLine of system.StaffLines) {
+          const measures = staffLine.Measures;
+          if (!measures.length) continue;
+          const first = measures[0].PositionAndShape;
+          const last = measures[measures.length - 1].PositionAndShape;
+          const left = staffLine.PositionAndShape.AbsolutePosition.x * unit;
+          const right = (last.AbsolutePosition.x + last.BorderRight) * unit;
+          // StaffLine's y is its top line; lines are one staff space apart.
+          const bottom = (first.AbsolutePosition.y + 4) * unit;
+
+          letters.forEach((letter, step) => {
+            const y = bottom - (step * unit) / 2;
+            const isLine = step % 2 === 0;
+            const inset = gap + (isLine ? 0 : column);
+            for (const side of ["left", "right"] as const) {
+              const label = document.createElement("span");
+              label.className = "staff-letter";
+              label.textContent = letter;
+              label.style.top = `${y}px`;
+              label.style.fontSize = fontSize;
+              label.style.width = `${column}px`;
+              label.style.textAlign = "center";
+              label.style.left = `${side === "left" ? left - inset - column : right + inset}px`;
+              this.lettersLayer.append(label);
+            }
+          });
+        }
+      }
+    }
+    this.root.append(this.lettersLayer);
   }
 
   private applyColors(): void {

@@ -491,6 +491,15 @@ body::before {
   display: none;
 }
 
+/* Divider + caption above a group of prefs (e.g. the debug toggles). */
+.prefs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--surface-edge);
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -741,8 +750,24 @@ body::before {
 
 /* OSMD mounts into #notation; sized to the music so the sheet can flex-center it. */
 #notation {
+  position: relative;
   flex: 0 0 auto;
   max-width: 100%;
+}
+
+/* Note-letter labels in the margins beside each staff; positioned by NotationView. */
+.staff-letters {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.staff-letter {
+  position: absolute;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1;
 }
 
 #notation > svg,

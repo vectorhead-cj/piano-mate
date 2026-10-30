@@ -60,6 +60,12 @@ describe("exerciseToMusicXml", () => {
     expect(xml).not.toContain("<alter>");
   });
 
+  it("writes a G clef for treble and an F clef for bass", () => {
+    expect(exerciseToMusicXml(sample)).toMatch(/<sign>G<\/sign>\s*<line>2<\/line>/);
+    const bass = exerciseToMusicXml({ ...sample, clef: "bass" });
+    expect(bass).toMatch(/<sign>F<\/sign>\s*<line>4<\/line>/);
+  });
+
   it("can emit note-name lyrics", () => {
     const xml = exerciseToMusicXml(
       {

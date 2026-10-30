@@ -68,13 +68,20 @@
                   <span>Light keys from MIDI</span>
                 </label>
                 <label class="toggle">
-                  <input type="checkbox" name="showPhraseXml" />
-                  <span>Show phrase MusicXML</span>
+                  <input type="checkbox" name="staffLetters" />
+                  <span>Letters beside the staff</span>
                 </label>
-                <label class="toggle">
-                  <input type="checkbox" name="showMidiDebug" />
-                  <span>Show MIDI debug</span>
-                </label>
+                <div class="prefs-section" role="group" aria-labelledby="debug-caption">
+                  <span class="field-caption" id="debug-caption">Debug</span>
+                  <label class="toggle">
+                    <input type="checkbox" name="showPhraseXml" />
+                    <span>Show phrase MusicXML</span>
+                  </label>
+                  <label class="toggle">
+                    <input type="checkbox" name="showMidiDebug" />
+                    <span>Show MIDI debug</span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -94,6 +101,10 @@
               </label>
             </div>
             <div class="control-group control-group-music" aria-label="Music">
+              <label class="field">
+                <span class="field-caption">Clef</span>
+                <select name="clef" aria-label="Clef"></select>
+              </label>
               <label class="field">
                 <span class="field-caption">Range</span>
                 <select name="range" aria-label="Note range"></select>

@@ -1,10 +1,15 @@
 import { accidentalsForBar, type AccidentalSymbol } from "./accidentals";
 import { keyById } from "./keys";
 import { noteName } from "./pitch";
-import type { Duration, Exercise, Note } from "./types";
+import type { Clef, Duration, Exercise, Note } from "./types";
 
 /** Divisions per quarter note so eighth notes are integer durations. */
 const DIVISIONS = 2;
+
+const CLEF_SIGNS: Record<Clef, { sign: string; line: number }> = {
+  treble: { sign: "G", line: 2 },
+  bass: { sign: "F", line: 4 },
+};
 
 const DURATION_XML: Record<Duration, { duration: number; type: string }> = {
   w: { duration: 4 * DIVISIONS, type: "whole" },
@@ -69,8 +74,8 @@ function measureXml(
           <beat-type>4</beat-type>
         </time>
         <clef>
-          <sign>G</sign>
-          <line>2</line>
+          <sign>${CLEF_SIGNS[exercise.clef].sign}</sign>
+          <line>${CLEF_SIGNS[exercise.clef].line}</line>
         </clef>
       </attributes>
 `

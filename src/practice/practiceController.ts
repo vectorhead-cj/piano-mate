@@ -240,6 +240,7 @@ export class PracticeController {
       changed === "key" ||
       changed === "accidentalFrequency" ||
       changed === "rhythm" ||
+      changed === "clef" ||
       changed === "range" ||
       changed === "mode" ||
       changed === "tempo"

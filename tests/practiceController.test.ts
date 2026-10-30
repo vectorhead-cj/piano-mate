@@ -211,6 +211,10 @@ describe("PracticeController (wait mode)", () => {
 
     controller.updateSettings({ ...named, mode: "rhythm", tempo: 80 }, "tempo");
     expect(notation.show).toHaveBeenCalledTimes(8);
+
+    controller.updateSettings({ ...named, clef: "bass", range: "bass-octave" }, "clef");
+    expect(notation.show).toHaveBeenCalledTimes(9);
+    expect(controller.exercise.clef).toBe("bass");
   });
 });
 

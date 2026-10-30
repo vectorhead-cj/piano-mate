@@ -16,7 +16,7 @@ export interface Note extends Spelling {
   duration: Duration;
 }
 
-export type Clef = "treble";
+export type Clef = "treble" | "bass";
 
 /** How often non-diatonic note accidentals (including naturals that cancel the key) appear. */
 export type AccidentalFrequency = "none" | "rare" | "medium" | "common";
