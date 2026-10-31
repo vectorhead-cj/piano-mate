@@ -1,6 +1,6 @@
 import { ACCIDENTAL_FREQUENCY_LABELS, KEYS } from "../music/keys";
 import { CLEF_LABELS, levelById, levelsForClef } from "../music/levels";
-import { RHYTHM_PROFILES } from "../music/rhythms";
+import { GENERATED_TIMES, RHYTHM_PROFILES, type GeneratedTime } from "../music/rhythms";
 import type { AccidentalFrequency, Clef, RhythmFlavor } from "../music/types";
 import {
   TEMPO_OPTIONS,
@@ -60,6 +60,16 @@ export function bindSettingsBar(
     }
   }
 
+  const timeSelect = select("time");
+  if (timeSelect.options.length === 0) {
+    for (const time of GENERATED_TIMES) {
+      const option = document.createElement("option");
+      option.value = time;
+      option.textContent = time;
+      timeSelect.append(option);
+    }
+  }
+
   const clefSelect = select("clef");
   if (clefSelect.options.length === 0) {
     for (const [value, label] of Object.entries(CLEF_LABELS)) {
@@ -99,6 +109,7 @@ export function bindSettingsBar(
     key: keySelect.value,
     accidentalFrequency: frequencySelect.value as AccidentalFrequency,
     rhythm: rhythmSelect.value as RhythmFlavor,
+    time: timeSelect.value as GeneratedTime,
     bars: Number(select("bars").value),
     clef: clefSelect.value as Clef,
     range: rangeSelect.value,
@@ -110,6 +121,7 @@ export function bindSettingsBar(
   keySelect.value = initial.key;
   frequencySelect.value = initial.accidentalFrequency;
   rhythmSelect.value = initial.rhythm;
+  timeSelect.value = initial.time;
   select("bars").value = String(initial.bars);
   clefSelect.value = levelById(initial.range).clef;
   fillRanges(clefSelect.value as Clef);

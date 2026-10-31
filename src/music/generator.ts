@@ -12,9 +12,10 @@ import { lesserLevel } from "./levels";
 import { midiOf, naturalFromStaffStep, staffStep } from "./pitch";
 import {
   BEATS,
-  BEATS_PER_BAR,
   cellsForBar,
+  DEFAULT_TIME,
   rhythmById,
+  type GeneratedTime,
   type RhythmCell,
   type RhythmProfile,
 } from "./rhythms";
@@ -34,6 +35,8 @@ export interface GeneratorOptions {
   key: string;
   accidentalFrequency: AccidentalFrequency;
   rhythm: RhythmFlavor;
+  /** Defaults to 4/4. */
+  time?: GeneratedTime;
 }
 
 export type Random = () => number;
@@ -74,7 +77,8 @@ export function generateExercise(
 ): Exercise {
   const key = keyById(options.key);
   const rhythm = rhythmById(options.rhythm);
-  const rhythms = generatePhraseRhythm(rhythm, options.bars, random);
+  const time = options.time ?? DEFAULT_TIME;
+  const rhythms = generatePhraseRhythm(rhythm, time, options.bars, random);
   const durations = rhythms.flat();
   const pitches = generatePitches(level, key, durations, options.accidentalFrequency, random);
 
@@ -83,17 +87,18 @@ export function generateExercise(
     barRhythm.map((duration) => ({ ...pitches[pitchIndex++], duration })),
   );
 
-  return { clef: level.clef, key: key.id, beatsPerBar: BEATS_PER_BAR, bars };
+  return { clef: level.clef, key: key.id, time, pickup: 0, bars };
 }
 
 function generatePhraseRhythm(
   profile: RhythmProfile,
+  time: GeneratedTime,
   bars: number,
   random: Random,
 ): Duration[][] {
   const minNotes = minNotesForBars(bars);
   const maxNotesByBar = Array.from({ length: bars }, (_, i) =>
-    maxNotesInBar(profile, i === bars - 1),
+    maxNotesInBar(profile, time, i === bars - 1),
   );
 
   for (let attempt = 0; attempt < 50; attempt++) {
@@ -104,10 +109,10 @@ function generatePhraseRhythm(
     for (let i = 0; i < bars; i++) {
       const isLast = i === bars - 1;
       const maxAfter = maxNotesByBar.slice(i + 1).reduce((sum, n) => sum + n, 0);
-      const pool = cellsForBar(profile, isLast).filter(
+      const pool = cellsForBar(profile, time, isLast).filter(
         (c) => notes + c.pattern.length + maxAfter >= minNotes,
       );
-      const cell = pickWeightedCell(pool.length > 0 ? pool : densestCells(profile, isLast), random);
+      const cell = pickWeightedCell(pool.length > 0 ? pool : densestCells(profile, time, isLast), random);
       phrase.push([...cell.pattern]);
       notes += cell.pattern.length;
       if (isLast && notes < minNotes) failed = true;
@@ -118,16 +123,16 @@ function generatePhraseRhythm(
 
   // Deterministic fallback: densest cell each bar (still cadential on the last).
   return Array.from({ length: bars }, (_, i) => [
-    ...pickWeightedCell(densestCells(profile, i === bars - 1), random).pattern,
+    ...pickWeightedCell(densestCells(profile, time, i === bars - 1), random).pattern,
   ]);
 }
 
-function maxNotesInBar(profile: RhythmProfile, isLastBar: boolean): number {
-  return Math.max(...cellsForBar(profile, isLastBar).map((c) => c.pattern.length));
+function maxNotesInBar(profile: RhythmProfile, time: GeneratedTime, isLastBar: boolean): number {
+  return Math.max(...cellsForBar(profile, time, isLastBar).map((c) => c.pattern.length));
 }
 
-function densestCells(profile: RhythmProfile, isLastBar: boolean): readonly RhythmCell[] {
-  const pool = cellsForBar(profile, isLastBar);
+function densestCells(profile: RhythmProfile, time: GeneratedTime, isLastBar: boolean): readonly RhythmCell[] {
+  const pool = cellsForBar(profile, time, isLastBar);
   const densest = Math.max(...pool.map((c) => c.pattern.length));
   return pool.filter((c) => c.pattern.length === densest);
 }

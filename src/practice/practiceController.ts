@@ -3,7 +3,6 @@ import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
 import { levelById } from "../music/levels";
 import { midiOf } from "../music/pitch";
-import { BEATS } from "../music/rhythms";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
@@ -143,6 +142,7 @@ export class PracticeController {
           key: this.settings.key,
           accidentalFrequency: this.settings.accidentalFrequency,
           rhythm: this.settings.rhythm,
+          time: this.settings.time,
         },
         this.deps.random,
       );
@@ -214,16 +214,14 @@ export class PracticeController {
       exactPitch,
     );
     this.publishLiveScore();
-    // Count-in is always one bar; align to countInAt when continuing from the previous phrase.
+    // Count-in is a bar (more before a pickup); align to countInAt when continuing from the previous phrase.
     const wallStart = countInAt ?? this.now();
     this.rhythmSession.arm(wallStart);
-    const phraseBeats = this.currentExercise.bars
-      .flat()
-      .reduce((sum, note) => sum + BEATS[note.duration], 0);
     this.metronome?.start(
       this.settings.tempo,
-      this.rhythmSession.countInBeats + phraseBeats,
+      this.rhythmSession.totalBeats,
       wallStart,
+      this.rhythmSession.beatsPerBar,
     );
     // No "current" highlight during count-in — tick will set it when the phrase begins.
     this.scheduleTick();
@@ -259,6 +257,7 @@ export class PracticeController {
       changed === "key" ||
       changed === "accidentalFrequency" ||
       changed === "rhythm" ||
+      changed === "time" ||
       changed === "clef" ||
       changed === "range" ||
       changed === "mode" ||
@@ -381,15 +380,12 @@ export class PracticeController {
     clearTimeout(this.tickTimer);
     this.tickTimer = undefined;
     // Leave the metronome running through the end of the bar; the next phrase's
-    // count-in starts exactly when this phrase's musical duration ends.
+    // count-in starts on the barline after this phrase's last note.
     this.publishLiveScore();
 
     const session = this.rhythmSession;
     if (session) this.reportPhrase("rhythm", session.results(), session.tempo);
-    const phraseEnd =
-      session?.phraseStart !== null && session?.phraseStart !== undefined
-        ? session.phraseStart + session.phraseMs
-        : this.now();
+    const phraseEnd = session?.endAt ?? this.now();
     const delay = Math.max(0, phraseEnd - this.now());
     clearTimeout(this.nextExerciseTimer);
     this.nextExerciseTimer = setTimeout(() => {

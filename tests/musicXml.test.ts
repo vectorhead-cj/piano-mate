@@ -5,7 +5,8 @@ import type { Exercise } from "../src/music/types";
 const sample: Exercise = {
   clef: "treble",
   key: "G",
-  beatsPerBar: 4,
+  time: "4/4",
+  pickup: 0,
   bars: [
     [
       { letter: "G", alter: 0, octave: 4, duration: "q" },
@@ -48,7 +49,8 @@ describe("exerciseToMusicXml", () => {
     const xml = exerciseToMusicXml({
       clef: "treble",
       key: "C",
-      beatsPerBar: 4,
+      time: "4/4",
+      pickup: 0,
       bars: [
         [
           { letter: "C", alter: 0, octave: 4, duration: "w" },
@@ -71,7 +73,8 @@ describe("exerciseToMusicXml", () => {
       {
         clef: "treble",
         key: "C",
-        beatsPerBar: 4,
+        time: "4/4",
+        pickup: 0,
         bars: [[{ letter: "C", alter: 1, octave: 4, duration: "q" }]],
       },
       { noteNames: true },
@@ -84,7 +87,8 @@ describe("exerciseToMusicXml", () => {
     const xml = exerciseToMusicXml({
       clef: "treble",
       key: "C",
-      beatsPerBar: 4,
+      time: "4/4",
+      pickup: 0,
       bars: [
         [
           { letter: "C", alter: 1, octave: 4, duration: "q" },
@@ -97,5 +101,35 @@ describe("exerciseToMusicXml", () => {
     expect(xml).toContain("<accidental>natural</accidental>");
     // Second C♯ in the bar inherits the accidental — not re-printed.
     expect(xml.match(/<accidental>sharp<\/accidental>/g)).toHaveLength(1);
+  });
+
+  it("writes dotted notes, the time signature and a pickup bar numbered 0", () => {
+    const xml = exerciseToMusicXml({
+      clef: "treble",
+      key: "C",
+      time: "3/4",
+      pickup: 1,
+      bars: [
+        [{ letter: "G", alter: 0, octave: 4, duration: "q" }],
+        [
+          { letter: "C", alter: 0, octave: 5, duration: "q." },
+          { letter: "B", alter: 0, octave: 4, duration: "8" },
+          { letter: "A", alter: 0, octave: 4, duration: "q" },
+        ],
+        [{ letter: "G", alter: 0, octave: 4, duration: "h." }],
+      ],
+    });
+    expect(xml).toContain("<beats>3</beats>");
+    expect(xml).toContain('<measure number="0" implicit="yes">');
+    expect(xml).toContain('<measure number="1">');
+    expect(xml).toContain('<measure number="2">');
+    expect(xml).toMatch(/<duration>3<\/duration>\s*<type>quarter<\/type>\s*<dot\/>/);
+    expect(xml).toMatch(/<duration>6<\/duration>\s*<type>half<\/type>\s*<dot\/>/);
+  });
+
+  it("prints 2/2 as two half-note beats", () => {
+    const xml = exerciseToMusicXml({ ...sample, time: "2/2" });
+    expect(xml).toContain("<beats>2</beats>");
+    expect(xml).toContain("<beat-type>2</beat-type>");
   });
 });

@@ -4,7 +4,7 @@ import { generateExercise, minNotesForBars } from "../src/music/generator";
 import { keyAlter, keyById, KEYS } from "../src/music/keys";
 import { LEVEL_1, LEVELS, lesserLevel, levelsForClef } from "../src/music/levels";
 import { midiOf, staffStep } from "../src/music/pitch";
-import { BEATS, BEATS_PER_BAR, RHYTHM_PROFILES } from "../src/music/rhythms";
+import { barBeats, BEATS, GENERATED_TIMES, RHYTHM_PROFILES } from "../src/music/rhythms";
 import type { Note, RhythmFlavor } from "../src/music/types";
 import { seeded } from "./helpers";
 
@@ -25,17 +25,26 @@ const opts = (
 });
 
 describe("rhythm cells", () => {
-  it("defines cells that fill exactly one bar", () => {
+  it("defines cells that fill exactly one bar in each time signature", () => {
     for (const profile of RHYTHM_PROFILES) {
-      expect(profile.cells.length).toBeGreaterThan(0);
-      for (const cell of profile.cells) {
-        const beats = cell.pattern.reduce((sum, d) => sum + BEATS[d], 0);
-        expect(beats).toBe(BEATS_PER_BAR);
-        for (const duration of cell.pattern) {
-          expect(profile.durations).toContain(duration);
+      for (const time of GENERATED_TIMES) {
+        expect(profile.cells[time].length).toBeGreaterThan(0);
+        for (const cell of profile.cells[time]) {
+          const beats = cell.pattern.reduce((sum, d) => sum + BEATS[d], 0);
+          expect(beats).toBe(barBeats(time));
+          for (const duration of cell.pattern) {
+            expect(profile.durations).toContain(duration);
+          }
         }
       }
     }
+  });
+
+  it("keeps dotted quarters and eighths out of basic", () => {
+    const basic = RHYTHM_PROFILES.find((p) => p.id === "basic")!;
+    expect(basic.durations).not.toContain("q.");
+    expect(basic.durations).not.toContain("8");
+    expect(basic.durations).toContain("h.");
   });
 });
 
@@ -57,6 +66,27 @@ describe("generateExercise", () => {
         }
       }
     }
+  });
+
+  it("fills every 3/4 bar exactly and marks the phrase as 3/4", () => {
+    for (const profile of RHYTHM_PROFILES) {
+      for (const seed of SEEDS) {
+        const exercise = generateExercise(LEVEL_1, { ...opts({ rhythm: profile.id }), time: "3/4" }, seeded(seed));
+        expect(exercise.time).toBe("3/4");
+        expect(exercise.pickup).toBe(0);
+        for (const bar of exercise.bars) {
+          expect(bar.reduce((sum, n) => sum + BEATS[n.duration], 0)).toBe(3);
+        }
+      }
+    }
+  });
+
+  it("uses dotted quarters only from eighths up", () => {
+    const notes = (rhythm: RhythmFlavor) =>
+      SEEDS.flatMap((seed) => generateExercise(LEVEL_1, opts({ rhythm }), seeded(seed)).bars.flat());
+    expect(notes("basic").some((n) => n.duration === "q.")).toBe(false);
+    expect(notes("eighths").some((n) => n.duration === "q.")).toBe(true);
+    expect(notes("basic").some((n) => n.duration === "h.")).toBe(true);
   });
 
   it("uses at least n*2+1 notes in an n-bar phrase", () => {
@@ -87,9 +117,9 @@ describe("generateExercise", () => {
     }
   });
 
-  it("ends the last bar on a half or whole note when the flavor allows it", () => {
+  it("ends the last bar on a half note or longer when the flavor allows it", () => {
     for (const profile of RHYTHM_PROFILES) {
-      const canEndLong = profile.durations.some((d) => d === "h" || d === "w");
+      const canEndLong = profile.durations.some((d) => BEATS[d] >= 2);
       if (!canEndLong) continue;
       for (const seed of SEEDS) {
         const last = generateExercise(
@@ -97,7 +127,7 @@ describe("generateExercise", () => {
           opts({ rhythm: profile.id }),
           seeded(seed),
         ).bars.at(-1)!;
-        expect(["h", "w"]).toContain(last.at(-1)!.duration);
+        expect(BEATS[last.at(-1)!.duration]).toBeGreaterThanOrEqual(2);
       }
     }
   });

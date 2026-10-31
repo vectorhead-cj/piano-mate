@@ -1,9 +1,10 @@
 import { accidentalsForBar, type AccidentalSymbol } from "./accidentals";
 import { keyById, type KeyInfo } from "./keys";
 import { noteName } from "./pitch";
+import { timeParts } from "./rhythms";
 import type { Clef, Duration, Exercise, Note } from "./types";
 
-/** Divisions per quarter note so eighth notes are integer durations. */
+/** Divisions per quarter note so eighths and dotted quarters are integer durations. */
 const DIVISIONS = 2;
 
 const CLEF_SIGNS: Record<Clef, { sign: string; line: number }> = {
@@ -11,9 +12,11 @@ const CLEF_SIGNS: Record<Clef, { sign: string; line: number }> = {
   bass: { sign: "F", line: 4 },
 };
 
-const DURATION_XML: Record<Duration, { duration: number; type: string }> = {
+const DURATION_XML: Record<Duration, { duration: number; type: string; dotted?: boolean }> = {
   w: { duration: 4 * DIVISIONS, type: "whole" },
+  "h.": { duration: 3 * DIVISIONS, type: "half", dotted: true },
   h: { duration: 2 * DIVISIONS, type: "half" },
+  "q.": { duration: 1.5 * DIVISIONS, type: "quarter", dotted: true },
   q: { duration: 1 * DIVISIONS, type: "quarter" },
   "8": { duration: DIVISIONS / 2, type: "eighth" },
 };
@@ -62,6 +65,7 @@ function measureXml(
   options: MusicXmlOptions,
   accidentals: readonly (AccidentalSymbol | null)[],
 ): string {
+  const { beats, beatType } = timeParts(exercise.time);
   const attributes =
     number === 1
       ? `      <attributes>
@@ -71,8 +75,8 @@ function measureXml(
           <mode>${key.mode}</mode>
         </key>
         <time>
-          <beats>${exercise.beatsPerBar}</beats>
-          <beat-type>4</beat-type>
+          <beats>${beats}</beats>
+          <beat-type>${beatType}</beat-type>
         </time>
         <clef>
           <sign>${CLEF_SIGNS[exercise.clef].sign}</sign>
@@ -85,7 +89,11 @@ function measureXml(
   const notes = bar
     .map((note, i) => noteXml(note, options, accidentals[i]))
     .join("\n");
-  return `    <measure number="${number}">
+  // A pickup bar is numbered 0 and marked as incomplete, as engravers do.
+  const pickup = exercise.pickup > 0;
+  const label = pickup ? number - 1 : number;
+  const implicit = pickup && number === 1 ? ` implicit="yes"` : "";
+  return `    <measure number="${label}"${implicit}>
 ${attributes}${notes}
     </measure>`;
 }
@@ -95,7 +103,7 @@ function noteXml(
   options: MusicXmlOptions,
   accidental: AccidentalSymbol | null,
 ): string {
-  const { duration, type } = DURATION_XML[note.duration];
+  const { duration, type, dotted } = DURATION_XML[note.duration];
   const alter =
     note.alter !== 0 ? `\n          <alter>${note.alter}</alter>` : "";
   // OSMD draws printed accidentals from <accidental>, not from <alter> alone.
@@ -115,7 +123,7 @@ function noteXml(
           <octave>${note.octave}</octave>
         </pitch>
         <duration>${duration}</duration>
-        <type>${type}</type>${accidentalXml}${lyric}
+        <type>${type}</type>${dotted ? "\n        <dot/>" : ""}${accidentalXml}${lyric}
       </note>`;
 }
 

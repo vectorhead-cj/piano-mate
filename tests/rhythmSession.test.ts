@@ -6,7 +6,8 @@ import type { Exercise } from "../src/music/types";
 const exercise: Exercise = {
   clef: "treble",
   key: "C",
-  beatsPerBar: 4,
+  time: "4/4",
+  pickup: 0,
   bars: [
     [
       { letter: "C", alter: 0, octave: 4, duration: "q" },
@@ -83,5 +84,41 @@ describe("RhythmSession", () => {
     const { result } = session.play(64, COUNT_IN + 2000);
     expect(result).toMatchObject({ kind: "correct", index: 2, completed: true });
     expect(session.score()).toEqual({ notesCorrect: 3, rhythmOnTime: 3, total: 3 });
+  });
+
+  it("counts in a bar plus the beats before a pickup, and runs to the barline after the last note", () => {
+    const pickup: Exercise = {
+      clef: "treble",
+      key: "C",
+      time: "3/4",
+      pickup: 1,
+      bars: [
+        [{ letter: "G", alter: 0, octave: 4, duration: "q" }],
+        [
+          { letter: "C", alter: 0, octave: 5, duration: "q." },
+          { letter: "B", alter: 0, octave: 4, duration: "8" },
+          { letter: "A", alter: 0, octave: 4, duration: "q" },
+        ],
+        // Ends on beat 2: the phrase stops mid-bar.
+        [{ letter: "G", alter: 0, octave: 4, duration: "h" }],
+      ],
+    };
+    const session = new RhythmSession(pickup, TEMPO, exactPitch);
+    session.arm(0);
+    expect(session.beatsPerBar).toBe(3);
+    // One 3/4 bar, then beats 1 and 2 of the pickup's bar.
+    expect(session.countInMs).toBe(5000);
+    expect(session.play(67, 5000).result).toMatchObject({ kind: "correct", timing: "on-time" });
+    expect(session.play(72, 6000).result).toMatchObject({ kind: "correct", timing: "on-time" });
+    expect(session.play(71, 7500).result).toMatchObject({ kind: "correct", timing: "on-time" });
+    // 5 count-in beats + 6 phrase beats = 11, rounded up to 12 (four 3/4 bars).
+    expect(session.totalBeats).toBe(12);
+    expect(session.endAt).toBe(12000);
+  });
+
+  it("counts in one bar of a 4/4 phrase without a pickup", () => {
+    const session = sessionAt(0);
+    expect(session.countInMs).toBe(COUNT_IN);
+    expect(session.totalBeats).toBe(8);
   });
 });

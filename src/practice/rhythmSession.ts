@@ -1,5 +1,5 @@
 import { midiOf } from "../music/pitch";
-import { BEATS_PER_BAR } from "../music/rhythms";
+import { barBeats, BEATS } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
 import type { PitchMatcher } from "./matcher";
 import type { NoteResult } from "./waitSession";
@@ -7,7 +7,6 @@ import {
   acceptWindowMs,
   beatMs,
   expectedOnsets,
-  phraseDurationMs,
   timingGrade,
   type TimingGrade,
 } from "./timing";
@@ -34,14 +33,20 @@ export interface RhythmTickResult {
 /**
  * Live-clock rhythm grading. Absolute times are performance.now()-style ms.
  * Call `arm(startAt)` so phrase start (first note) is at startAt + countInMs.
+ *
+ * The count-in is one full bar, plus the beats of the next bar before a pickup,
+ * so a pickup lands where it sits in its bar and startAt is always a barline.
  */
 export class RhythmSession {
   readonly notes: Note[];
   readonly onsets: number[];
   readonly tempo: number;
-  readonly countInBeats = BEATS_PER_BAR;
+  /** Quarter beats in a full bar: metronome clicks per bar. */
+  readonly beatsPerBar: number;
+  readonly countInBeats: number;
   readonly countInMs: number;
-  readonly phraseMs: number;
+  /** Quarter beats from the start of the count-in to the barline after the last note. */
+  readonly totalBeats: number;
 
   private index = 0;
   private phraseStartAt: number | null = null;
@@ -58,12 +63,21 @@ export class RhythmSession {
     this.notes = exercise.bars.flat();
     this.tempo = tempo;
     this.onsets = expectedOnsets(this.notes, tempo);
+    this.beatsPerBar = barBeats(exercise.time);
+    this.countInBeats = exercise.pickup > 0 ? 2 * this.beatsPerBar - exercise.pickup : this.beatsPerBar;
     this.countInMs = this.countInBeats * beatMs(tempo);
-    this.phraseMs = phraseDurationMs(this.notes, tempo);
+    const phraseBeats = this.notes.reduce((sum, note) => sum + BEATS[note.duration], 0);
+    // A phrase ending mid-bar still runs to the barline, so the next count-in starts on one.
+    this.totalBeats = Math.ceil((this.countInBeats + phraseBeats) / this.beatsPerBar) * this.beatsPerBar;
     this.pitchOk = this.notes.map(() => false);
     this.timingOk = this.notes.map(() => false);
     this.wrongs = this.notes.map(() => 0);
     this.offsets = this.notes.map(() => undefined);
+  }
+
+  /** Wall-clock time of the barline after the last note; undefined until armed. */
+  get endAt(): number | undefined {
+    return this.phraseStartAt === null ? undefined : this.phraseStartAt - this.countInMs + this.totalBeats * beatMs(this.tempo);
   }
 
   /** Wall-clock time when the first note is expected. */

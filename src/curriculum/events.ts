@@ -1,5 +1,5 @@
 import { onTimeWindowMs } from "../practice/timing";
-import type { AccidentalFrequency, Alter, Clef, Duration, Letter, RhythmFlavor, Spelling } from "../music/types";
+import type { AccidentalFrequency, Alter, Clef, Duration, Letter, RhythmFlavor, Spelling, TimeSignature } from "../music/types";
 import type { Tier } from "./curriculum";
 
 /**
@@ -52,6 +52,8 @@ export interface PhraseCompleted {
     accidentals: AccidentalFrequency;
     rhythm: RhythmFlavor;
     bars: number;
+    /** Left out by events recorded before phrases had other time signatures (all 4/4). */
+    time?: TimeSignature;
   };
   /** Notes per bar, so a note index maps back to its bar. */
   barSizes: number[];

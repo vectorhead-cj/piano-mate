@@ -9,8 +9,11 @@ export interface Spelling {
   octave: number;
 }
 
-/** VexFlow duration codes: whole, half, quarter, eighth. */
-export type Duration = "w" | "h" | "q" | "8";
+/** Note values: whole, dotted half, half, dotted quarter, quarter, eighth. */
+export type Duration = "w" | "h." | "h" | "q." | "q" | "8";
+
+/** 2/2 bars hold the same notes as 4/4; only the printed signature differs. */
+export type TimeSignature = "4/4" | "3/4" | "2/2";
 
 export interface Note extends Spelling {
   duration: Duration;
@@ -28,7 +31,13 @@ export interface Exercise {
   clef: Clef;
   /** VexFlow major-key spec for the staff key signature. */
   key: string;
-  beatsPerBar: number;
+  time: TimeSignature;
+  /**
+   * Quarter beats in an opening pickup bar, or 0 when the phrase starts on beat 1.
+   * The first bar then holds only the pickup; every later bar is full except
+   * possibly the last, where a phrase may end mid-bar.
+   */
+  pickup: number;
   bars: Note[][];
 }
 

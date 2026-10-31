@@ -259,6 +259,7 @@ async function main(): Promise<void> {
         accidentals: settings.accidentalFrequency,
         rhythm: settings.rhythm,
         bars: settings.bars,
+        time: exercise.time,
       },
       barSizes: exercise.bars.map((bar) => bar.length),
       notes: notes.map((note, i) => ({

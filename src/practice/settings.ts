@@ -1,6 +1,6 @@
 import { DEFAULT_KEY_ID } from "../music/keys";
 import { DEFAULT_CLEF, DEFAULT_LEVEL_ID } from "../music/levels";
-import { DEFAULT_RHYTHM_FLAVOR } from "../music/rhythms";
+import { DEFAULT_RHYTHM_FLAVOR, DEFAULT_TIME, type GeneratedTime } from "../music/rhythms";
 import type { AccidentalFrequency, Clef, RhythmFlavor } from "../music/types";
 
 export type PracticeMode = "wait" | "rhythm";
@@ -12,6 +12,7 @@ export interface Settings {
   key: string;
   accidentalFrequency: AccidentalFrequency;
   rhythm: RhythmFlavor;
+  time: GeneratedTime;
   bars: number;
   clef: Clef;
   /** Id of a Level from LEVELS (note range); always one of `clef`'s levels. */
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   key: DEFAULT_KEY_ID,
   accidentalFrequency: "none",
   rhythm: DEFAULT_RHYTHM_FLAVOR,
+  time: DEFAULT_TIME,
   bars: 2,
   clef: DEFAULT_CLEF,
   range: DEFAULT_LEVEL_ID,

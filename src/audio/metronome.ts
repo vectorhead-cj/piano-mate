@@ -13,13 +13,14 @@ export class Metronome {
 
   constructor(private readonly sound: ClickSound) {}
 
-  start(tempo: number, totalBeats: number, wallStart: number = performance.now()): void {
+  /** Clicks totalBeats quarter beats from wallStart, which must be a barline; each bar's first is accented. */
+  start(tempo: number, totalBeats: number, wallStart: number = performance.now(), beatsPerBar = 4): void {
     this.stop();
     const ms = beatMs(tempo);
     for (let beat = 0; beat < totalBeats; beat++) {
       const at = wallStart + beat * ms;
       const handle = setTimeout(() => {
-        this.sound.click(beat % 4 === 0);
+        this.sound.click(beat % beatsPerBar === 0);
       }, Math.max(0, at - performance.now()));
       this.pending.push(handle);
     }
