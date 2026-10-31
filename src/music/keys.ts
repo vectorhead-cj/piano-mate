@@ -74,6 +74,16 @@ export function keyById(id: string): KeyInfo {
   return found;
 }
 
+/** The letters a key signature sharpens or flattens, in the order they're written. */
+export function signatureLetters(key: KeyInfo): Letter[] {
+  return key.signature > 0 ? SHARP_ORDER.slice(0, key.signature) : FLAT_ORDER.slice(0, -key.signature);
+}
+
+/** The major key sharing a minor key's signature (itself for a major key). */
+export function relativeMajor(key: KeyInfo): KeyInfo {
+  return KEYS.find((k) => k.signature === key.signature)!;
+}
+
 export function keyAlter(key: KeyInfo, letter: Letter): Alter {
   return key.alters[letter];
 }

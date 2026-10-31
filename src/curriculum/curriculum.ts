@@ -208,6 +208,24 @@ export function placedStage(stageId: string): PlacedStage | undefined {
   return PLACED_STAGES.find((p) => p.stage.id === stageId);
 }
 
+/** Keys a stage is the first to use, in its own order; each gets its scale in the stage's intro. */
+export function stageNewKeys(stage: Stage): string[] {
+  const order = placedStage(stage.id)?.order ?? 0;
+  const earlier = new Set(PLACED_STAGES.slice(0, order).flatMap((p) => p.stage.keys));
+  return stage.keys.filter((k) => !earlier.has(k));
+}
+
+/** Whether a stage has an intro to watch first: new notation or new keys. */
+export function hasIntro(stage: Stage): boolean {
+  return stage.introduces.length > 0 || stageNewKeys(stage).length > 0;
+}
+
+/** "B♭ major", "F♯ minor" */
+export function keyFullName(keyId: string): string {
+  const key = keyById(keyId);
+  return `${keyName(key.mode === "minor" ? keyId.slice(0, -1) : keyId)} ${key.mode}`;
+}
+
 /** Notation a stage's phrases may use: everything introduced up to and including it. */
 export function stageNotations(stage: Stage): Set<Notation> {
   const order = placedStage(stage.id)?.order ?? PLACED_STAGES.length;

@@ -2,6 +2,7 @@ import type { Clef } from "../music/types";
 import {
   CLEF_TRACKS,
   COMPLETE_STREAK,
+  hasIntro,
   PLACED_STAGES,
   STAR_STREAK,
   TIERS,
@@ -27,7 +28,10 @@ export interface StageProgress {
    * watched: the previous stage has ★★, or this is the first stage.
    */
   introOpen: boolean;
-  /** Its intro has been watched or skipped, in either track; false when it has none. */
+  /**
+   * Its intro has been watched or skipped, in either track, or the stage has been practised
+   * in this one; false when it has none.
+   */
   introDone: boolean;
   /** The stage can be practised: the previous stage has ★★ and its intro, if any, is done. */
   unlocked: boolean;
@@ -105,10 +109,12 @@ function trackProgress(
 
   for (const { stage } of PLACED_STAGES) {
     const tiers = tiersFor(clef, stage.id);
-    const hasIntro = stage.introduces.length > 0;
-    const introOpen = hasIntro && previousPassed;
-    const introDone = hasIntro && seen.has(stage.id);
-    const unlocked: boolean = previousPassed && (!hasIntro || introDone);
+    const intro = hasIntro(stage);
+    const introOpen = intro && previousPassed;
+    // Practising a stage counts as knowing its intro, so stages played before it existed stay open.
+    const practised = TIERS.some((t) => tiers[t].attempts > 0);
+    const introDone = intro && (seen.has(stage.id) || practised);
+    const unlocked: boolean = previousPassed && (!intro || introDone);
     let stars = 0;
     for (const tier of TIERS) {
       if (tiers[tier].best < STAR_STREAK) break;

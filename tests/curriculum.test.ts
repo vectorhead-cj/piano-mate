@@ -132,6 +132,12 @@ describe("projectProgress", () => {
     expect(progress.bass.stages[first].unlocked).toBe(true);
   });
 
+  it("keeps a stage open that was practised before it had an intro", () => {
+    const progress = projectProgress([phrase(first, "read", true)]);
+    expect(progress.treble.stages[first]).toMatchObject({ introDone: true, unlocked: true });
+    expect(progress.bass.stages[first].unlocked).toBe(false);
+  });
+
   it("earns ★ for a streak of perfect phrases and resets on a miss", () => {
     const almost = [...repeat(STAR_STREAK - 1, () => phrase(first, "read", true)), phrase(first, "read", false)];
     expect(projectProgress(almost).treble.stages[first].stars).toBe(0);

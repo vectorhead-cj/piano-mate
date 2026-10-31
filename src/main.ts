@@ -24,7 +24,7 @@ import {
   type PhraseCompleted,
   type PracticeContext,
 } from "./curriculum/events";
-import { INTRO_TEMPO, introSteps, type IntroStep } from "./curriculum/intros";
+import { INTRO_TEMPO, introMidiRange, introSteps, type IntroStep } from "./curriculum/intros";
 import { milestoneBetween } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
@@ -420,7 +420,7 @@ async function main(): Promise<void> {
       rhythm: stage.rhythm,
       bars: stage.bars,
     };
-    keyboardSpan = stageMidiRange(corpus, clef, stage);
+    keyboardSpan = introMidiRange(steps, stageMidiRange(corpus, clef, stage));
     practice.exerciseSource = () => (intro ? intro.steps[intro.index].exercise : null);
     practice.pauseAfterPass = true;
     showView({ name: "practice" });

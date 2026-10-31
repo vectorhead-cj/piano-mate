@@ -7,8 +7,11 @@ import {
   TIER_LABELS,
   TIERS,
   TRACK_LABELS,
+  hasIntro,
+  keyFullName,
   placedStage,
   stageFacts,
+  stageNewKeys,
   stageTitle,
   tierTempo,
   type Tier,
@@ -162,7 +165,7 @@ export function renderTrack(
         h("span", { class: "stage-status" }, status.text),
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
-      const intro = p.stage.introduces.length > 0 ? [introRow(p.stage.id, p.number, stageProgress, actions)] : [];
+      const intro = hasIntro(p.stage) ? [introRow(p.stage.id, p.number, stageProgress, actions)] : [];
       return selected && stageProgress.unlocked ? [...intro, row, stageDetail(p.stage.id, stageProgress, actions)] : [...intro, row];
     });
     return h(
@@ -185,10 +188,19 @@ export function renderTrack(
   root.querySelector('[aria-expanded="true"]')?.scrollIntoView({ block: "nearest" });
 }
 
-/** "Quarter notes, half notes and whole notes" */
+function listText(items: readonly string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items[0];
+}
+
+/** "Quarter notes, half notes, whole notes and the C major scale" */
 export function introTitle(stageId: string): string {
-  const names = placedStage(stageId)!.stage.introduces.map((n, i) => (i === 0 ? NOTATION_LABELS[n] : NOTATION_LABELS[n].replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())));
-  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  const { stage } = placedStage(stageId)!;
+  // Lower-case notation names after the first, but not "3/4 time" or "Cut time (2/2)"'s capitals mid-name.
+  const notations = stage.introduces.map((n) => NOTATION_LABELS[n].replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()));
+  const keys = stageNewKeys(stage).map(keyFullName);
+  const scales = keys.length > 0 ? [`the ${listText(keys)} scale${keys.length > 1 ? "s" : ""}`] : [];
+  const title = listText([...notations, ...scales]);
+  return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
 /** The intro before a stage with new notation; the stage opens once it's done, and it can be replayed. */
