@@ -18,6 +18,8 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
   const keyboard = { setPressed: vi.fn(), flash: vi.fn() };
   const sound = { play: vi.fn(), click: vi.fn() };
   const score = { show: vi.fn(), setIncludeRhythm: vi.fn() };
+  const onPhraseComplete = vi.fn();
+  const onHotChange = vi.fn();
   const controller = new PracticeController({
     stream,
     notation,
@@ -26,6 +28,8 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
     settings,
     score,
     random: seeded(42),
+    onPhraseComplete,
+    onHotChange,
   });
 
   const expectedPitches = () => controller.exercise.bars.flat().map(midiOf);
@@ -36,7 +40,7 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
     vi.advanceTimersByTime(0);
   };
 
-  return { controller, notation, keyboard, sound, score, expectedPitches, press, stream };
+  return { controller, notation, keyboard, sound, score, expectedPitches, press, stream, onPhraseComplete, onHotChange };
 }
 
 describe("PracticeController (wait mode)", () => {
@@ -100,28 +104,52 @@ describe("PracticeController (wait mode)", () => {
     expect(keyboard.flash).toHaveBeenLastCalledWith(second, "hint");
   });
 
-  it("retries a failed phrase on a clean sheet after the score delay", () => {
-    const { controller, notation, score, expectedPitches, press } = setup();
+  it("goes cold after a failed phrase, keeping its marks until going hot retries it clean", () => {
+    const { controller, notation, keyboard, score, sound, expectedPitches, press } = setup();
     const firstExercise = controller.exercise;
     const pitches = expectedPitches();
+    expect(controller.isHot).toBe(true);
 
     press(pitches[0] + 1);
     pitches.forEach(press);
     expect(score.show).toHaveBeenLastCalledWith(pitches.length - 1, pitches.length, undefined);
     expect(score.setIncludeRhythm).toHaveBeenCalledWith(false);
     expect(notation.setState).not.toHaveBeenCalledWith(0, "correct");
+    expect(controller.isHot).toBe(false);
 
+    // Free play: heard, never graded, and nothing moves on by itself.
     notation.setState.mockClear();
     notation.flashWrong.mockClear();
-    press(60);
+    keyboard.flash.mockClear();
+    sound.play.mockClear();
+    press(pitches[0] + 1);
+    press(pitches[0]);
+    vi.advanceTimersByTime(60_000);
+    expect(sound.play).toHaveBeenCalledTimes(2);
     expect(notation.setState).not.toHaveBeenCalled();
     expect(notation.flashWrong).not.toHaveBeenCalled();
+    expect(keyboard.flash).not.toHaveBeenCalled();
+    expect(notation.show).toHaveBeenCalledTimes(1);
 
-    vi.advanceTimersByTime(PHRASE_SCORE_DELAY_MS);
+    controller.goHot();
+    expect(controller.isHot).toBe(true);
     expect(controller.exercise).toBe(firstExercise);
     expect(notation.show).toHaveBeenCalledTimes(2);
     expect(notation.setState).toHaveBeenLastCalledWith(0, "current");
     expect(score.show).toHaveBeenLastCalledWith(0, pitches.length, undefined);
+  });
+
+  it("counts going cold mid-phrase as a failure, but not before the first note", () => {
+    const { controller, onPhraseComplete, expectedPitches, press } = setup();
+    controller.goCold();
+    expect(onPhraseComplete).not.toHaveBeenCalled();
+
+    controller.goHot();
+    press(expectedPitches()[0]);
+    controller.goCold();
+    expect(onPhraseComplete).toHaveBeenCalledTimes(1);
+    expect(onPhraseComplete.mock.calls[0][0]).toMatchObject({ passed: false, abandoned: true, next: "retry" });
+    expect(controller.retry.failures).toBe(1);
   });
 
   it("moves on after one clean pass", () => {
@@ -133,21 +161,65 @@ describe("PracticeController (wait mode)", () => {
     expect(controller.exercise).not.toBe(firstExercise);
   });
 
-  it("restarts the phrase from the bottom key of a MIDI keyboard without grading it", () => {
-    const { controller, notation, sound, stream, expectedPitches, press } = setup();
+  it("toggles hot and cold from the bottom key of a MIDI keyboard without grading it", () => {
+    const { controller, notation, sound, stream, onHotChange } = setup();
     const first = controller.exercise;
-    press(expectedPitches()[0]);
     notation.show.mockClear();
-    notation.flashWrong.mockClear();
+    const retryKey = () => {
+      stream.emit({ kind: "on", pitch: RETRY_PITCH, time: 0, source: "midi" });
+      stream.emit({ kind: "off", pitch: RETRY_PITCH, time: 0, source: "midi" });
+      vi.advanceTimersByTime(0);
+    };
 
-    stream.emit({ kind: "on", pitch: RETRY_PITCH, time: 0, source: "midi" });
-    stream.emit({ kind: "off", pitch: RETRY_PITCH, time: 0, source: "midi" });
-    vi.advanceTimersByTime(0);
-
+    retryKey();
+    expect(controller.isHot).toBe(false);
+    expect(onHotChange).toHaveBeenLastCalledWith(false);
+    retryKey();
+    expect(controller.isHot).toBe(true);
     expect(controller.exercise).toBe(first);
     expect(notation.show).toHaveBeenCalledTimes(1);
     expect(notation.flashWrong).not.toHaveBeenCalled();
-    expect(sound.play).toHaveBeenCalledTimes(1);
+    expect(sound.play).not.toHaveBeenCalled();
+  });
+
+  it("captures the next MIDI key for a new retry key without playing it", () => {
+    const { controller, notation, sound, stream, expectedPitches, press } = setup();
+    const midi = (pitch: number) => {
+      stream.emit({ kind: "on", pitch, time: 0, source: "midi" });
+      stream.emit({ kind: "off", pitch, time: 0, source: "midi" });
+      vi.advanceTimersByTime(0);
+    };
+    const onKey = vi.fn();
+    controller.captureMidiKey(onKey);
+
+    // Screen keys play as usual while waiting.
+    press(expectedPitches()[0]);
+    expect(onKey).not.toHaveBeenCalled();
+    sound.play.mockClear();
+    notation.flashWrong.mockClear();
+
+    midi(108);
+    expect(onKey).toHaveBeenCalledExactlyOnceWith(108);
+    expect(sound.play).not.toHaveBeenCalled();
+    expect(notation.flashWrong).not.toHaveBeenCalled();
+
+    controller.retryPitch = 108;
+    midi(RETRY_PITCH);
+    expect(controller.isHot).toBe(true);
+    expect(sound.play).toHaveBeenCalledWith(RETRY_PITCH, undefined);
+    midi(108);
+    expect(controller.isHot).toBe(false);
+  });
+
+  it("stops waiting for a retry key when cancelled", () => {
+    const { controller, sound, stream } = setup();
+    const onKey = vi.fn();
+    const cancel = controller.captureMidiKey(onKey);
+    cancel();
+    stream.emit({ kind: "on", pitch: 72, time: 0, source: "midi" });
+    vi.advanceTimersByTime(0);
+    expect(onKey).not.toHaveBeenCalled();
+    expect(sound.play).toHaveBeenCalledWith(72, undefined);
   });
 
   it("tracks pressed keys from on/off events without grading releases", () => {
@@ -160,14 +232,15 @@ describe("PracticeController (wait mode)", () => {
     expect(notation.flashWrong).toHaveBeenCalledTimes(1);
   });
 
-  it("restarts the same phrase from the beginning", () => {
+  it("restarts the same phrase from the beginning by going cold and hot", () => {
     const { controller, notation, expectedPitches, press } = setup();
     const first = controller.exercise;
     press(expectedPitches()[0]);
     notation.show.mockClear();
     notation.setState.mockClear();
 
-    controller.restartExercise();
+    controller.toggleHot();
+    controller.toggleHot();
 
     expect(controller.exercise).toBe(first);
     expect(notation.show).toHaveBeenCalledWith(first, { showNames: false });
@@ -252,93 +325,66 @@ describe("PracticeController (rhythm mode)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("loads rhythm mode stopped so mode switches do not eat the first note", () => {
+  it("loads rhythm mode cold so the metronome never starts unasked", () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
-    const { controller, notation, score } = setup(settings);
+    const { controller, notation, score, sound } = setup(settings);
 
-    expect(controller.isRhythmRunning).toBe(false);
+    expect(controller.isHot).toBe(false);
     expect(notation.setState).toHaveBeenCalledWith(0, "current");
     expect(score.setIncludeRhythm).toHaveBeenCalledWith(true);
+    vi.advanceTimersByTime(10_000);
+    expect(sound.click).not.toHaveBeenCalled();
   });
 
-  it("restarts the same phrase and starts the clock", () => {
+  it("going hot rests a beat, then counts in a bar on the same phrase", () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
-    const { controller, notation, score } = setup(settings);
+    const { controller, notation, score, sound, onHotChange } = setup(settings);
     const first = controller.exercise;
     const total = first.bars.flat().length;
     notation.show.mockClear();
     score.show.mockClear();
 
-    controller.restartExercise();
-
+    controller.goHot();
+    expect(controller.isHot).toBe(true);
+    expect(onHotChange).toHaveBeenLastCalledWith(true);
     expect(controller.exercise).toBe(first);
-    expect(controller.isRhythmRunning).toBe(true);
     expect(notation.show).toHaveBeenCalledWith(first, { showNames: false });
     expect(score.show).toHaveBeenCalledWith(0, total, 0);
+
+    vi.advanceTimersByTime(999);
+    expect(sound.click).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(sound.click).toHaveBeenCalledWith(true);
   });
 
-  it("stops and plays the rhythm clock", () => {
-    const onRhythmPlaybackChange = vi.fn();
+  it("stops the clock and ignores notes when going cold", () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
-    const stream = new NoteStream();
-    const notation = { show: vi.fn(), setOptions: vi.fn(), setState: vi.fn(), flashWrong: vi.fn() };
-    const keyboard = { setPressed: vi.fn(), flash: vi.fn() };
-    const controller = new PracticeController({
-      stream,
-      notation,
-      keyboard,
-      sound: { play: vi.fn(), click: vi.fn() },
-      settings,
-      score: { show: vi.fn(), setIncludeRhythm: vi.fn() },
-      random: seeded(42),
-      onRhythmPlaybackChange,
-    });
+    const { controller, notation, sound, stream, onHotChange } = setup(settings);
+    controller.goHot();
+    controller.goCold();
+    expect(controller.isHot).toBe(false);
+    expect(onHotChange).toHaveBeenLastCalledWith(false);
 
-    expect(controller.isRhythmRunning).toBe(false);
-
-    controller.playRhythm();
-    expect(controller.isRhythmRunning).toBe(true);
-    expect(onRhythmPlaybackChange).toHaveBeenLastCalledWith(true);
-
-    const first = controller.exercise;
-    controller.stopRhythm();
-    expect(controller.isRhythmRunning).toBe(false);
-    expect(onRhythmPlaybackChange).toHaveBeenLastCalledWith(false);
-    expect(notation.setState).toHaveBeenCalledWith(0, "current");
-
-    // Notes are ignored while stopped.
-    const pitch = midiOf(first.bars.flat()[0]);
+    const pitch = midiOf(controller.exercise.bars.flat()[0]);
     stream.emit({ kind: "on", pitch, time: 5000, source: "screen" });
+    vi.advanceTimersByTime(10_000);
     expect(notation.setState).not.toHaveBeenCalledWith(0, "correct");
-
-    notation.show.mockClear();
-    controller.playRhythm();
-    expect(controller.isRhythmRunning).toBe(true);
-    expect(controller.exercise).toBe(first);
-    expect(notation.show).toHaveBeenCalledWith(first, { showNames: false });
-  });
-
-  it("ignores stop/play in wait mode", () => {
-    const { controller } = setup();
-    expect(controller.isRhythmRunning).toBe(false);
-    controller.playRhythm();
-    expect(controller.isRhythmRunning).toBe(false);
-    controller.stopRhythm();
-    expect(controller.isRhythmRunning).toBe(false);
+    expect(sound.click).not.toHaveBeenCalled();
   });
 
   it("ignores notes during count-in, then scores on-time playing", () => {
     const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
     const { controller, notation, score, press, expectedPitches } = setup(settings);
 
-    controller.playRhythm();
-    const armAt = performance.now();
+    controller.goHot();
+    // Count-in starts after a one-beat rest.
+    const armAt = performance.now() + 1000;
     const countIn = 4000;
 
     press(expectedPitches()[0], armAt + 1000);
     expect(notation.setState).not.toHaveBeenCalledWith(0, "correct");
 
-    vi.advanceTimersByTime(countIn);
+    vi.advanceTimersByTime(1000 + countIn);
 
     const notes = controller.exercise.bars.flat();
     let onset = countIn;
@@ -355,7 +401,7 @@ describe("PracticeController (rhythm mode)", () => {
     // Next phrase begins with a 1-bar count-in when this phrase's duration ends.
     vi.advanceTimersByTime(phraseMs);
     expect(controller.exercise).not.toBe(first);
-    expect(controller.isRhythmRunning).toBe(true);
+    expect(controller.isHot).toBe(true);
     expect(score.show).toHaveBeenCalledWith(0, expect.any(Number), 0);
   });
 });
@@ -366,11 +412,15 @@ describe("PracticeController rhythm retries", () => {
 
   const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
 
-  /** Runs one attempt from now: plays every note on time, or lets the phrase pass silently. */
+  /**
+   * Runs one attempt, going hot first if cold: plays every note on time, or lets the
+   * phrase pass silently. Either way the count-in starts a beat from now.
+   */
   function attempt(ctx: ReturnType<typeof setup>, tempo: number, clean: boolean): void {
     const beat = 60_000 / tempo;
+    if (!ctx.controller.isHot) ctx.controller.goHot();
     const notes = ctx.controller.exercise.bars.flat();
-    const start = performance.now();
+    const start = performance.now() + beat;
     let onset = 4 * beat;
     for (const note of notes) {
       vi.advanceTimersByTime(start + onset - performance.now());
@@ -381,47 +431,58 @@ describe("PracticeController rhythm retries", () => {
     vi.advanceTimersByTime(Math.max(0, start + Math.ceil(onset / (4 * beat)) * 4 * beat - performance.now()));
   }
 
-  it("rests a beat, then counts in a bar on the same phrase after a failure", () => {
+  it("goes cold after a failure, with the metronome stopped", () => {
     const ctx = setup(settings);
     const first = ctx.controller.exercise;
-    ctx.controller.playRhythm();
     attempt(ctx, 60, false);
+    expect(ctx.controller.isHot).toBe(false);
     ctx.notation.show.mockClear();
+    ctx.sound.click.mockClear();
 
-    vi.advanceTimersByTime(999);
+    vi.advanceTimersByTime(10_000);
     expect(ctx.notation.show).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
+    expect(ctx.sound.click).not.toHaveBeenCalled();
     expect(ctx.controller.exercise).toBe(first);
-    expect(ctx.notation.show).toHaveBeenCalledTimes(1);
-    expect(ctx.controller.isRhythmRunning).toBe(true);
   });
 
   it("offers a slow-down after repeated failures, then needs two clean passes at full tempo", () => {
     const ctx = setup(settings);
     const first = ctx.controller.exercise;
-    ctx.controller.playRhythm();
     ctx.controller.slowDown();
     expect(ctx.controller.retry.slowTempo).toBeUndefined();
 
     for (let i = 0; i < SLOW_DOWN_AFTER_FAILURES; i++) {
       expect(ctx.controller.retry.canSlowDown).toBe(false);
       attempt(ctx, 60, false);
-      vi.advanceTimersByTime(1000);
     }
     expect(ctx.controller.retry.canSlowDown).toBe(true);
 
     ctx.controller.slowDown();
+    expect(ctx.controller.isHot).toBe(false);
     expect(ctx.controller.retry.slowTempo).toBe(51);
     attempt(ctx, 51, true);
     expect(ctx.controller.retry.slowTempo).toBeUndefined();
-    vi.advanceTimersByTime(60_000 / 51);
 
+    // A clean slow pass goes straight on, hot, to full tempo.
+    expect(ctx.controller.isHot).toBe(true);
     attempt(ctx, 60, true);
-    vi.advanceTimersByTime(1000);
+    expect(ctx.controller.isHot).toBe(true);
     expect(ctx.controller.exercise).toBe(first);
 
     attempt(ctx, 60, true);
     expect(ctx.controller.exercise).not.toBe(first);
+    expect(ctx.controller.isHot).toBe(true);
+  });
+
+  it("slowing down mid-attempt counts as bailing out", () => {
+    const ctx = setup(settings);
+    for (let i = 0; i < SLOW_DOWN_AFTER_FAILURES; i++) attempt(ctx, 60, false);
+    ctx.controller.goHot();
+    vi.advanceTimersByTime(1000 + 4000);
+    ctx.press(midiOf(ctx.controller.exercise.bars.flat()[0]), performance.now());
+    ctx.controller.slowDown();
+    expect(ctx.controller.retry.failures).toBe(SLOW_DOWN_AFTER_FAILURES + 1);
+    expect(ctx.onPhraseComplete).toHaveBeenLastCalledWith(expect.objectContaining({ abandoned: true }));
   });
 });
 

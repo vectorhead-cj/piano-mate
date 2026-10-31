@@ -28,14 +28,15 @@ import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
 import { loadCorpus } from "./music/corpus";
 import { levelById } from "./music/levels";
-import { midiOf } from "./music/pitch";
+import { midiNoteName, midiOf } from "./music/pitch";
 import type { Clef, Level, NoteSource } from "./music/types";
-import { PracticeController, type PhraseResult } from "./practice/practiceController";
-import { DEFAULT_SETTINGS, type PracticeMode, type Settings } from "./practice/settings";
+import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/practiceController";
+import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
 import { bindMidiDebug, type MidiDebug } from "./ui/midiDebug";
 import { bindPhraseDebug } from "./ui/phraseDebug";
+import { bindRetryKey } from "./ui/retryKey";
 import {
   PhraseResultBanner,
   renderHome,
@@ -101,7 +102,9 @@ async function main(): Promise<void> {
 
   const notationElement = element("notation");
   const keyboardElement = element("keyboard");
-  const transport = element<HTMLButtonElement>("transport");
+  const hotToggle = element<HTMLButtonElement>("hot-toggle");
+  const notationPanel = element("notation-panel");
+  const hotState = element("hot-state");
   const scoreElement = element<HTMLElement>("phrase-score");
   const slowDown = element<HTMLButtonElement>("slow-down");
   const nextPhrase = element<HTMLButtonElement>("next");
@@ -169,7 +172,6 @@ async function main(): Promise<void> {
   let settings: Settings = DEFAULT_SETTINGS;
   let customStreak = 0;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
-  let mode: PracticeMode = DEFAULT_SETTINGS.mode;
 
   function levelMidiRange(level: Level): { lowest: number; highest: number } {
     return { lowest: midiOf(level.lowest), highest: midiOf(level.highest) };
@@ -185,12 +187,14 @@ async function main(): Promise<void> {
   }
   updateKeyboardRange();
 
-  function syncTransport(running: boolean): void {
-    const rhythm = mode === "rhythm";
-    transport.hidden = !rhythm;
-    transport.disabled = !rhythm;
-    transport.textContent = running ? "Stop" : "Play";
-    transport.setAttribute("aria-label", running ? "Stop rhythm" : "Play rhythm");
+  /** Hot: attempts are graded. Cold: free play, waiting for the player to start. */
+  function syncHot(hot: boolean): void {
+    hotToggle.textContent = hot ? "Stop" : "Start";
+    hotToggle.setAttribute("aria-label", hot ? "Stop and play freely" : "Start a graded attempt");
+    notationPanel.dataset.hot = String(hot);
+    const midi = midiDevices !== null && midiDevices.length > 0;
+    const key = midiNoteName(late.practice?.retryPitch ?? RETRY_PITCH);
+    hotState.textContent = hot ? "● Live" : `Free play · ${midi ? `${key} or Space` : "Space"} to start`;
   }
 
   function setScoreText(key: string, value: string | number): void {
@@ -217,7 +221,7 @@ async function main(): Promise<void> {
         }
       },
     },
-    onRhythmPlaybackChange: syncTransport,
+    onHotChange: syncHot,
     onPhraseComplete: recordPhrase,
     onRetryChange(state) {
       slowDown.hidden = !state.canSlowDown;
@@ -233,7 +237,7 @@ async function main(): Promise<void> {
   const staffLetters = element<HTMLFormElement>("settings").elements.namedItem("staffLetters") as HTMLInputElement;
   notationView.setStaffLetters(staffLetters.checked);
   staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
-  syncTransport(practice.isRhythmRunning);
+  bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
 
   function inputKind(sources: NoteSource[]): InputKind {
     if (sources.every((s) => s === "midi")) return "midi";
@@ -249,7 +253,7 @@ async function main(): Promise<void> {
       banner.show(
         result.passed
           ? `Clean at ${result.tempo} bpm · now at full tempo`
-          : `${faultOf(result)} · again at ${result.tempo} bpm`,
+          : `${faultOf(result)} at ${result.tempo} bpm`,
         "info",
       );
       return;
@@ -292,7 +296,7 @@ async function main(): Promise<void> {
     store.record(event);
     const perfect = isPerfect(event);
     const faultText = faultOf(result);
-    const again = !perfect ? " · again" : result.passesNeeded > 0 ? " · once more" : "";
+    const again = perfect && result.passesNeeded > 0 ? " · once more" : "";
 
     if (context.kind === "custom") {
       customStreak = perfect ? customStreak + 1 : 0;
@@ -331,6 +335,7 @@ async function main(): Promise<void> {
 
   /** Where a failed attempt first went wrong, for the result banner. */
   function faultOf(result: PhraseResult): string {
+    if (result.abandoned) return "Stopped mid-phrase";
     const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length) });
     if (!fault) return "";
     return fault.kind === "wrong" ? `Wrong note in bar ${fault.bar}` : `Missed a note in bar ${fault.bar}`;
@@ -366,29 +371,25 @@ async function main(): Promise<void> {
       rhythm: stage.rhythm,
       bars: stage.bars,
     };
-    mode = settings.mode;
     keyboardSpan = stageMidiRange(corpus, clef, stage);
     practice.exerciseSource = stageSource(corpus, clef, stage);
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
-    syncTransport(practice.isRhythmRunning);
   }
 
   function openCustom(): void {
     context = { kind: "custom" };
     customStreak = 0;
     settings = customSettings;
-    mode = settings.mode;
     keyboardSpan = levelMidiRange(levelById(settings.range));
     practice.exerciseSource = customSource(corpus, () => settings);
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
-    syncTransport(practice.isRhythmRunning);
   }
 
   function showView(next: View): void {
     if (view.name === "practice" && next.name !== "practice") {
-      practice.stopRhythm();
+      practice.goCold();
       banner.hide();
     }
     view = next;
@@ -409,6 +410,7 @@ async function main(): Promise<void> {
     practiceBar.hidden = !(practising && context.kind === "curriculum");
     // A stage moves on only once the phrase is played clean.
     nextPhrase.hidden = context.kind === "curriculum";
+    syncHot(practice.isHot);
     app.dataset.view = view.name;
 
     if (view.name === "home") {
@@ -475,24 +477,26 @@ async function main(): Promise<void> {
       keyboardSpan = levelMidiRange(levelById(next.range));
       updateKeyboardRange();
     }
-    if (changed === "mode") mode = next.mode;
     if (changed !== "namesOnNotes") customStreak = 0;
     renderStreak();
     practice.updateSettings(next, changed);
-    syncTransport(practice.isRhythmRunning);
   });
 
-  transport.addEventListener("click", () => {
+  hotToggle.addEventListener("click", () => {
     synth.unlock();
-    practice.toggleRhythmPlayback();
+    practice.toggleHot();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.code !== "Space" || event.repeat || view.name !== "practice") return;
+    // Leave Space alone where it already means something (a focused button clicks itself).
+    if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
+    event.preventDefault();
+    synth.unlock();
+    practice.toggleHot();
   });
   slowDown.addEventListener("click", () => {
     synth.unlock();
     practice.slowDown();
-  });
-  element("restart").addEventListener("click", () => {
-    synth.unlock();
-    practice.restartExercise();
   });
   nextPhrase.addEventListener("click", () => {
     synth.unlock();

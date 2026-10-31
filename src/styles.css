@@ -503,6 +503,28 @@ body::before {
   display: none;
 }
 
+/* A labelled control in the prefs, e.g. the start/stop key picker. */
+.pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.pref-key {
+  min-width: 4.5rem;
+  padding: 4px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pref-key[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Divider + caption above a group of prefs (e.g. the debug toggles). */
 .prefs-section {
   display: flex;
@@ -1306,6 +1328,37 @@ body::before {
 
 .phrase-result[data-tone="info"] {
   color: var(--muted);
+}
+
+/* Hot (graded attempt): an accent ring round the sheet and a Live tag. Cold (free
+   play) keeps the plain panel and says how to start. Not red: red means a wrong note. */
+.notation-panel {
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.notation-panel[data-hot="true"] {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-soft), 0 0 0 2px var(--accent);
+}
+
+.hot-state {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.notation-panel[data-hot="true"] .hot-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface-top);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .phrase-result[data-tone="milestone"] {

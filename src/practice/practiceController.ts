@@ -19,7 +19,7 @@ export const SLOW_DOWN_AFTER_FAILURES = 3;
 /** Each slow-down multiplies the tempo by this. */
 export const SLOW_DOWN_FACTOR = 0.85;
 const MIN_TEMPO = 30;
-/** A0, the bottom key of an 88-key piano: pressing it on a MIDI keyboard restarts the phrase. */
+/** Default retry key: A0, the bottom key of an 88-key piano. Pressing it on a MIDI keyboard toggles hot/cold. */
 export const RETRY_PITCH = 21;
 
 /** The parts of NotationView the controller uses. */
@@ -58,6 +58,8 @@ export interface PhraseResult {
   sources: NoteSource[];
   /** Every note hit with no wrong keys. */
   passed: boolean;
+  /** Went cold partway through; always a failure. */
+  abandoned: boolean;
   /** Played below the phrase's tempo after slowing down. */
   slowed: boolean;
   /** What comes next: a new phrase, or this one again. */
@@ -84,15 +86,21 @@ export interface PracticeDependencies {
   settings: Settings;
   score?: ScoreDisplay;
   random?: Random;
-  /** Fired when rhythm transport starts/stops (also false in wait mode). */
-  onRhythmPlaybackChange?: (running: boolean) => void;
+  /** Fired when practice goes hot (attempts graded) or cold (free play). */
+  onHotChange?: (hot: boolean) => void;
   onPhraseComplete?: (result: PhraseResult) => void;
   onRetryChange?: (state: RetryState) => void;
   /** Override for tests; defaults to performance.now. */
   now?: () => number;
 }
 
-/** Practice: Wait mode (pitch only) or Rhythm mode (live clock + score). */
+/**
+ * Practice: Wait mode (pitch only) or Rhythm mode (live clock + score).
+ *
+ * Hot means the current attempt is graded; cold is free play, where notes sound but
+ * nothing is graded or advances (and rhythm mode's clock is stopped). A failed attempt
+ * drops to cold with its marks left up; going hot again retries on a clean sheet.
+ */
 export class PracticeController {
   private settings: Settings;
   private waitSession: WaitSession | null = null;
@@ -101,7 +109,9 @@ export class PracticeController {
   private nextExerciseTimer: ReturnType<typeof setTimeout> | undefined;
   private tickTimer: ReturnType<typeof setTimeout> | undefined;
   private finishingRhythm = false;
-  private rhythmRunning = false;
+  private hot = false;
+  /** A passed attempt has queued a new phrase, which going hot again should start. */
+  private pendingNew = false;
   private readonly metronome: Metronome | null;
   private readonly now: () => number;
   private readonly phraseSources = new Set<NoteSource>();
@@ -111,8 +121,12 @@ export class PracticeController {
   private slowedDown = false;
   /** Clean full-tempo passes in a row on this phrase. */
   private passes = 0;
+  /** Set while waiting for the player to press a key to use as the retry key. */
+  private keyCapture: ((pitch: number) => void) | null = null;
   /** Whether keys played on a MIDI device also light up on the screen keyboard. */
   lightMidiKeys = false;
+  /** MIDI key that toggles hot/cold instead of playing a note. */
+  retryPitch = RETRY_PITCH;
   /**
    * Makes each new phrase instead of the generator settings (curriculum stages, real
    * phrases); returning null falls back to the generator.
@@ -128,8 +142,16 @@ export class PracticeController {
         : null;
 
     deps.stream.subscribe((event) => {
-      if (event.source === "midi" && event.pitch === RETRY_PITCH) {
-        if (event.kind === "on") this.restartExercise();
+      if (event.source === "midi" && this.keyCapture) {
+        if (event.kind === "on") {
+          const capture = this.keyCapture;
+          this.keyCapture = null;
+          capture(event.pitch);
+        }
+        return;
+      }
+      if (event.source === "midi" && event.pitch === this.retryPitch) {
+        if (event.kind === "on") this.toggleHot();
         return;
       }
       // Sound first, before any DOM/VexFlow work — heavy sync work in the same
@@ -141,7 +163,7 @@ export class PracticeController {
       if (event.kind === "off" || event.source !== "midi" || this.lightMidiKeys) {
         deps.keyboard.setPressed(event.pitch, event.kind === "on");
       }
-      if (event.kind === "on") {
+      if (event.kind === "on" && this.hot) {
         this.phraseSources.add(event.source);
         const { pitch, time } = event;
         setTimeout(() => this.handleNoteOn(pitch, time), 0);
@@ -169,15 +191,15 @@ export class PracticeController {
     };
   }
 
-  /** True while rhythm count-in/phrase is actively running. */
-  get isRhythmRunning(): boolean {
-    return this.rhythmRunning;
+  /** True while attempts are graded; false in free play. */
+  get isHot(): boolean {
+    return this.hot;
   }
 
   /**
-   * @param autoplay When true in rhythm mode, start count-in immediately.
-   *   Mode switches leave rhythm stopped so the first keypress is not ignored
-   *   during an unexpected count-in; New phrase / Restart / after-score pass true.
+   * @param autoplay Arrive hot in rhythm mode, starting the count-in. Wait mode always
+   *   arrives hot. Loads and settings changes leave rhythm cold, so the metronome never
+   *   starts unasked.
    * @param countInAt Wall-clock time when the next 1-bar count-in should begin
    *   (used to keep the metronome continuous across phrases).
    */
@@ -200,25 +222,61 @@ export class PracticeController {
     this.slowedDown = false;
     this.passes = 0;
     this.publishRetry();
-    this.beginCurrentExercise(autoplay, countInAt);
+    this.beginCurrentExercise(autoplay || this.settings.mode === "wait", countInAt);
   }
 
-  /** Replay the same phrase from the start (wait or rhythm). */
-  restartExercise(): void {
-    this.beginCurrentExercise(true);
+  /** Start a graded attempt on a clean sheet; rhythm mode rests a beat, then counts in a bar. */
+  goHot(): void {
+    if (this.hot) return;
+    const countInAt = this.settings.mode === "rhythm" ? this.now() + beatMs(this.tempo) : undefined;
+    if (this.pendingNew) this.startNewExercise(true, countInAt);
+    else this.beginCurrentExercise(true, countInAt);
+  }
+
+  /** Drop to free play. Bailing out of an attempt that has begun counts as a failure. */
+  goCold(): void {
+    if (!this.hot) return;
+    clearTimeout(this.nextExerciseTimer);
+    const session = this.waitSession ?? this.rhythmSession;
+    const begun =
+      session !== null &&
+      !session.isComplete &&
+      (session.currentIndex > 0 || session.results().some((n) => n.wrong > 0));
+    const tempo = this.rhythmSession?.tempo;
+    this.teardownRhythm(true);
+    this.setHot(false);
+    if (begun) this.settleAttempt(this.settings.mode, session.results(), tempo, true);
   }
 
   /**
-   * Restart the phrase slower, once enough attempts have failed. Each call slows it
-   * further; a clean slow pass goes back to full tempo, where two clean passes move on.
+   * Hands the next MIDI key pressed to `onKey` instead of playing or grading it; MIDI
+   * input is swallowed until then. Returns a function that stops waiting.
+   */
+  captureMidiKey(onKey: (pitch: number) => void): () => void {
+    this.keyCapture = onKey;
+    return () => {
+      if (this.keyCapture === onKey) this.keyCapture = null;
+    };
+  }
+
+  toggleHot(): void {
+    if (this.hot) this.goCold();
+    else this.goHot();
+  }
+
+  /**
+   * Slow the phrase down, once enough attempts have failed, and drop to cold to start
+   * it. Each call slows it further; a clean slow pass goes back to full tempo, where
+   * two clean passes move on.
    */
   slowDown(): void {
     if (!this.retry.canSlowDown) return;
+    this.goCold();
     this.slowTempo = Math.max(MIN_TEMPO, Math.round(this.tempo * SLOW_DOWN_FACTOR));
     this.slowedDown = true;
     this.passes = 0;
+    this.pendingNew = false;
     this.publishRetry();
-    this.beginCurrentExercise(true);
   }
 
   /** The tempo the next attempt runs at. */
@@ -230,57 +288,33 @@ export class PracticeController {
     this.deps.onRetryChange?.(this.retry);
   }
 
-  /** Stop the live clock and metronome. No-op outside rhythm mode or when already stopped. */
-  stopRhythm(): void {
-    if (this.settings.mode !== "rhythm" || !this.rhythmRunning) return;
+  private beginCurrentExercise(hot: boolean, countInAt?: number): void {
     clearTimeout(this.nextExerciseTimer);
     this.finishingRhythm = false;
-    this.teardownRhythm(true);
-    this.deps.notation.show(this.currentExercise, this.notationOptions());
-    this.deps.notation.setState(0, "current");
-    this.setRhythmRunning(false);
-  }
-
-  /** Start (or restart) the current phrase on the live clock. No-op outside rhythm mode. */
-  playRhythm(): void {
-    if (this.settings.mode !== "rhythm") return;
-    this.beginCurrentExercise(true);
-  }
-
-  /** Toggle stop/play in rhythm mode. */
-  toggleRhythmPlayback(): void {
-    if (this.settings.mode !== "rhythm") return;
-    if (this.rhythmRunning) this.stopRhythm();
-    else this.playRhythm();
-  }
-
-  private beginCurrentExercise(autoplay: boolean, countInAt?: number): void {
-    clearTimeout(this.nextExerciseTimer);
-    this.finishingRhythm = false;
+    this.pendingNew = false;
     this.phraseSources.clear();
     // Keep clicks going when chaining into the next phrase; otherwise silence.
-    this.teardownRhythm(!autoplay);
+    this.teardownRhythm(!hot);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
     this.deps.notation.show(this.currentExercise, this.notationOptions());
 
     if (this.settings.mode === "rhythm") {
       this.waitSession = null;
-      if (autoplay) {
+      if (hot) {
         this.startRhythmClock(countInAt);
       } else {
         this.rhythmSession = null;
         const total = pressedCount(this.currentExercise.bars.flat());
         this.publishScore(0, total, 0);
         this.deps.notation.setState(0, "current");
-        this.setRhythmRunning(false);
       }
     } else {
       this.rhythmSession = null;
       this.waitSession = new WaitSession(this.currentExercise, exactPitch);
       this.publishScore(0, this.waitSession.notes.length);
       this.deps.notation.setState(0, "current");
-      this.setRhythmRunning(false);
     }
+    this.setHot(hot);
   }
 
   private startRhythmClock(countInAt?: number): void {
@@ -297,7 +331,6 @@ export class PracticeController {
     );
     // No "current" highlight during count-in — tick will set it when the phrase begins.
     this.scheduleTick();
-    this.setRhythmRunning(true);
   }
 
   private publishScore(notesCorrect: number, total: number, rhythmOnTime?: number): void {
@@ -316,10 +349,10 @@ export class PracticeController {
     }
   }
 
-  private setRhythmRunning(running: boolean): void {
-    if (this.rhythmRunning === running) return;
-    this.rhythmRunning = running;
-    this.deps.onRhythmPlaybackChange?.(running);
+  private setHot(hot: boolean): void {
+    if (this.hot === hot) return;
+    this.hot = hot;
+    this.deps.onHotChange?.(hot);
   }
 
   updateSettings(settings: Settings, changed: keyof Settings): void {
@@ -343,6 +376,7 @@ export class PracticeController {
   }
 
   private handleNoteOn(pitch: number, time: number): void {
+    if (!this.hot) return;
     if (this.settings.mode === "rhythm") {
       this.handleRhythmNoteOn(pitch, time);
     } else {
@@ -450,11 +484,15 @@ export class PracticeController {
     this.publishLiveScore();
     const session = this.waitSession;
     if (!session) return;
-    const next = this.settleAttempt("wait", session.results());
+    const { passed, next } = this.settleAttempt("wait", session.results());
     clearTimeout(this.nextExerciseTimer);
-    // A retry is a clean sheet; the marks from this attempt stay up until then.
+    // A failure goes cold with its marks left up until the player goes hot again.
+    if (!passed) {
+      this.setHot(false);
+      return;
+    }
     this.nextExerciseTimer = setTimeout(
-      () => (next === "new" ? this.startNewExercise() : this.beginCurrentExercise(false)),
+      () => (next === "new" ? this.startNewExercise(true) : this.beginCurrentExercise(true)),
       PHRASE_SCORE_DELAY_MS,
     );
   }
@@ -464,16 +502,20 @@ export class PracticeController {
     this.finishingRhythm = true;
     clearTimeout(this.tickTimer);
     this.tickTimer = undefined;
-    // Leave the metronome running through the end of the bar; the next phrase's
-    // count-in starts on the barline after this phrase's last note.
     this.publishLiveScore();
 
     const session = this.rhythmSession;
     if (!session) return;
-    const next = this.settleAttempt("rhythm", session.results(), session.tempo);
+    const { passed, next } = this.settleAttempt("rhythm", session.results(), session.tempo);
+    if (!passed) {
+      this.teardownRhythm(true);
+      this.setHot(false);
+      return;
+    }
+    // After a pass the metronome runs on through the end of the bar; a new phrase
+    // counts in from the barline, and a second run rests a beat first.
     const phraseEnd = session.endAt ?? this.now();
-    // A retry rests a beat after the last bar, then counts in a bar on a clean sheet.
-    const countInAt = next === "new" ? phraseEnd : phraseEnd + beatMs(session.tempo);
+    const countInAt = next === "new" ? phraseEnd : phraseEnd + beatMs(this.tempo);
     clearTimeout(this.nextExerciseTimer);
     this.nextExerciseTimer = setTimeout(() => {
       if (next === "new") this.startNewExercise(true, countInAt);
@@ -485,7 +527,12 @@ export class PracticeController {
    * Grades a finished attempt, updates where the player stands on the phrase, and
    * reports it. A pass turns every note green.
    */
-  private settleAttempt(mode: PhraseResult["mode"], notes: NoteResult[], tempo?: number): PhraseResult["next"] {
+  private settleAttempt(
+    mode: PhraseResult["mode"],
+    notes: NoteResult[],
+    tempo?: number,
+    abandoned = false,
+  ): PhraseResult {
     const passed = notes.every((n) => n.hit && n.wrong === 0);
     const slowed = this.slowTempo !== undefined;
     if (slowed) {
@@ -498,21 +545,24 @@ export class PracticeController {
     }
     const passesNeeded = (this.slowedDown ? 2 : 1) - this.passes;
     const next = passesNeeded === 0 ? "new" : "retry";
+    this.pendingNew = next === "new";
     if (passed) notes.forEach((_, i) => this.deps.notation.setState(i, "correct"));
 
-    this.deps.onPhraseComplete?.({
+    const result: PhraseResult = {
       exercise: this.currentExercise,
       mode,
       tempo,
       notes,
       sources: [...this.phraseSources],
       passed,
+      abandoned,
       slowed,
       next,
       passesNeeded,
-    });
+    };
+    this.deps.onPhraseComplete?.(result);
     this.publishRetry();
-    return next;
+    return result;
   }
 
   private teardownRhythm(stopMetronome: boolean): void {
