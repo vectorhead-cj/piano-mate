@@ -100,7 +100,7 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     title: "First positions",
     stages: [
-      stage("five-c", ["C"], "five", { introduces: ["whole", "half", "quarter"] }),
+      stage("five-c", ["C"], "five", { introduces: ["quarter", "half", "whole"] }),
       stage("five-g", ["G"], "five", { introduces: ["dotted-half"] }),
       stage("five-f", ["F"], "five"),
       stage("five-cgf", ["C", "G", "F"], "five", { introduces: ["three-four"] }),

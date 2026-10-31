@@ -12,7 +12,7 @@ import {
 import { generateExercise } from "../src/music/generator";
 import { keyById, MINOR_KEYS } from "../src/music/keys";
 import { exerciseToMusicXml } from "../src/music/musicXml";
-import { firstFault, type InputKind, type PhraseCompleted } from "../src/curriculum/events";
+import { firstFault, type IntroCompleted, type InputKind, type PhraseCompleted } from "../src/curriculum/events";
 import { milestoneBetween, projectProgress } from "../src/curriculum/progress";
 import { spanLevel } from "../src/curriculum/spans";
 import { midiOf, staffStep } from "../src/music/pitch";
@@ -48,6 +48,10 @@ function phrase(
 
 const repeat = (n: number, make: () => PhraseCompleted) => Array.from({ length: n }, make);
 
+function introDone(stageId: string, clef: Clef = "treble"): IntroCompleted {
+  return { type: "intro-completed", v: 1, id: `i${clock}`, at: ++clock, session: "s", clef, stageId, skipped: false };
+}
+
 const [first, second, third] = PLACED_STAGES.map((p) => p.stage.id);
 
 describe("spanLevel", () => {
@@ -81,10 +85,10 @@ describe("curriculum", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("introduces each notation once, starting from whole, half and quarter notes", () => {
+  it("introduces each notation once, starting from quarter, half and whole notes", () => {
     const introduced = PLACED_STAGES.flatMap((p) => p.stage.introduces);
     expect(new Set(introduced).size).toBe(introduced.length);
-    expect(PLACED_STAGES[0].stage.introduces).toEqual(["whole", "half", "quarter"]);
+    expect(PLACED_STAGES[0].stage.introduces).toEqual(["quarter", "half", "whole"]);
     expect([...stageNotations(placedStage("five-g")!.stage)].sort()).toEqual(["dotted-half", "half", "quarter", "whole"]);
     expect(stageNotations(PLACED_STAGES[PLACED_STAGES.length - 1].stage).size).toBe(introduced.length);
   });
@@ -114,33 +118,45 @@ describe("curriculum", () => {
 });
 
 describe("projectProgress", () => {
-  it("opens only the first stage at the start", () => {
-    const progress = projectProgress([]);
+  it("opens only the first stage's intro at the start, and the stage once it's done", () => {
+    const start = projectProgress([]).treble.stages[first];
+    expect(start).toMatchObject({ introOpen: true, introDone: false, unlocked: false });
+    expect(start.tierOpen).toEqual({ read: false, play: false, fluent: false });
+    expect(projectProgress([]).treble.currentStageId).toBe(first);
+
+    const progress = projectProgress([introDone(first)]);
     expect(progress.treble.stages[first].unlocked).toBe(true);
     expect(progress.treble.stages[first].tierOpen).toEqual({ read: true, play: false, fluent: false });
-    expect(progress.treble.stages[second].unlocked).toBe(false);
+    expect(progress.treble.stages[second]).toMatchObject({ introOpen: false, unlocked: false });
+    // Notation met in one track is known in the other.
+    expect(progress.bass.stages[first].unlocked).toBe(true);
   });
 
   it("earns ★ for a streak of perfect phrases and resets on a miss", () => {
     const almost = [...repeat(STAR_STREAK - 1, () => phrase(first, "read", true)), phrase(first, "read", false)];
     expect(projectProgress(almost).treble.stages[first].stars).toBe(0);
-    const done = [...almost, ...repeat(STAR_STREAK, () => phrase(first, "read", true))];
+    const done = [introDone(first), ...almost, ...repeat(STAR_STREAK, () => phrase(first, "read", true))];
     const stage = projectProgress(done).treble.stages[first];
     expect(stage.stars).toBe(1);
     expect(stage.tierOpen.play).toBe(true);
   });
 
-  it("opens the next stage at ★★", () => {
+  it("opens the next stage's intro at ★★, then the stage once it's done", () => {
     const events = [
+      introDone(first),
       ...repeat(STAR_STREAK, () => phrase(first, "read", true)),
       ...repeat(STAR_STREAK, () => phrase(first, "play", true)),
     ];
     const progress = projectProgress(events);
     expect(progress.treble.stages[first].stars).toBe(2);
-    expect(progress.treble.stages[second].unlocked).toBe(true);
-    expect(progress.treble.stages[third].unlocked).toBe(false);
+    expect(progress.treble.stages[second]).toMatchObject({ introOpen: true, unlocked: false });
     expect(progress.treble.currentStageId).toBe(second);
-    expect(progress.bass.stages[second].unlocked).toBe(false);
+    expect(progress.bass.stages[second].introOpen).toBe(false);
+
+    const after = projectProgress([...events, introDone(second)]);
+    expect(after.treble.stages[second].unlocked).toBe(true);
+    // 1.3 has no intro, so ★★ on 1.2 opens it directly.
+    expect(after.treble.stages[third]).toMatchObject({ introOpen: false, unlocked: false });
   });
 
   it("ignores screen-keyboard phrases: they neither count nor break a streak", () => {
@@ -169,18 +185,18 @@ describe("projectProgress", () => {
     expect(projectProgress(events).treble.stages[first].tiers.read.attempts).toBe(0);
   });
 
-  it("reports the star that opened the next stage", () => {
-    const base = [
-      ...repeat(STAR_STREAK, () => phrase(first, "read", true)),
-      ...repeat(STAR_STREAK - 1, () => phrase(first, "play", true)),
-    ];
-    const before = projectProgress(base);
-    const after = projectProgress([...base, phrase(first, "play", true)]);
-    expect(milestoneBetween(before, after, "treble", first)).toEqual({
-      kind: "star",
-      stars: 2,
-      openedStageId: second,
-    });
+  it("reports the star that opened the next stage, or its intro", () => {
+    const opening = (stageId: string, done: IntroCompleted[]) => {
+      const base = [
+        ...done,
+        ...repeat(STAR_STREAK, () => phrase(stageId, "read", true)),
+        ...repeat(STAR_STREAK - 1, () => phrase(stageId, "play", true)),
+      ];
+      return milestoneBetween(projectProgress(base), projectProgress([...base, phrase(stageId, "play", true)]), "treble", stageId);
+    };
+    expect(opening(first, [introDone(first)])).toEqual({ kind: "star", stars: 2, openedStageId: second, openedIntro: true });
+    // A replayed intro (done before) opens the stage itself.
+    expect(opening(first, [introDone(first), introDone(second)])).toEqual({ kind: "star", stars: 2, openedStageId: second });
   });
 });
 

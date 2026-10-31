@@ -653,6 +653,11 @@ body::before {
   padding: 10px 12px;
 }
 
+/* Intros aren't scored towards a streak. */
+.app[data-intro] .phrase-score [data-streak] {
+  display: none;
+}
+
 .phrase-score[data-mode="wait"] [data-rhythm-only] {
   display: none;
 }
@@ -964,7 +969,8 @@ body::before {
 
 .menu-card,
 .chapter,
-.practice-bar {
+.practice-bar,
+.intro-panel {
   border: 1px solid var(--surface-edge);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--surface-top), var(--surface));
@@ -1207,6 +1213,91 @@ body::before {
 }
 
 /* Curriculum practice: stage title, tier switch, tempo or MIDI notice. */
+.intro-panel {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px 16px;
+}
+
+.intro-panel[hidden] {
+  display: none;
+}
+
+.intro-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.intro-kicker {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.intro-title {
+  margin: 0;
+  font-family: Fraunces, "Times New Roman", serif;
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.intro-text {
+  max-width: 62ch;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.intro-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  word-spacing: 0.2em;
+}
+
+.intro-count-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  word-spacing: normal;
+}
+
+.intro-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 4px;
+}
+
+.intro-row .stage-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.intro-row-label {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .practice-bar {
   display: flex;
   flex-wrap: wrap;

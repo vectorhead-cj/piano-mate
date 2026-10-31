@@ -164,6 +164,7 @@
       <main id="menu" class="menu" hidden></main>
 
       <main id="practice" class="stage">
+        <section id="intro-panel" class="intro-panel" aria-label="Intro" aria-live="polite" hidden></section>
         <div class="status-row">
           <section id="phrase-score" class="phrase-score" data-mode="wait" aria-live="polite" aria-label="Score">
             <div class="score-stat">
@@ -179,8 +180,8 @@
                 ><span data-score="rhythm">0</span><span class="score-of">/<span data-score="rhythm-total">0</span></span></span
               >
             </div>
-            <div class="score-divider" aria-hidden="true"></div>
-            <div class="score-stat">
+            <div class="score-divider" data-streak aria-hidden="true"></div>
+            <div class="score-stat" data-streak>
               <span class="score-label">Streak</span>
               <span class="score-value"
                 ><span data-score="streak">0</span><span class="score-of" data-score="streak-goal"></span></span

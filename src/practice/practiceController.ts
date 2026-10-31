@@ -128,6 +128,11 @@ export class PracticeController {
   /** MIDI key that toggles hot/cold instead of playing a note. */
   retryPitch = RETRY_PITCH;
   /**
+   * After a pass, go cold instead of moving straight on, so the caller decides when the next
+   * phrase starts (intros explain each one first). Going hot again then starts it.
+   */
+  pauseAfterPass = false;
+  /**
    * Makes each new phrase instead of the generator settings (curriculum stages, real
    * phrases); returning null falls back to the generator.
    */
@@ -262,6 +267,12 @@ export class PracticeController {
   toggleHot(): void {
     if (this.hot) this.goCold();
     else this.goHot();
+  }
+
+  /** Clears the current phrase's marks and leaves it waiting, cold, for an attempt. */
+  resetCold(): void {
+    this.goCold();
+    this.beginCurrentExercise(this.settings.mode === "wait");
   }
 
   /**
@@ -487,7 +498,7 @@ export class PracticeController {
     const { passed, next } = this.settleAttempt("wait", session.results());
     clearTimeout(this.nextExerciseTimer);
     // A failure goes cold with its marks left up until the player goes hot again.
-    if (!passed) {
+    if (!passed || this.pauseAfterPass) {
       this.setHot(false);
       return;
     }
@@ -507,7 +518,7 @@ export class PracticeController {
     const session = this.rhythmSession;
     if (!session) return;
     const { passed, next } = this.settleAttempt("rhythm", session.results(), session.tempo);
-    if (!passed) {
+    if (!passed || this.pauseAfterPass) {
       this.teardownRhythm(true);
       this.setHot(false);
       return;

@@ -1,4 +1,5 @@
 import "./styles.css";
+import { PhrasePlayer } from "./audio/phrasePlayer";
 import { Synth } from "./audio/synth";
 import { NoteStream } from "./input/noteStream";
 import { MidiInput } from "./input/midiInput";
@@ -23,6 +24,7 @@ import {
   type PhraseCompleted,
   type PracticeContext,
 } from "./curriculum/events";
+import { INTRO_TEMPO, introSteps, type IntroStep } from "./curriculum/intros";
 import { milestoneBetween } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
@@ -40,12 +42,16 @@ import { bindRetryKey } from "./ui/retryKey";
 import {
   PhraseResultBanner,
   renderHome,
+  renderIntro,
   renderPracticeBar,
   renderTrack,
   type ResultTone,
 } from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
 import { bindPrefsPopover, bindTheme } from "./ui/theme";
+
+/** Time to see a clean intro example turn green before the next one comes up. */
+const INTRO_NEXT_DELAY_MS = 1500;
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -111,6 +117,7 @@ async function main(): Promise<void> {
 
   const stream = new NoteStream();
   const synth = new Synth();
+  const player = new PhrasePlayer(synth);
   const notationView = new NotationView(notationElement);
   const keyboard = new KeyboardView(keyboardElement);
   let onPhraseShown: (() => void) | undefined;
@@ -159,6 +166,7 @@ async function main(): Promise<void> {
   const practiceBar = element("practice-bar");
   const customControls = element("custom-controls");
   const navBack = element<HTMLButtonElement>("nav-back");
+  const introPanel = element("intro-panel");
   element("dev-notice").hidden = !import.meta.env.DEV;
   const banner = new PhraseResultBanner(element("phrase-result"));
   const store = new ProgressStore(openEventLog());
@@ -171,6 +179,8 @@ async function main(): Promise<void> {
   let customSettings: Settings = DEFAULT_SETTINGS;
   let settings: Settings = DEFAULT_SETTINGS;
   let customStreak = 0;
+  /** A stage's intro, while it runs; its phrases are echoed, not recorded. */
+  let intro: { clef: Clef; stageId: string; steps: IntroStep[]; index: number; replay: boolean } | null = null;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
 
   function levelMidiRange(level: Level): { lowest: number; highest: number } {
@@ -221,7 +231,11 @@ async function main(): Promise<void> {
         }
       },
     },
-    onHotChange: syncHot,
+    onHotChange(hot) {
+      // Going hot from the MIDI start key interrupts a playback.
+      if (hot) player.stop();
+      syncHot(hot);
+    },
     onPhraseComplete: recordPhrase,
     onRetryChange(state) {
       slowDown.hidden = !state.canSlowDown;
@@ -248,6 +262,10 @@ async function main(): Promise<void> {
   function recordPhrase(result: PhraseResult): void {
     // Nothing played (rhythm mode left running), or practice hidden behind the menu.
     if (result.sources.length === 0 || view.name !== "practice") return;
+    if (intro) {
+      introPhrase(result);
+      return;
+    }
     // Slowed-down attempts are practice towards the real tempo, not progress.
     if (result.slowed) {
       banner.show(
@@ -316,7 +334,8 @@ async function main(): Promise<void> {
       const streak = store.progress[clef].stages[stageId].tiers[tier].streak;
       if (milestone?.kind === "star") {
         const opened = milestone.openedStageId ? placedStage(milestone.openedStageId) : undefined;
-        text = `${"★".repeat(milestone.stars)} earned · ${STAR_STREAK} in a row${opened ? ` · stage ${opened.number} is open` : ""}`;
+        const openedText = opened ? ` · ${milestone.openedIntro ? `the intro to ${opened.number}` : `stage ${opened.number}`} is open` : "";
+        text = `${"★".repeat(milestone.stars)} earned · ${STAR_STREAK} in a row${openedText}`;
         tone = "milestone";
       } else if (milestone?.kind === "complete") {
         text = `Stage complete · ${COMPLETE_STREAK} in a row`;
@@ -356,10 +375,100 @@ async function main(): Promise<void> {
     setScoreText("streak-goal", goal ? `/${goal}` : "");
   }
 
+  /** Moves through an intro: each example passed clean leads to the next, the last to the stage. */
+  function introPhrase(result: PhraseResult): void {
+    const run = intro!;
+    if (!result.passed) {
+      banner.show(`${faultOf(result)} · listen again, or press Start to retry`, "fault");
+      return;
+    }
+    if (result.next !== "new") {
+      banner.show(result.slowed ? `Clean at ${result.tempo} bpm · now at full tempo` : "Clean · once more", "info");
+      return;
+    }
+    const last = run.index === run.steps.length - 1;
+    banner.show(last ? "Clean · on to the stage" : `Clean · next: ${run.steps[run.index + 1].title}`, "perfect");
+    if (!last) {
+      // The next explanation shows at once; Start plays its example even before it's drawn.
+      run.index++;
+      renderView();
+    }
+    setTimeout(() => {
+      if (intro !== run) return;
+      if (last) finishIntro(false);
+      else if (!practice.isHot) practice.startNewExercise();
+    }, INTRO_NEXT_DELAY_MS);
+  }
+
+  /** Shows a stage's intro to its new notation; the first time through, the stage follows. */
+  function startIntro(clef: Clef, stageId: string): void {
+    const placed = placedStage(stageId);
+    if (!placed) return;
+    const { stage } = placed;
+    const steps = introSteps(corpus, clef, stage);
+    if (steps.length === 0) return;
+    player.stop();
+    intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone };
+    context = { kind: "curriculum", clef, stageId, tier: "read" };
+    settings = {
+      ...customSettings,
+      mode: "rhythm",
+      tempo: INTRO_TEMPO,
+      clef,
+      key: stage.keys[0],
+      accidentalFrequency: stage.accidentals,
+      rhythm: stage.rhythm,
+      bars: stage.bars,
+    };
+    keyboardSpan = stageMidiRange(corpus, clef, stage);
+    practice.exerciseSource = () => (intro ? intro.steps[intro.index].exercise : null);
+    practice.pauseAfterPass = true;
+    showView({ name: "practice" });
+    practice.updateSettings(settings, "mode");
+  }
+
+  /** Records the intro as done, which opens its stage; a replay goes back to the track. */
+  function finishIntro(skipped: boolean): void {
+    if (!intro) return;
+    const { clef, stageId, replay } = intro;
+    if (replay) {
+      showView({ name: "track", clef, selected: stageId });
+      return;
+    }
+    store.record({ type: "intro-completed", v: 1, id: newId(), at: Date.now(), session, clef, stageId, skipped });
+    startStage(clef, stageId, "read");
+  }
+
+  function stopIntro(): void {
+    player.stop();
+    intro = null;
+    practice.pauseAfterPass = false;
+  }
+
+  /** Plays the intro's example with the cursor and keys following along. */
+  function listen(): void {
+    if (!intro) return;
+    synth.unlock();
+    practice.resetCold();
+    banner.hide();
+    const exercise = practice.exercise;
+    let previous = -1;
+    player.play(exercise, INTRO_TEMPO, {
+      onNote(index) {
+        if (previous >= 0) notation.setState(previous, "pending");
+        notation.setState(index, "current");
+        previous = index;
+      },
+      onKey: (pitch, down) => keyboard.setPressed(pitch, down),
+      onEnd: () => practice.resetCold(),
+    });
+  }
+
   function startStage(clef: Clef, stageId: string, tier: Tier): void {
     const placed = placedStage(stageId);
     if (!placed) return;
     const { stage } = placed;
+    stopIntro();
     context = { kind: "curriculum", clef, stageId, tier };
     settings = {
       ...customSettings,
@@ -378,6 +487,7 @@ async function main(): Promise<void> {
   }
 
   function openCustom(): void {
+    stopIntro();
     context = { kind: "custom" };
     customStreak = 0;
     settings = customSettings;
@@ -389,6 +499,7 @@ async function main(): Promise<void> {
 
   function showView(next: View): void {
     if (view.name === "practice" && next.name !== "practice") {
+      stopIntro();
       practice.goCold();
       banner.hide();
     }
@@ -407,7 +518,10 @@ async function main(): Promise<void> {
     practiceView.hidden = !practising;
     navBack.hidden = view.name === "home";
     customControls.hidden = !(practising && context.kind === "custom");
-    practiceBar.hidden = !(practising && context.kind === "curriculum");
+    practiceBar.hidden = !(practising && context.kind === "curriculum" && !intro);
+    introPanel.hidden = !(practising && intro);
+    if (intro) app.dataset.intro = "";
+    else delete app.dataset.intro;
     // A stage moves on only once the phrase is played clean.
     nextPhrase.hidden = context.kind === "curriculum";
     syncHot(practice.isHot);
@@ -423,7 +537,10 @@ async function main(): Promise<void> {
       renderTrack(menu, clef, store.progress, view.selected, {
         select: (stageId) => showView({ name: "track", clef, selected: stageId }),
         start: (stageId, tier) => startStage(clef, stageId, tier),
+        intro: (stageId) => startIntro(clef, stageId),
       });
+    } else if (intro) {
+      renderIntro(introPanel, intro, { listen, skip: () => finishIntro(true) });
     } else if (context.kind === "curriculum") {
       const { clef, stageId, tier } = context;
       renderPracticeBar(
@@ -484,6 +601,7 @@ async function main(): Promise<void> {
 
   hotToggle.addEventListener("click", () => {
     synth.unlock();
+    player.stop();
     practice.toggleHot();
   });
   document.addEventListener("keydown", (event) => {
@@ -492,6 +610,7 @@ async function main(): Promise<void> {
     if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
     event.preventDefault();
     synth.unlock();
+    player.stop();
     practice.toggleHot();
   });
   slowDown.addEventListener("click", () => {

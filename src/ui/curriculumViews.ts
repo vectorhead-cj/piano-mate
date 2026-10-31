@@ -13,7 +13,9 @@ import {
   tierTempo,
   type Tier,
 } from "../curriculum/curriculum";
+import type { IntroStep } from "../curriculum/intros";
 import type { Progress, StageProgress } from "../curriculum/progress";
+import { NOTATION_LABELS } from "../music/notation";
 import type { StoreStatus } from "../curriculum/progressStore";
 import type { Clef } from "../music/types";
 
@@ -66,13 +68,18 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
   const tracks = CLEF_TRACKS.map((clef) => {
     const track = model.progress[clef];
     const current = placedStage(track.currentStageId)!;
+    const currentProgress = track.stages[current.stage.id];
+    const subtitle =
+      currentProgress.introOpen && !currentProgress.introDone
+        ? `Intro to ${current.number} · ${introTitle(current.stage.id)}`
+        : `Stage ${current.number} · ${stageTitle(current.stage)}`;
     const button = h("button", { class: "btn-primary", type: "button" }, track.passed === 0 ? "Start" : "Continue");
     button.addEventListener("click", () => actions.openTrack(clef));
     return h(
       "article",
       { class: "menu-card" },
       h("h2", { class: "menu-card-title" }, `${TRACK_LABELS[clef]} track`),
-      h("p", { class: "menu-card-sub" }, `Stage ${current.number} · ${stageTitle(current.stage)}`),
+      h("p", { class: "menu-card-sub" }, subtitle),
       meter(track.passed, total, `${track.passed} of ${total} stages passed`),
       h(
         "div",
@@ -114,6 +121,7 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
 export interface TrackActions {
   select(stageId: string): void;
   start(stageId: string, tier: Tier): void;
+  intro(stageId: string): void;
 }
 
 function stageStatus(progress: StageProgress): { text: string; tone: string } {
@@ -144,7 +152,7 @@ export function renderTrack(
         {
           class: "stage-row",
           type: "button",
-          "aria-expanded": selected ? "true" : "false",
+          "aria-expanded": selected && stageProgress.unlocked ? "true" : "false",
           "data-tone": status.tone,
           disabled: !stageProgress.unlocked,
         },
@@ -154,7 +162,8 @@ export function renderTrack(
         h("span", { class: "stage-status" }, status.text),
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
-      return selected && stageProgress.unlocked ? [row, stageDetail(p.stage.id, stageProgress, actions)] : [row];
+      const intro = p.stage.introduces.length > 0 ? [introRow(p.stage.id, p.number, stageProgress, actions)] : [];
+      return selected && stageProgress.unlocked ? [...intro, row, stageDetail(p.stage.id, stageProgress, actions)] : [...intro, row];
     });
     return h(
       "section",
@@ -174,6 +183,32 @@ export function renderTrack(
     ...chapters,
   );
   root.querySelector('[aria-expanded="true"]')?.scrollIntoView({ block: "nearest" });
+}
+
+/** "Quarter notes, half notes and whole notes" */
+export function introTitle(stageId: string): string {
+  const names = placedStage(stageId)!.stage.introduces.map((n, i) => (i === 0 ? NOTATION_LABELS[n] : NOTATION_LABELS[n].replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())));
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+}
+
+/** The intro before a stage with new notation; the stage opens once it's done, and it can be replayed. */
+function introRow(stageId: string, number: string, progress: StageProgress, actions: TrackActions): HTMLElement {
+  const status = !progress.introOpen
+    ? { text: "Locked", tone: "locked" }
+    : progress.introDone
+      ? { text: "Replay", tone: "passed" }
+      : { text: "Start", tone: "current" };
+  const row = h(
+    "button",
+    { class: "stage-row intro-row", type: "button", "data-tone": status.tone, disabled: !progress.introOpen },
+    h("span", { class: "stage-number" }, "\u266A"),
+    h("span", { class: "stage-title" }, h("span", { class: "intro-row-label" }, `Intro to ${number}`), introTitle(stageId)),
+    // Intros earn no stars; keep the status in its column.
+    h("span", { "aria-hidden": "true" }),
+    h("span", { class: "stage-status" }, status.text),
+  );
+  row.addEventListener("click", () => actions.intro(stageId));
+  return row;
 }
 
 const TIER_HINTS: Record<Tier, string> = {
@@ -273,6 +308,53 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
           ? `${tempo} bpm`
           : "Wait mode"
         : "Connect a MIDI keyboard to earn progress; screen keys are practice only",
+    ),
+  );
+}
+
+export interface IntroModel {
+  clef: Clef;
+  stageId: string;
+  steps: readonly IntroStep[];
+  index: number;
+  /** Watched again after it was done; leaving it goes back to the track. */
+  replay: boolean;
+}
+
+export interface IntroActions {
+  listen(): void;
+  skip(): void;
+}
+
+/** The card above the staff while an intro runs: what the example shows and how to count it. */
+export function renderIntro(root: HTMLElement, model: IntroModel, actions: IntroActions): void {
+  const placed = placedStage(model.stageId)!;
+  const step = model.steps[model.index];
+  const last = model.index === model.steps.length - 1;
+  const listen = h("button", { class: "btn-primary", type: "button" }, "▶ Listen");
+  listen.addEventListener("click", () => {
+    // Leave Space free to start an attempt rather than replaying.
+    listen.blur();
+    actions.listen();
+  });
+  const skip = h("button", { class: "btn-secondary", type: "button" }, model.replay ? "Back to the track" : last ? "Skip to the stage" : "Skip intro");
+  skip.addEventListener("click", actions.skip);
+  const count = step.count ? [h("p", { class: "intro-count" }, h("span", { class: "intro-count-label" }, "Count"), step.count)] : [];
+  root.replaceChildren(
+    h(
+      "div",
+      { class: "intro-head" },
+      h("span", { class: "intro-kicker" }, `${TRACK_LABELS[model.clef]} ${placed.number} · intro · ${model.index + 1} of ${model.steps.length}`),
+      skip,
+    ),
+    h("h2", { class: "intro-title" }, step.title),
+    h("p", { class: "intro-text" }, step.text),
+    ...count,
+    h(
+      "div",
+      { class: "intro-foot" },
+      listen,
+      h("span", { class: "menu-muted" }, "Then press Start (or Space) and play it back."),
     ),
   );
 }

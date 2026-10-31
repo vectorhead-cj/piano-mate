@@ -65,7 +65,19 @@ export interface PhraseCompleted {
   notes: NoteOutcome[];
 }
 
-export type PracticeEvent = PhraseCompleted;
+/** A stage's intro to new notation, watched through or skipped; either way it isn't shown again unasked. */
+export interface IntroCompleted {
+  type: "intro-completed";
+  v: 1;
+  id: string;
+  at: number;
+  session: string;
+  clef: Clef;
+  stageId: string;
+  skipped: boolean;
+}
+
+export type PracticeEvent = PhraseCompleted | IntroCompleted;
 
 const ALTER_TEXT: Record<Alter, string> = { [-1]: "b", 0: "", 1: "#" };
 

@@ -1,5 +1,9 @@
 const PEAK_GAIN = 0.3;
 const DECAY_SECONDS = 1.5;
+/** Held notes settle to this share of the peak, then release over RELEASE_SECONDS. */
+const SUSTAIN_LEVEL = 0.45;
+const SUSTAIN_SETTLE_SECONDS = 0.3;
+const RELEASE_SECONDS = 0.12;
 const CLICK_GAIN = 0.22;
 const CLICK_SECONDS = 0.04;
 
@@ -14,15 +18,19 @@ export class Synth {
     void this.ensureRunning();
   }
 
-  play(pitch: number, velocity = 0.8): void {
+  /**
+   * @param holdSeconds Sustain the note this long, then release it, instead of letting it
+   *   decay like a pluck (used to play phrases back, where note lengths matter).
+   */
+  play(pitch: number, velocity = 0.8, holdSeconds?: number): void {
     const running = this.runningContext();
     if (running) {
-      this.scheduleNote(running, pitch, velocity);
+      this.scheduleNote(running, pitch, velocity, holdSeconds);
       return;
     }
     // First unlock (or after suspension): wait for resume so the note isn't dropped.
     void this.ensureRunning().then((context) => {
-      if (context) this.scheduleNote(context, pitch, velocity);
+      if (context) this.scheduleNote(context, pitch, velocity, holdSeconds);
     });
   }
 
@@ -64,13 +72,23 @@ export class Synth {
     return this.context.state === "running" ? this.context : null;
   }
 
-  private scheduleNote(context: AudioContext, pitch: number, velocity: number): void {
+  private scheduleNote(context: AudioContext, pitch: number, velocity: number, holdSeconds?: number): void {
     const now = context.currentTime;
+    const peak = PEAK_GAIN * velocity;
+    const end = holdSeconds === undefined ? now + DECAY_SECONDS : now + holdSeconds + RELEASE_SECONDS;
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(PEAK_GAIN * velocity, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + DECAY_SECONDS);
+    gain.gain.exponentialRampToValueAtTime(peak, now + 0.01);
+    if (holdSeconds === undefined) {
+      gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    } else {
+      // Settle to a sustain level, hold, then release.
+      const sustainAt = now + Math.min(SUSTAIN_SETTLE_SECONDS, holdSeconds);
+      gain.gain.exponentialRampToValueAtTime(peak * SUSTAIN_LEVEL, sustainAt);
+      gain.gain.setValueAtTime(peak * SUSTAIN_LEVEL, now + holdSeconds);
+      gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    }
     gain.connect(context.destination);
 
     const oscillator = context.createOscillator();
@@ -79,7 +97,7 @@ export class Synth {
     oscillator.connect(gain);
     oscillator.onended = () => gain.disconnect();
     oscillator.start(now);
-    oscillator.stop(now + DECAY_SECONDS + 0.1);
+    oscillator.stop(end + 0.1);
   }
 
   private scheduleClick(context: AudioContext, accent: boolean): void {

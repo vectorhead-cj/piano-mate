@@ -123,7 +123,7 @@ function dealer(
 }
 
 /** The tonic sits where the stage's span starts, so plagal phrases dip below it. */
-function stageTonicStep(clef: Clef, stage: Stage, key: string): number {
+export function stageTonicStep(clef: Clef, stage: Stage, key: string): number {
   return staffStep(spanLevel(clef, key, stage.span).lowest);
 }
 

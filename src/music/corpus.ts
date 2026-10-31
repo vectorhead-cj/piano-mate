@@ -54,20 +54,30 @@ interface BankFile {
 
 const NOTE = /^(-?\d+)([#b]?)(w|h\.|h|q\.|q|8)(~?)$/;
 
+/** Bars of notes written as in phrases.json: "0q 1#8 2h~|2q", steps from the tonic. */
+export function parseNotes(text: string): CorpusNote[][] {
+  return text.split("|").map((bar) =>
+    bar.split(" ").map((token): CorpusNote => {
+      const match = NOTE.exec(token);
+      if (!match) throw new Error(`Bad note "${token}"`);
+      return {
+        step: Number(match[1]),
+        offset: match[2] === "#" ? 1 : match[2] === "b" ? -1 : 0,
+        duration: match[3] as Duration,
+        tie: match[4] === "~",
+      };
+    }),
+  );
+}
+
 export function parseBank(file: BankFile): CorpusPhrase[] {
   return file.phrases.map(([id, source, voice, clef, time, pickup, rhythm, chromatic, window, bars, text, mode]) => {
-    const notes = text.split("|").map((bar) =>
-      bar.split(" ").map((token): CorpusNote => {
-        const match = NOTE.exec(token);
-        if (!match) throw new Error(`Bad note "${token}" in ${id}`);
-        return {
-          step: Number(match[1]),
-          offset: match[2] === "#" ? 1 : match[2] === "b" ? -1 : 0,
-          duration: match[3] as Duration,
-          tie: match[4] === "~",
-        };
-      }),
-    );
+    let notes: CorpusNote[][];
+    try {
+      notes = parseNotes(text);
+    } catch (error) {
+      throw new Error(`${(error as Error).message} in ${id}`);
+    }
     const steps = notes.flat().map((n) => n.step);
     const name = file.sources[source];
     const timeSignature = file.times[time];
@@ -112,9 +122,16 @@ export function loadCorpus(): Promise<CorpusPhrase[] | null> {
  * pitch.ts), or null when a note would need a double sharp or flat there.
  */
 export function phraseInKey(phrase: CorpusPhrase, keyId: string, tonicStep: number): Exercise | null {
+  const bars = notesInKey(phrase.notes, keyId, tonicStep);
+  if (!bars) return null;
+  return { clef: phrase.clef, key: keyById(keyId).id, time: phrase.time, pickup: phrase.pickup, bars, source: { id: phrase.id, label: phrase.source } };
+}
+
+/** Steps from the tonic spelled in a key with its tonic at `tonicStep`; null if one needs a double sharp or flat. */
+export function notesInKey(steps: readonly CorpusNote[][], keyId: string, tonicStep: number): Note[][] | null {
   const key = keyById(keyId);
   const bars: Note[][] = [];
-  for (const bar of phrase.notes) {
+  for (const bar of steps) {
     const notes: Note[] = [];
     for (const { step, offset, duration, tie } of bar) {
       const natural = naturalFromStaffStep(tonicStep + step);
@@ -124,5 +141,5 @@ export function phraseInKey(phrase: CorpusPhrase, keyId: string, tonicStep: numb
     }
     bars.push(notes);
   }
-  return { clef: phrase.clef, key: key.id, time: phrase.time, pickup: phrase.pickup, bars, source: { id: phrase.id, label: phrase.source } };
+  return bars;
 }

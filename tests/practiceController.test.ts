@@ -161,6 +161,20 @@ describe("PracticeController (wait mode)", () => {
     expect(controller.exercise).not.toBe(firstExercise);
   });
 
+  it("waits, cold, after a clean pass when told to, then starts the next phrase on going hot", () => {
+    const { controller, expectedPitches, press, onHotChange } = setup();
+    controller.pauseAfterPass = true;
+    const firstExercise = controller.exercise;
+    expectedPitches().forEach(press);
+
+    vi.advanceTimersByTime(PHRASE_SCORE_DELAY_MS);
+    expect(controller.exercise).toBe(firstExercise);
+    expect(controller.isHot).toBe(false);
+    expect(onHotChange).toHaveBeenLastCalledWith(false);
+    controller.goHot();
+    expect(controller.exercise).not.toBe(firstExercise);
+  });
+
   it("toggles hot and cold from the bottom key of a MIDI keyboard without grading it", () => {
     const { controller, notation, sound, stream, onHotChange } = setup();
     const first = controller.exercise;
