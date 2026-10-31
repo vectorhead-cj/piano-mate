@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Corpus Phrases</title>
+    <link rel="stylesheet" href="./report.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Corpus phrases</h1>
+      <p class="lede" id="intro">Loading…</p>
+    </header>
+
+    <section class="controls">
+      <div class="segmented" id="clef">
+        <button data-value="treble">Treble · soprano</button>
+        <button data-value="bass">Bass · bass</button>
+      </div>
+      <div class="segmented" id="mode">
+        <button data-value="major">Major</button>
+        <button data-value="minor">Minor</button>
+        <button data-value="both">Both</button>
+      </div>
+      <label class="check"><input type="checkbox" id="dedupe" checked /> Skip repeated melodies</label>
+      <label class="check">At least <input type="number" id="min-notes" min="1" max="20" value="6" /> notes</label>
+      <div class="segmented" id="minBars" title="Phrase length in bars, not counting a pickup">
+        <button data-value="2">2–4 bars</button>
+        <button data-value="3">3–4 bars</button>
+        <button data-value="4">4 bars</button>
+      </div>
+      <div class="segmented" id="minDistinct" title="Different notes a phrase must use; a five-note or sixth range only needs what it holds">
+        <button data-value="3">3+ notes</button>
+        <button data-value="4">4+ notes</button>
+        <button data-value="5">5+ notes</button>
+        <button data-value="6">6+ notes</button>
+      </div>
+    </section>
+
+    <section class="collections">
+      <h3>Collections <span class="hint-inline">phrases in this clef</span></h3>
+      <div id="collections"></div>
+    </section>
+
+    <section>
+      <h2>1 · Where the phrases go</h2>
+      <p class="hint">Each step keeps the phrases that pass it. The last step is what a curriculum could use today.</p>
+      <div id="funnel"></div>
+      <p id="levels" class="levels"></p>
+      <div id="breakdown" class="grid-card breakdown"></div>
+      <h3 class="subhead">Turned away as not melodic</h3>
+      <p class="hint">Accompaniment, drones and see-saws rather than melody. Choose how many different notes a phrase needs above; the repeat limit is fixed.</p>
+      <div id="melodic" class="cards"></div>
+    </section>
+
+    <section>
+      <h2>2 · Why the rest are left out</h2>
+      <p class="hint">
+        Each card is something in the music the app can't play yet, with a phrase it keeps out (red notes are the cause).
+        Tick “Count as supported” to see how the numbers would change if the app learned it.
+      </p>
+      <p class="legend">
+        <span><i class="swatch only"></i>Kept out by this alone: supporting it adds these phrases</span>
+        <span><i class="swatch also"></i>Also kept out by something else</span>
+      </p>
+      <div id="blockers"></div>
+      <p id="absent" class="hint"></p>
+    </section>
+
+    <section>
+      <h2>3 · Playable phrases by curriculum dimension</h2>
+      <p class="hint">
+        One table per rhythm level. Rows are note ranges counted from the tonic (5, is the fifth below, 5' the fifth above the octave);
+        columns are how many notes fall outside the key signature. Click a count to see the phrases.
+      </p>
+      <div class="segmented" id="rows">
+        <button data-value="narrowest" title="Each phrase counted once, in the narrowest range it fits">Count in narrowest range</button>
+        <button data-value="fits" title="Each phrase counted in every range it fits">Count in every range it fits</button>
+      </div>
+      <div id="grids"></div>
+    </section>
+
+    <section id="samples-section" hidden>
+      <h2 id="samples-title"></h2>
+      <div id="samples"></div>
+      <button id="more" class="more">Show more</button>
+    </section>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
