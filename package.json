@@ -13,7 +13,8 @@
     "corpus:setup": "python3 -m venv tools/corpus/.venv && tools/corpus/.venv/bin/pip install -r tools/corpus/requirements.txt",
     "corpus:extract": "tools/corpus/.venv/bin/python -I tools/corpus/extract.py",
     "corpus:report": "vite tools/corpus/report",
-    "corpus": "npm run corpus:extract && npm run corpus:report"
+    "corpus": "npm run corpus:extract && npm run corpus:report",
+    "corpus:export": "node tools/corpus/export.mjs"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.2.1"

@@ -10,6 +10,9 @@ A one-off tool for building a curriculum from real phrases. It isn't part of the
 npm run corpus:setup   # once: creates tools/corpus/.venv with music21
 npm run corpus         # extract (cached per collection), then serve the report
 npm run corpus:report  # serve the report from the last extract
+npm run corpus:export  # write public/phrases.json, the phrases the app practises from
 ```
+
+`exportPhrases.ts` chooses those phrases with the report's defaults: Bach, Essen and Palestrina at every rhythm level plus the fiddle-tune books for Busy; major and minor keys; exactly 4 bars, like curriculum phrases; at least 6 notes, 4 different notes and at most 40 % repeats; nothing the app can't play. `public/phrases.json` is committed so the app never needs the Python tooling.
 
 `npm run corpus:extract -- --force palestrina` re-extracts one collection. `data/` and `.venv/` are git-ignored. The music21 corpus is public domain or freely licensed.

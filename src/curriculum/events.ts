@@ -55,6 +55,8 @@ export interface PhraseCompleted {
     /** Left out by events recorded before phrases had other time signatures (all 4/4). */
     time?: TimeSignature;
   };
+  /** The real phrase played (see src/music/corpus.ts); absent for generated phrases. */
+  phraseId?: string;
   /** Notes per bar, so a note index maps back to its bar. */
   barSizes: number[];
   notes: NoteOutcome[];

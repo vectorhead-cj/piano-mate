@@ -137,6 +137,13 @@
                 <select name="time" aria-label="Time signature"></select>
               </label>
               <label class="field">
+                <span class="field-caption">Music</span>
+                <select name="source" aria-label="Where phrases come from">
+                  <option value="corpus">Real music</option>
+                  <option value="generator">Generated</option>
+                </select>
+              </label>
+              <label class="field">
                 <span class="field-caption">Bars</span>
                 <select name="bars" aria-label="Bars">
                   <option>1</option>
@@ -204,6 +211,7 @@
           <div class="notation-sheet">
             <div id="notation"></div>
           </div>
+          <p id="phrase-source" class="phrase-source"></p>
         </section>
         <section class="keyboard-area" aria-label="Keyboard">
           <div id="keyboard" class="keyboard"></div>

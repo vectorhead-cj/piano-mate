@@ -79,8 +79,11 @@ export class PracticeController {
   private readonly phraseSources = new Set<NoteSource>();
   /** Whether keys played on a MIDI device also light up on the screen keyboard. */
   lightMidiKeys = false;
-  /** Makes each new phrase instead of the generator settings (used by curriculum stages). */
-  exerciseSource: (() => Exercise) | null = null;
+  /**
+   * Makes each new phrase instead of the generator settings (curriculum stages, real
+   * phrases); returning null falls back to the generator.
+   */
+  exerciseSource: (() => Exercise | null) | null = null;
 
   constructor(private readonly deps: PracticeDependencies) {
     this.settings = deps.settings;
@@ -258,6 +261,7 @@ export class PracticeController {
       changed === "accidentalFrequency" ||
       changed === "rhythm" ||
       changed === "time" ||
+      changed === "source" ||
       changed === "clef" ||
       changed === "range" ||
       changed === "mode" ||

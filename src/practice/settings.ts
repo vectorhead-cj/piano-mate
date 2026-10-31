@@ -5,6 +5,9 @@ import type { AccidentalFrequency, Clef, RhythmFlavor } from "../music/types";
 
 export type PracticeMode = "wait" | "rhythm";
 
+/** Real phrases from the corpus, or generated ones. */
+export type PhraseSource = "corpus" | "generator";
+
 export interface Settings {
   namesOnNotes: boolean;
   mode: PracticeMode;
@@ -14,6 +17,7 @@ export interface Settings {
   rhythm: RhythmFlavor;
   time: GeneratedTime;
   bars: number;
+  source: PhraseSource;
   clef: Clef;
   /** Id of a Level from LEVELS (note range); always one of `clef`'s levels. */
   range: string;
@@ -31,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accidentalFrequency: "none",
   rhythm: DEFAULT_RHYTHM_FLAVOR,
   time: DEFAULT_TIME,
+  source: "corpus",
   bars: 2,
   clef: DEFAULT_CLEF,
   range: DEFAULT_LEVEL_ID,

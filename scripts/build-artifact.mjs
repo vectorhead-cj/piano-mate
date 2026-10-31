@@ -1,7 +1,7 @@
 // Builds the app as a single self-contained HTML fragment for publishing as a Claude artifact.
 // The artifact host wraps the page in its own <!doctype>/<html>/<head>/<body> skeleton and only
 // allows scripts from a few CDNs, so all JS and CSS is inlined and the document tags are stripped.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build } from "vite";
 
@@ -36,3 +36,9 @@ const headKept = head
 
 writeFileSync(outFile, `<title>Piano Mate</title>\n${headKept.trim()}\n${body.trim()}\n`);
 console.log(`Wrote ${outFile} (${(readFileSync(outFile).length / 1024).toFixed(0)} KB)`);
+
+// Vite copies public/ into the build; the page fetches the phrase corpus from beside itself,
+// so the artifact must publish it as a supporting file at the same relative path.
+const phrases = join(outDir, "phrases.json");
+if (!existsSync(phrases)) throw new Error(`${phrases} is missing; run npm run corpus:export`);
+console.log(`Publish ${phrases} beside it as "phrases.json" (${(readFileSync(phrases).length / 1024).toFixed(0)} KB)`);

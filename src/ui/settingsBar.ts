@@ -4,6 +4,7 @@ import { GENERATED_TIMES, RHYTHM_PROFILES, type GeneratedTime } from "../music/r
 import type { AccidentalFrequency, Clef, RhythmFlavor } from "../music/types";
 import {
   TEMPO_OPTIONS,
+  type PhraseSource,
   type PracticeMode,
   type Settings,
 } from "../practice/settings";
@@ -110,6 +111,7 @@ export function bindSettingsBar(
     accidentalFrequency: frequencySelect.value as AccidentalFrequency,
     rhythm: rhythmSelect.value as RhythmFlavor,
     time: timeSelect.value as GeneratedTime,
+    source: select("source").value as PhraseSource,
     bars: Number(select("bars").value),
     clef: clefSelect.value as Clef,
     range: rangeSelect.value,
@@ -122,6 +124,7 @@ export function bindSettingsBar(
   frequencySelect.value = initial.accidentalFrequency;
   rhythmSelect.value = initial.rhythm;
   timeSelect.value = initial.time;
+  select("source").value = initial.source;
   select("bars").value = String(initial.bars);
   clefSelect.value = levelById(initial.range).clef;
   fillRanges(clefSelect.value as Clef);

@@ -7,11 +7,11 @@ import {
   COMPLETE_STREAK,
   STAR_STREAK,
   placedStage,
-  stageExercises,
   tierMode,
   tierTempo,
   type Tier,
 } from "./curriculum/curriculum";
+import { customSource, stageMidiRange, stageSource } from "./curriculum/corpusSource";
 import { openEventLog } from "./curriculum/eventLog";
 import {
   countsForProgress,
@@ -25,7 +25,8 @@ import {
 } from "./curriculum/events";
 import { milestoneBetween } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
-import { spanLevel, spanMidiRange } from "./curriculum/spans";
+import { spanLevel } from "./curriculum/spans";
+import { loadCorpus } from "./music/corpus";
 import { levelById } from "./music/levels";
 import { midiOf } from "./music/pitch";
 import type { Clef, Level, NoteSource } from "./music/types";
@@ -95,7 +96,8 @@ function bindMidi(
 
 async function main(): Promise<void> {
   // VexFlow draws with the Bravura music font; drawing before it loads gives empty boxes.
-  await document.fonts.load("30px Bravura");
+  // The phrase corpus loads alongside; without it, practice falls back to generated phrases.
+  const [, corpus] = await Promise.all([document.fonts.load("30px Bravura"), loadCorpus()]);
 
   const notationElement = element("notation");
   const keyboardElement = element("keyboard");
@@ -261,6 +263,7 @@ async function main(): Promise<void> {
         bars: settings.bars,
         time: exercise.time,
       },
+      phraseId: exercise.source?.id,
       barSizes: exercise.bars.map((bar) => bar.length),
       notes: notes.map((note, i) => ({
         pitch: spellingText(note),
@@ -345,8 +348,8 @@ async function main(): Promise<void> {
       bars: stage.bars,
     };
     mode = settings.mode;
-    keyboardSpan = spanMidiRange(clef, stage.keys, stage.span);
-    practice.exerciseSource = stageExercises(clef, stage);
+    keyboardSpan = stageMidiRange(corpus, clef, stage);
+    practice.exerciseSource = stageSource(corpus, clef, stage);
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
     syncTransport(practice.isRhythmRunning);
@@ -358,7 +361,7 @@ async function main(): Promise<void> {
     settings = customSettings;
     mode = settings.mode;
     keyboardSpan = levelMidiRange(levelById(settings.range));
-    practice.exerciseSource = null;
+    practice.exerciseSource = customSource(corpus, () => settings);
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
     syncTransport(practice.isRhythmRunning);
@@ -427,7 +430,11 @@ async function main(): Promise<void> {
     element("phrase-debug"),
     () => practice.exercise,
   );
-  onPhraseShown = () => phraseDebug.refresh();
+  const phraseSource = element("phrase-source");
+  onPhraseShown = () => {
+    phraseDebug.refresh();
+    phraseSource.textContent = practice.exercise.source?.label ?? "";
+  };
 
   bindTheme(element<HTMLFormElement>("settings"), () => notationView.refreshTheme());
   bindPrefsPopover(element<HTMLButtonElement>("prefs-toggle"), element("prefs"));

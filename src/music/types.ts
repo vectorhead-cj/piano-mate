@@ -39,6 +39,8 @@ export interface Exercise {
    */
   pickup: number;
   bars: Note[][];
+  /** Where a phrase from real music came from; absent for generated phrases. */
+  source?: { id: string; label: string };
 }
 
 export interface Level {

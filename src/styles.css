@@ -1256,6 +1256,19 @@ body::before {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
+/* Where a real phrase came from, quietly under the staff. */
+.phrase-source {
+  margin: 0;
+  padding: 0 16px 10px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.phrase-source:empty {
+  display: none;
+}
+
 /* After-phrase message over the top of the staff. */
 .notation-panel {
   position: relative;
