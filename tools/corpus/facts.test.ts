@@ -139,4 +139,13 @@ describe("phraseFacts", () => {
     );
     expect(facts.blockers).toEqual(expect.arrayContaining(["minor", "modal-signature"]));
   });
+
+  it("allows ties and reads a tied phrase at the Eighths level", () => {
+    const facts = phraseFacts(
+      phrase([note(1, 0, 2, "C4"), note(1, 2, 2, "E4", { tie: "start" }), note(2, 0, 2, "E4", { tie: "stop" }), note(2, 2, 2, "G4")]),
+    );
+    expect(facts.blockers).toEqual([]);
+    expect(facts.rhythm).toBe("eighths");
+    expect(facts.noteCount).toBe(3);
+  });
 });

@@ -17,6 +17,8 @@ export type TimeSignature = "4/4" | "3/4" | "2/2";
 
 export interface Note extends Spelling {
   duration: Duration;
+  /** Tied to the next note, which has the same pitch: one press held through both. */
+  tie?: boolean;
 }
 
 export type Clef = "treble" | "bass";

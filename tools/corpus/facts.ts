@@ -144,7 +144,6 @@ const PLAYABLE_TIMES = ["4/4", "3/4", "2/2"];
 export type Blocker =
   | "note-value"
   | "tuplet"
-  | "tie"
   | "chord"
   | "grace"
   | "meter"
@@ -155,7 +154,6 @@ export type Blocker =
 export const BLOCKER_LABELS: Record<Blocker, string> = {
   "note-value": "Sixteenths and other note values",
   tuplet: "Tuplets",
-  tie: "Ties",
   chord: "Chords",
   grace: "Grace notes",
   meter: "Time signatures other than 4/4, 2/2 and 3/4",
@@ -168,7 +166,6 @@ export const BLOCKER_EXPLANATIONS: Record<Blocker, string> = {
   "note-value":
     "A note the app has no value for: sixteenths, dotted eighths (which come with a sixteenth), double dots or dotted wholes.",
   tuplet: "Triplets or other tuplets.",
-  tie: "A note tied over to the next one, usually across a barline.",
   chord: "Two or more notes at once, from a piano or a divided part.",
   grace: "An ornamental grace note.",
   meter: "The phrase is in 2/4, 6/8 or another time, or changes time partway. 2/2 counts as 4/4, since it is written the same way.",
@@ -182,7 +179,7 @@ export type RhythmBucket = "basic" | "eighths" | "busy";
 
 export const RHYTHM_LABELS: Record<RhythmBucket, string> = {
   basic: "Basic: quarters, halves, dotted halves and wholes",
-  eighths: "Eighths: some eighths or dotted quarters",
+  eighths: "Eighths: some eighths, dotted quarters or ties",
   busy: "Busy: half the notes or more are eighths",
 };
 
@@ -254,7 +251,6 @@ export function blockingNotes(phrase: RawPhrase, blocker: Blocker): RawNote[] {
   const test: Partial<Record<Blocker, (n: RawNote) => boolean>> = {
     "note-value": (n) => !n.grace && !n.tuplet && (n.dots > 1 || !PLAYABLE_LENGTHS.includes(n.ql)),
     tuplet: (n) => n.tuplet !== null,
-    tie: (n) => n.tie !== null,
     chord: (n) => n.chord,
     grace: (n) => n.grace,
     "double-accidental": (n) => Math.abs(n.alter) > 1,
@@ -263,7 +259,7 @@ export function blockingNotes(phrase: RawPhrase, blocker: Blocker): RawNote[] {
   return matches ? phrase.notes.filter(matches) : [];
 }
 
-const NOTE_BLOCKERS: readonly Blocker[] = ["note-value", "tuplet", "tie", "chord", "grace", "double-accidental"];
+const NOTE_BLOCKERS: readonly Blocker[] = ["note-value", "tuplet", "chord", "grace", "double-accidental"];
 
 export function phraseFacts(phrase: RawPhrase): PhraseFacts {
   const mode = phrase.analyzedKey.mode;
@@ -282,7 +278,9 @@ export function phraseFacts(phrase: RawPhrase): PhraseFacts {
   const windows = RANGE_WINDOWS.filter((w) => fitsWindow(low, high, w)).map((w) => w.id);
 
   const chromatic = played.filter((n) => n.alter !== key.alters[n.step]).length;
-  const { bucket: rhythm, eighthShare } = rhythmBucket(played);
+  const { bucket, eighthShare } = rhythmBucket(played);
+  // Ties are read from the Eighths level up, like dotted quarters.
+  const rhythm = bucket === "basic" && phrase.notes.some((n) => n.tie !== null) ? "eighths" : bucket;
   const pitchOf = (n: RawNote) => `${n.step}${n.alter}${n.octave}`;
   const repeats = played.slice(1).filter((n, i) => pitchOf(n) === pitchOf(played[i])).length;
 

@@ -17,6 +17,24 @@ const exercise: Exercise = {
   ],
 };
 
+/** C, then E tied over the barline (one press held through both), then G. */
+const tiedExercise: Exercise = {
+  clef: "treble",
+  key: "C",
+  time: "4/4",
+  pickup: 0,
+  bars: [
+    [
+      { letter: "C", alter: 0, octave: 4, duration: "h" },
+      { letter: "E", alter: 0, octave: 4, duration: "h", tie: true },
+    ],
+    [
+      { letter: "E", alter: 0, octave: 4, duration: "h" },
+      { letter: "G", alter: 0, octave: 4, duration: "h" },
+    ],
+  ],
+};
+
 describe("WaitSession", () => {
   it("advances only on the expected pitch", () => {
     const session = new WaitSession(exercise, exactPitch);
@@ -45,5 +63,15 @@ describe("WaitSession", () => {
     session.play(66);
     session.play(67);
     expect(session.score()).toEqual({ notesCorrect: 2, total: 3 });
+  });
+
+  it("holds a tied note instead of waiting for it again", () => {
+    const session = new WaitSession(tiedExercise, exactPitch);
+    session.play(60);
+    expect(session.play(64)).toEqual({ kind: "correct", index: 1, completed: false });
+    expect(session.currentIndex).toBe(3);
+    expect(session.play(67)).toEqual({ kind: "correct", index: 3, completed: true });
+    expect(session.score()).toEqual({ notesCorrect: 3, total: 3 });
+    expect(session.results()[2]).toEqual({ wrong: 0, hit: true, tied: true });
   });
 });

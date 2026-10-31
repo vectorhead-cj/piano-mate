@@ -17,6 +17,24 @@ const exercise: Exercise = {
   ],
 };
 
+/** C, then E tied over the barline (one press held through both), then G. */
+const tiedExercise: Exercise = {
+  clef: "treble",
+  key: "C",
+  time: "4/4",
+  pickup: 0,
+  bars: [
+    [
+      { letter: "C", alter: 0, octave: 4, duration: "h" },
+      { letter: "E", alter: 0, octave: 4, duration: "h", tie: true },
+    ],
+    [
+      { letter: "E", alter: 0, octave: 4, duration: "h" },
+      { letter: "G", alter: 0, octave: 4, duration: "h" },
+    ],
+  ],
+};
+
 const TEMPO = 60;
 const COUNT_IN = 4000; // 4 beats at 60 BPM
 
@@ -120,5 +138,24 @@ describe("RhythmSession", () => {
     const session = sessionAt(0);
     expect(session.countInMs).toBe(COUNT_IN);
     expect(session.totalBeats).toBe(8);
+  });
+
+  it("expects no press for a tied note and times the next one after both", () => {
+    const session = new RhythmSession(tiedExercise, TEMPO, exactPitch);
+    session.arm(0);
+    session.play(60, COUNT_IN);
+    session.play(64, COUNT_IN + 2000);
+    // The tied E lasts two more beats, so G is due at beat 6.
+    expect(session.currentIndex).toBe(3);
+    expect(session.play(67, COUNT_IN + 6000).result).toMatchObject({ kind: "correct", index: 3, timing: "on-time", completed: true });
+    expect(session.score()).toEqual({ notesCorrect: 3, rhythmOnTime: 3, total: 3 });
+  });
+
+  it("misses a tied note together with the note it is held from", () => {
+    const session = new RhythmSession(tiedExercise, TEMPO, exactPitch);
+    session.arm(0);
+    session.play(60, COUNT_IN);
+    expect(session.tick(COUNT_IN + 2000 + 501).missed).toEqual([1, 2]);
+    expect(session.currentIndex).toBe(3);
   });
 });

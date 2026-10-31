@@ -1,6 +1,7 @@
 import { midiOf } from "../music/pitch";
 import { barBeats, BEATS } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
+import { isTieContinuation, nextPressed, tiedOn } from "../music/ties";
 import type { PitchMatcher } from "./matcher";
 import type { NoteResult } from "./waitSession";
 import {
@@ -103,25 +104,32 @@ export class RhythmSession {
     this.phraseStartAt = now + this.countInMs;
   }
 
+  /** Counts pressed notes only: a tied note is one press. */
   score(): PhraseScore {
+    const pressed = this.notes.map((_, i) => i).filter((i) => !isTieContinuation(this.notes, i));
     return {
-      notesCorrect: this.pitchOk.filter(Boolean).length,
-      rhythmOnTime: this.timingOk.filter(Boolean).length,
-      total: this.notes.length,
+      notesCorrect: pressed.filter((i) => this.pitchOk[i]).length,
+      rhythmOnTime: pressed.filter((i) => this.timingOk[i]).length,
+      total: pressed.length,
     };
   }
 
   results(): NoteResult[] {
-    return this.notes.map((_, i) => ({
-      wrong: this.wrongs[i],
-      hit: this.pitchOk[i],
-      offsetMs: this.offsets[i],
-    }));
+    return this.notes.map((_, i) =>
+      isTieContinuation(this.notes, i)
+        ? { wrong: 0, hit: this.pitchOk[i], tied: true as const }
+        : { wrong: this.wrongs[i], hit: this.pitchOk[i], offsetMs: this.offsets[i] },
+    );
+  }
+
+  /** Moves past the pressed note at `index` and any notes tied on from it. */
+  private advanceFrom(index: number): void {
+    this.index = nextPressed(this.notes, index + 1);
   }
 
   /**
-   * Close windows that have passed without a correct pitch.
-   * Safe to call every animation frame.
+   * Close windows that have passed without a correct pitch; notes tied on from a missed
+   * note are missed with it. Safe to call every animation frame.
    */
   tick(now: number = performance.now()): RhythmTickResult {
     const missed: number[] = [];
@@ -133,8 +141,8 @@ export class RhythmSession {
     while (!this.isComplete) {
       const deadline = this.phraseStartAt + this.onsets[this.index] + window;
       if (now <= deadline) break;
-      missed.push(this.index);
-      this.index++;
+      missed.push(this.index, ...tiedOn(this.notes, this.index));
+      this.advanceFrom(this.index);
     }
     return { missed, currentIndex: this.index, completed: this.isComplete };
   }
@@ -168,9 +176,11 @@ export class RhythmSession {
 
     const timing = timingGrade(time - expectedAt, this.tempo);
     this.offsets[index] = Math.round(time - expectedAt);
-    this.pitchOk[index] = true;
-    this.timingOk[index] = timing === "on-time";
-    this.index++;
+    for (const i of [index, ...tiedOn(this.notes, index)]) {
+      this.pitchOk[i] = true;
+      this.timingOk[i] = timing === "on-time";
+    }
+    this.advanceFrom(index);
     return {
       missed,
       result: { kind: "correct", index, timing, completed: this.isComplete },

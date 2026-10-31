@@ -2,6 +2,7 @@ import { accidentalsForBar, type AccidentalSymbol } from "./accidentals";
 import { keyById, type KeyInfo } from "./keys";
 import { noteName } from "./pitch";
 import { timeParts } from "./rhythms";
+import { isTieContinuation } from "./ties";
 import type { Clef, Duration, Exercise, Note } from "./types";
 
 /** Divisions per quarter note so eighths and dotted quarters are integer durations. */
@@ -38,8 +39,17 @@ export function exerciseToMusicXml(
   options: MusicXmlOptions = {},
 ): string {
   const key = keyById(exercise.key);
+  // Whether each note is held on from the one before, across barlines too.
+  const flat = exercise.bars.flat();
+  let start = 0;
   const measures = exercise.bars
-    .map((bar, index) => measureXml(bar, index + 1, exercise, key, options, accidentalsForBar(bar, key)))
+    .map((bar, index) => {
+      const held = bar.map((_, i) => isTieContinuation(flat, start + i));
+      start += bar.length;
+      // A note held over the barline keeps its pitch without printing the accidental again.
+      const accidentals = accidentalsForBar(bar, key).map((a, i) => (held[i] ? null : a));
+      return measureXml(bar, index + 1, exercise, key, options, accidentals, held);
+    })
     .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -64,6 +74,7 @@ function measureXml(
   key: KeyInfo,
   options: MusicXmlOptions,
   accidentals: readonly (AccidentalSymbol | null)[],
+  held: readonly boolean[],
 ): string {
   const { beats, beatType } = timeParts(exercise.time);
   const attributes =
@@ -87,7 +98,7 @@ function measureXml(
       : "";
 
   const notes = bar
-    .map((note, i) => noteXml(note, options, accidentals[i]))
+    .map((note, i) => noteXml(note, options, accidentals[i], held[i]))
     .join("\n");
   // A pickup bar is numbered 0 and marked as incomplete, as engravers do.
   const pickup = exercise.pickup > 0;
@@ -102,15 +113,22 @@ function noteXml(
   note: Note,
   options: MusicXmlOptions,
   accidental: AccidentalSymbol | null,
+  held: boolean,
 ): string {
   const { duration, type, dotted } = DURATION_XML[note.duration];
+  const ties = [...(held ? ["stop"] : []), ...(note.tie ? ["start"] : [])];
+  const tieXml = ties.map((t) => `\n        <tie type="${t}"/>`).join("");
+  const notations = ties.length
+    ? `\n        <notations>${ties.map((t) => `<tied type="${t}"/>`).join("")}</notations>`
+    : "";
   const alter =
     note.alter !== 0 ? `\n          <alter>${note.alter}</alter>` : "";
   // OSMD draws printed accidentals from <accidental>, not from <alter> alone.
   const accidentalXml = accidental
     ? `\n        <accidental>${ACCIDENTAL_XML[accidental]}</accidental>`
     : "";
-  const lyric = options.noteNames
+  // A held note is the same key as the one before, so it isn't named again.
+  const lyric = options.noteNames && !held
     ? `
         <lyric number="1">
           <syllabic>single</syllabic>
@@ -122,8 +140,8 @@ function noteXml(
           <step>${note.letter}</step>${alter}
           <octave>${note.octave}</octave>
         </pitch>
-        <duration>${duration}</duration>
-        <type>${type}</type>${dotted ? "\n        <dot/>" : ""}${accidentalXml}${lyric}
+        <duration>${duration}</duration>${tieXml}
+        <type>${type}</type>${dotted ? "\n        <dot/>" : ""}${accidentalXml}${notations}${lyric}
       </note>`;
 }
 

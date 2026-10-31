@@ -3,6 +3,7 @@ import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
 import { levelById } from "../music/levels";
 import { midiOf } from "../music/pitch";
+import { pressedCount, tiedOn } from "../music/ties";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
@@ -196,7 +197,7 @@ export class PracticeController {
         this.startRhythmClock(countInAt);
       } else {
         this.rhythmSession = null;
-        const total = this.currentExercise.bars.flat().length;
+        const total = pressedCount(this.currentExercise.bars.flat());
         this.publishScore(0, total, 0);
         this.deps.notation.setState(0, "current");
         this.setRhythmRunning(false);
@@ -288,13 +289,13 @@ export class PracticeController {
     const result = session.play(pitch);
     switch (result.kind) {
       case "correct":
-        notation.setState(result.index, "correct");
+        this.setPressedState(session.notes, result.index, "correct");
         keyboard.flash(pitch, "correct");
         this.publishLiveScore();
         if (result.completed) {
           this.finishWaitPhrase();
         } else {
-          notation.setState(result.index + 1, "current");
+          notation.setState(session.currentIndex, "current");
         }
         break;
       case "wrong":
@@ -317,13 +318,13 @@ export class PracticeController {
     switch (result.kind) {
       case "correct": {
         const state: NoteState = result.timing === "on-time" ? "correct" : "late";
-        notation.setState(result.index, state);
+        this.setPressedState(session.notes, result.index, state);
         keyboard.flash(pitch, result.timing === "on-time" ? "correct" : "hint");
         this.publishLiveScore();
         if (result.completed) {
           this.finishRhythmPhrase();
         } else if (!session.isCountingIn(this.now())) {
-          notation.setState(result.index + 1, "current");
+          notation.setState(session.currentIndex, "current");
         }
         break;
       }
@@ -336,6 +337,11 @@ export class PracticeController {
         if (session.isComplete) this.finishRhythmPhrase();
         break;
     }
+  }
+
+  /** Colours a pressed note and the notes tied on from it. */
+  private setPressedState(notes: Exercise["bars"][number], index: number, state: NoteState): void {
+    for (const i of [index, ...tiedOn(notes, index)]) this.deps.notation.setState(i, state);
   }
 
   private scheduleTick(): void {

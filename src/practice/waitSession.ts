@@ -1,5 +1,6 @@
 import { midiOf } from "../music/pitch";
 import type { Exercise, Note } from "../music/types";
+import { isTieContinuation, nextPressed, pressedCount } from "../music/ties";
 import type { PitchMatcher } from "./matcher";
 
 export type PlayResult =
@@ -18,9 +19,11 @@ export interface NoteResult {
   hit: boolean;
   /** Rhythm mode: press time minus expected onset, in ms. */
   offsetMs?: number;
+  /** Held on from the note before through a tie, so it shares that note's result. */
+  tied?: true;
 }
 
-/** Wait mode: nothing advances until the expected note is played. */
+/** Wait mode: nothing advances until the expected note is played; tied notes are held, not played. */
 export class WaitSession {
   readonly notes: Note[];
   private index = 0;
@@ -47,12 +50,14 @@ export class WaitSession {
   }
 
   score(): WaitScore {
-    return { notesCorrect: this.firstTryCorrect, total: this.notes.length };
+    return { notesCorrect: this.firstTryCorrect, total: pressedCount(this.notes) };
   }
 
   /** Per-note results; every note counts as hit once the phrase is complete. */
   results(): NoteResult[] {
-    return this.notes.map((_, i) => ({ wrong: this.wrongs[i], hit: i < this.index }));
+    return this.notes.map((_, i) =>
+      isTieContinuation(this.notes, i) ? { wrong: 0, hit: i < this.index, tied: true as const } : { wrong: this.wrongs[i], hit: i < this.index },
+    );
   }
 
   play(pitch: number): PlayResult {
@@ -68,7 +73,7 @@ export class WaitSession {
 
     if (!this.missedCurrent) this.firstTryCorrect++;
     this.missedCurrent = false;
-    this.index++;
+    this.index = nextPressed(this.notes, index + 1);
     return { kind: "correct", index, completed: this.isComplete };
   }
 }

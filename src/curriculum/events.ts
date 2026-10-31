@@ -16,6 +16,8 @@ export interface NoteOutcome {
   wrong: number;
   /** Played with the right pitch (rhythm mode: inside the accept window; wait mode: always). */
   hit: boolean;
+  /** Held on from the note before through a tie: it shares that note's result and isn't pressed. */
+  tied?: true;
   /** Rhythm mode only: ms from the expected onset to the press (negative = early). */
   offsetMs?: number;
 }
@@ -89,10 +91,11 @@ export function countsForProgress(event: PhraseCompleted): boolean {
 
 /** Rhythm mode: share of notes inside the tighter on-time window, 0–1. Undefined in wait mode. */
 export function timingBonus(event: PhraseCompleted): number | undefined {
-  if (event.mode !== "rhythm" || event.tempo === undefined || event.notes.length === 0) return undefined;
+  const pressed = event.notes.filter((n) => !n.tied);
+  if (event.mode !== "rhythm" || event.tempo === undefined || pressed.length === 0) return undefined;
   const window = onTimeWindowMs(event.tempo);
-  const onTime = event.notes.filter((n) => n.hit && n.offsetMs !== undefined && Math.abs(n.offsetMs) <= window);
-  return onTime.length / event.notes.length;
+  const onTime = pressed.filter((n) => n.hit && n.offsetMs !== undefined && Math.abs(n.offsetMs) <= window);
+  return onTime.length / pressed.length;
 }
 
 export type PhraseFault = { kind: "wrong" | "missed"; bar: number; index: number };

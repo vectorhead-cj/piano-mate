@@ -12,6 +12,8 @@ export interface CorpusNote {
   step: number;
   offset: -1 | 0 | 1;
   duration: Duration;
+  /** Tied to the next note. */
+  tie: boolean;
 }
 
 export interface CorpusPhrase {
@@ -47,7 +49,7 @@ interface BankFile {
   phrases: Row[];
 }
 
-const NOTE = /^(-?\d+)([#b]?)(w|h\.|h|q\.|q|8)$/;
+const NOTE = /^(-?\d+)([#b]?)(w|h\.|h|q\.|q|8)(~?)$/;
 
 export function parseBank(file: BankFile): CorpusPhrase[] {
   return file.phrases.map(([id, source, voice, clef, time, pickup, rhythm, chromatic, window, bars, text, mode]) => {
@@ -55,7 +57,12 @@ export function parseBank(file: BankFile): CorpusPhrase[] {
       bar.split(" ").map((token): CorpusNote => {
         const match = NOTE.exec(token);
         if (!match) throw new Error(`Bad note "${token}" in ${id}`);
-        return { step: Number(match[1]), offset: match[2] === "#" ? 1 : match[2] === "b" ? -1 : 0, duration: match[3] as Duration };
+        return {
+          step: Number(match[1]),
+          offset: match[2] === "#" ? 1 : match[2] === "b" ? -1 : 0,
+          duration: match[3] as Duration,
+          tie: match[4] === "~",
+        };
       }),
     );
     const steps = notes.flat().map((n) => n.step);
@@ -104,11 +111,11 @@ export function phraseInKey(phrase: CorpusPhrase, keyId: string, tonicStep: numb
   const bars: Note[][] = [];
   for (const bar of phrase.notes) {
     const notes: Note[] = [];
-    for (const { step, offset, duration } of bar) {
+    for (const { step, offset, duration, tie } of bar) {
       const natural = naturalFromStaffStep(tonicStep + step);
       const alter = keyAlter(key, natural.letter) + offset;
       if (alter < -1 || alter > 1) return null;
-      notes.push({ ...natural, alter: alter as Alter, duration });
+      notes.push({ ...natural, alter: alter as Alter, duration, ...(tie ? { tie } : {}) });
     }
     bars.push(notes);
   }

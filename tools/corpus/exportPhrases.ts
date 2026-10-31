@@ -59,7 +59,7 @@ export function wanted(facts: PhraseFacts): boolean {
 }
 
 /**
- * Notes as "step[#|b]duration" tokens, bars split by "|". Steps count staff positions from
+ * Notes as "step[#|b]duration[~]" tokens, bars split by "|"; "~" ties a note to the next. Steps count staff positions from
  * the tonic (of the phrase's own mode), shifted by octaves so the phrase sits inside its
  * narrowest window; # and b are relative to the key signature. Null when a bar doesn't add up
  * (a mis-cut source bar).
@@ -99,7 +99,8 @@ export function encodeNotes(facts: PhraseFacts): { notes: string; pickup: number
     const minorScale = facts.mode === "minor" && offset === 1 && (degree === 6 || degree === 7);
     const continued = n.tie === "stop" || n.tie === "continue";
     if (offset !== 0 && !minorScale && !continued) chromatic++;
-    bars[bars.length - 1].push(`${steps[i] - shift}${offset === 1 ? "#" : offset === -1 ? "b" : ""}${duration}`);
+    const tied = n.tie === "start" || n.tie === "continue" ? "~" : "";
+    bars[bars.length - 1].push(`${steps[i] - shift}${offset === 1 ? "#" : offset === -1 ? "b" : ""}${duration}${tied}`);
     lengths[lengths.length - 1] += n.ql;
   }
   // Every bar is full except a pickup at the start and an early end at the finish.

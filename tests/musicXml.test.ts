@@ -132,4 +132,25 @@ describe("exerciseToMusicXml", () => {
     expect(xml).toContain("<beats>2</beats>");
     expect(xml).toContain("<beat-type>2</beat-type>");
   });
+
+  it("ties a note over the barline without repeating its accidental or name", () => {
+    const xml = exerciseToMusicXml(
+      {
+        ...sample,
+        key: "C",
+        bars: [
+          [
+            { letter: "C", alter: 0, octave: 4, duration: "h" },
+            { letter: "F", alter: 1, octave: 4, duration: "h", tie: true },
+          ],
+          [{ letter: "F", alter: 1, octave: 4, duration: "w" }],
+        ],
+      },
+      { noteNames: true },
+    );
+    expect(xml).toMatch(/<tie type="start"\/>[\s\S]*<tied type="start"\/>/);
+    expect(xml).toMatch(/<tie type="stop"\/>[\s\S]*<tied type="stop"\/>/);
+    expect(xml.match(/<accidental>sharp<\/accidental>/g)).toHaveLength(1);
+    expect(xml.match(/<text>F♯<\/text>/g)).toHaveLength(1);
+  });
 });

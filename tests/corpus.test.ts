@@ -49,7 +49,9 @@ describe("parseBank", () => {
       high: 4,
       source: "Essen folk songs: Ich fahr dahin",
     });
-    expect(phrase.notes[1][1]).toEqual({ step: 1, offset: 1, duration: "8" });
+    expect(phrase.notes[1][1]).toEqual({ step: 1, offset: 1, duration: "8", tie: false });
+    const [tied] = bank([["t", 0, "S", 0, 0, 0, 1, 0, 0, 2, "0h 2h~|2h 0h", 0]]);
+    expect(phraseInKey(tied, "C", staffStep({ letter: "C", alter: 0, octave: 4 }))!.bars[0][1].tie).toBe(true);
     expect(bank([FIVE])[0].source).toBe("Bach (chorales and more): bwv1 (Soprano)");
   });
 });
