@@ -4,6 +4,7 @@ import {
   COMPLETE_STREAK,
   hasIntro,
   PLACED_STAGES,
+  placedStage,
   STAR_STREAK,
   TIERS,
   type Tier,
@@ -76,6 +77,13 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
 
   const seen = introsSeen(events);
   const ordered = [...events].sort((a, b) => a.at - b.at);
+  const startOrder: Partial<Record<Clef, number>> = {};
+  for (const event of ordered) {
+    if (event.type === "track-started") {
+      const order = PLACED_STAGES.findIndex((p) => p.stage.id === event.stageId);
+      if (order >= 0) startOrder[event.clef] = order;
+    }
+  }
   for (const event of ordered) {
     if (event.type !== "phrase-completed" || event.context.kind !== "curriculum" || !countsForProgress(event)) continue;
     const tier = tiersFor(event.context.clef, event.context.stageId)[event.context.tier];
@@ -91,7 +99,7 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
   }
 
   return Object.fromEntries(
-    CLEF_TRACKS.map((clef) => [clef, trackProgress(clef, tiersFor, seen)]),
+    CLEF_TRACKS.map((clef) => [clef, trackProgress(clef, tiersFor, seen, startOrder[clef] ?? 0)]),
   ) as Progress;
 }
 
@@ -99,6 +107,8 @@ function trackProgress(
   clef: Clef,
   tiersFor: (clef: Clef, stageId: string) => Record<Tier, TierProgress>,
   seen: ReadonlySet<string>,
+  /** Stages up to this one are open whatever their stars (see TrackStarted). */
+  startOrder: number,
 ): TrackProgress {
   const stages: Record<string, StageProgress> = {};
   let previousPassed: boolean = true;
@@ -107,7 +117,8 @@ function trackProgress(
   let currentStageId = PLACED_STAGES[PLACED_STAGES.length - 1].stage.id;
   let currentFound = false;
 
-  for (const { stage } of PLACED_STAGES) {
+  for (const { stage, order } of PLACED_STAGES) {
+    if (order <= startOrder) previousPassed = true;
     const tiers = tiersFor(clef, stage.id);
     const intro = hasIntro(stage);
     const introOpen = intro && previousPassed;
@@ -126,7 +137,8 @@ function trackProgress(
 
     if (stars >= 2) passed++;
     if (complete) completed++;
-    if ((unlocked || introOpen) && stars < 2 && !currentFound) {
+    // Stages skipped by starting further on aren't where the track continues.
+    if ((unlocked || introOpen) && stars < 2 && order >= startOrder && !currentFound) {
       currentStageId = stage.id;
       currentFound = true;
     }
@@ -134,6 +146,29 @@ function trackProgress(
   }
 
   return { stages, passed, completed, currentStageId };
+}
+
+/** Debug: every stage, intro and tier open, with stars and streaks as earned. */
+export function unlockAll(progress: Progress): Progress {
+  return Object.fromEntries(
+    CLEF_TRACKS.map((clef) => [
+      clef,
+      {
+        ...progress[clef],
+        stages: Object.fromEntries(
+          Object.entries(progress[clef].stages).map(([id, stage]) => [
+            id,
+            {
+              ...stage,
+              introOpen: stage.introOpen || hasIntro(placedStage(id)!.stage),
+              unlocked: true,
+              tierOpen: { read: true, play: true, fluent: true },
+            },
+          ]),
+        ),
+      },
+    ]),
+  ) as Progress;
 }
 
 /** Stages whose intro has been watched or skipped, in either track (notation is the same in both). */

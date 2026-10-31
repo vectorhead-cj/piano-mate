@@ -53,6 +53,8 @@ import { bindPrefsPopover, bindTheme } from "./ui/theme";
 /** Time to see a clean intro example turn green before the next one comes up. */
 const INTRO_NEXT_DELAY_MS = 1500;
 
+const UNLOCK_ALL_KEY = "piano-mate.unlockAll";
+
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (!found) throw new Error(`Missing #${id} in index.html`);
@@ -252,6 +254,22 @@ async function main(): Promise<void> {
   notationView.setStaffLetters(staffLetters.checked);
   staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
   bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
+  const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
+  try {
+    unlockAllBox.checked = localStorage.getItem(UNLOCK_ALL_KEY) === "true";
+  } catch {
+    // Storage can be unavailable; the box starts off.
+  }
+  store.setUnlockAll(unlockAllBox.checked);
+  unlockAllBox.addEventListener("change", () => {
+    try {
+      localStorage.setItem(UNLOCK_ALL_KEY, String(unlockAllBox.checked));
+    } catch {
+      // It still applies for this page.
+    }
+    store.setUnlockAll(unlockAllBox.checked);
+    if (view.name === "practice") renderView();
+  });
 
   function inputKind(sources: NoteSource[]): InputKind {
     if (sources.every((s) => s === "midi")) return "midi";
@@ -538,6 +556,10 @@ async function main(): Promise<void> {
         select: (stageId) => showView({ name: "track", clef, selected: stageId }),
         start: (stageId, tier) => startStage(clef, stageId, tier),
         intro: (stageId) => startIntro(clef, stageId),
+        startHere: (stageId) => {
+          store.record({ type: "track-started", v: 1, id: newId(), at: Date.now(), session, clef, stageId });
+          showView({ name: "track", clef, selected: stageId });
+        },
       });
     } else if (intro) {
       renderIntro(introPanel, intro, { listen, skip: () => finishIntro(true) });

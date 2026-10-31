@@ -125,6 +125,8 @@ export interface TrackActions {
   select(stageId: string): void;
   start(stageId: string, tier: Tier): void;
   intro(stageId: string): void;
+  /** Open the track up to this stage, for someone who knows what comes before. */
+  startHere(stageId: string): void;
 }
 
 function stageStatus(progress: StageProgress): { text: string; tone: string } {
@@ -155,9 +157,8 @@ export function renderTrack(
         {
           class: "stage-row",
           type: "button",
-          "aria-expanded": selected && stageProgress.unlocked ? "true" : "false",
+          "aria-expanded": selected ? "true" : "false",
           "data-tone": status.tone,
-          disabled: !stageProgress.unlocked,
         },
         h("span", { class: "stage-number" }, p.number),
         h("span", { class: "stage-title" }, stageTitle(p.stage)),
@@ -166,7 +167,11 @@ export function renderTrack(
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
       const intro = hasIntro(p.stage) ? [introRow(p.stage.id, p.number, stageProgress, actions)] : [];
-      return selected && stageProgress.unlocked ? [...intro, row, stageDetail(p.stage.id, stageProgress, actions)] : [...intro, row];
+      if (!selected) return [...intro, row];
+      const detail = stageProgress.unlocked || stageProgress.introOpen
+        ? stageDetail(p.stage.id, stageProgress, actions)
+        : lockedDetail(p.stage.id, p.number, actions);
+      return [...intro, row, detail];
     });
     return h(
       "section",
@@ -272,6 +277,24 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
           : `Complete: ${COMPLETE_STREAK} in a row at Play or Fluent · best ${best}`,
       ),
       meter(best, COMPLETE_STREAK, `Best ${best} of ${COMPLETE_STREAK}`),
+    ),
+  );
+}
+
+/** A locked stage: what it holds, and the choice to start the track here instead. */
+function lockedDetail(stageId: string, number: string, actions: TrackActions): HTMLElement {
+  const { stage } = placedStage(stageId)!;
+  const button = h("button", { class: "btn-secondary", type: "button" }, "Start here");
+  button.addEventListener("click", () => actions.startHere(stageId));
+  return h(
+    "div",
+    { class: "stage-detail" },
+    h("div", { class: "chips" }, ...stageFacts(stage).map((fact) => h("span", { class: "chip" }, fact))),
+    h(
+      "div",
+      { class: "start-here" },
+      h("span", { class: "menu-muted" }, `Already know what comes before? Open every stage up to ${number}; their stars stay unearned.`),
+      button,
     ),
   );
 }

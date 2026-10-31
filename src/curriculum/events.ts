@@ -77,7 +77,21 @@ export interface IntroCompleted {
   skipped: boolean;
 }
 
-export type PracticeEvent = PhraseCompleted | IntroCompleted;
+/**
+ * The player chose to start a track at this stage: it and every stage before it open, without
+ * earning their stars. The latest one per track counts.
+ */
+export interface TrackStarted {
+  type: "track-started";
+  v: 1;
+  id: string;
+  at: number;
+  session: string;
+  clef: Clef;
+  stageId: string;
+}
+
+export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted;
 
 const ALTER_TEXT: Record<Alter, string> = { [-1]: "b", 0: "", 1: "#" };
 

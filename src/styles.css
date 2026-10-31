@@ -1107,6 +1107,22 @@ body::before {
   cursor: default;
 }
 
+/* Locked stages stay selectable, to offer starting there. */
+.stage-row[data-tone="locked"]:not(.intro-row) {
+  color: var(--muted);
+}
+
+.start-here {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.start-here .btn-secondary {
+  flex: none;
+}
+
 .stage-number {
   color: var(--muted);
   font-variant-numeric: tabular-nums;

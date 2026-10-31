@@ -1,6 +1,6 @@
 import type { EventLog } from "./eventLog";
 import type { PracticeEvent } from "./events";
-import { projectProgress, type Progress } from "./progress";
+import { projectProgress, unlockAll, type Progress } from "./progress";
 
 export type StoreStatus = "loading" | "ready" | "save-failed";
 
@@ -14,6 +14,7 @@ export class ProgressStore {
   private pending: PracticeEvent[] = [];
   private log: EventLog | null = null;
   private listeners = new Set<() => void>();
+  private unlockAll = false;
   progress: Progress = projectProgress([]);
   status: StoreStatus = "loading";
 
@@ -63,8 +64,15 @@ export class ProgressStore {
     });
   }
 
+  /** Debug: open every stage without changing what's recorded. */
+  setUnlockAll(on: boolean): void {
+    this.unlockAll = on;
+    this.recompute();
+  }
+
   private recompute(): void {
-    this.progress = projectProgress(this.events);
+    const progress = projectProgress(this.events);
+    this.progress = this.unlockAll ? unlockAll(progress) : progress;
     this.notify();
   }
 

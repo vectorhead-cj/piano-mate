@@ -13,7 +13,7 @@ import { generateExercise } from "../src/music/generator";
 import { keyById, MINOR_KEYS } from "../src/music/keys";
 import { exerciseToMusicXml } from "../src/music/musicXml";
 import { firstFault, type IntroCompleted, type InputKind, type PhraseCompleted } from "../src/curriculum/events";
-import { milestoneBetween, projectProgress } from "../src/curriculum/progress";
+import { milestoneBetween, projectProgress, unlockAll } from "../src/curriculum/progress";
 import { spanLevel } from "../src/curriculum/spans";
 import { midiOf, staffStep } from "../src/music/pitch";
 import type { Clef } from "../src/music/types";
@@ -189,6 +189,26 @@ describe("projectProgress", () => {
     const custom = { ...phrase(first, "read", true), context: { kind: "custom" as const } };
     const events = [...repeat(20, () => custom), ...repeat(20, () => phrase("gone", "read", true))];
     expect(projectProgress(events).treble.stages[first].tiers.read.attempts).toBe(0);
+  });
+
+  it("opens every stage up to where the track was started, without stars", () => {
+    const start = PLACED_STAGES[5].stage.id;
+    const progress = projectProgress([
+      { type: "track-started", v: 1, id: "t", at: ++clock, session: "s", clef: "treble", stageId: start },
+    ]);
+    const track = progress.treble;
+    expect(PLACED_STAGES.slice(0, 6).every((p) => track.stages[p.stage.id].unlocked || track.stages[p.stage.id].introOpen)).toBe(true);
+    expect(track.stages[PLACED_STAGES[6].stage.id].unlocked).toBe(false);
+    expect(track.passed).toBe(0);
+    expect(track.currentStageId).toBe(start);
+    expect(progress.bass.stages[second].unlocked).toBe(false);
+  });
+
+  it("opens everything with unlockAll, keeping earned stars", () => {
+    const progress = unlockAll(projectProgress([introDone(first), ...repeat(STAR_STREAK, () => phrase(first, "read", true))]));
+    const last = progress.treble.stages[PLACED_STAGES[PLACED_STAGES.length - 1].stage.id];
+    expect(last.unlocked && last.tierOpen.fluent).toBe(true);
+    expect(progress.treble.stages[first].stars).toBe(1);
   });
 
   it("reports the star that opened the next stage, or its intro", () => {
