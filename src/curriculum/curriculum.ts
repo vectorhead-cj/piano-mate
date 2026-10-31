@@ -1,5 +1,6 @@
 import { generateExercise, type Random } from "../music/generator";
 import { KEYS, keyById } from "../music/keys";
+import { allowedDurations, type Notation } from "../music/notation";
 import type { AccidentalFrequency, Clef, Exercise, RhythmFlavor } from "../music/types";
 import { spanById, spanLevel, type SpanId } from "./spans";
 
@@ -31,6 +32,8 @@ export interface Stage {
   tempo: number;
   /** Rhythm-mode tempo for ★★★ Fluent. */
   fluentTempo: number;
+  /** Notation first met here; from then on phrases may use it (see stageNotations). */
+  introduces: readonly Notation[];
 }
 
 export interface Chapter {
@@ -72,7 +75,7 @@ function stage(
   id: string,
   keys: readonly string[],
   span: SpanId,
-  options: Partial<Pick<Stage, "accidentals" | "rhythm" | "tempo" | "fluentTempo">> = {},
+  options: Partial<Pick<Stage, "accidentals" | "rhythm" | "tempo" | "fluentTempo" | "introduces">> = {},
 ): Stage {
   return {
     id,
@@ -83,6 +86,7 @@ function stage(
     bars: PHRASE_BARS,
     tempo: options.tempo ?? 60,
     fluentTempo: options.fluentTempo ?? 80,
+    introduces: options.introduces ?? [],
   };
 }
 
@@ -96,11 +100,11 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     title: "First positions",
     stages: [
-      stage("five-c", ["C"], "five"),
-      stage("five-g", ["G"], "five"),
+      stage("five-c", ["C"], "five", { introduces: ["whole", "half", "quarter"] }),
+      stage("five-g", ["G"], "five", { introduces: ["dotted-half"] }),
       stage("five-f", ["F"], "five"),
-      stage("five-cgf", ["C", "G", "F"], "five"),
-      stage("five-d", ["D"], "five"),
+      stage("five-cgf", ["C", "G", "F"], "five", { introduces: ["three-four"] }),
+      stage("five-d", ["D"], "five", { introduces: ["pickup"] }),
       stage("five-core", CORE, "five"),
     ],
   },
@@ -116,9 +120,9 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     title: "Eighth notes",
     stages: [
-      stage("five-core-eighths", CORE, "five", { rhythm: "eighths" }),
-      stage("octave-cg-eighths", ["C", "G"], "octave", { rhythm: "eighths" }),
-      stage("octave-core-eighths", CORE, "octave", { rhythm: "eighths" }),
+      stage("five-core-eighths", CORE, "five", { rhythm: "eighths", introduces: ["eighth"] }),
+      stage("octave-cg-eighths", ["C", "G"], "octave", { rhythm: "eighths", introduces: ["dotted-quarter"] }),
+      stage("octave-core-eighths", CORE, "octave", { rhythm: "eighths", introduces: ["tie"] }),
     ],
   },
   {
@@ -160,7 +164,7 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     title: "Busy rhythms",
     stages: [
-      stage("octave-core-both-busy", CORE_BOTH, "octave", { rhythm: "busy", fluentTempo: 72 }),
+      stage("octave-core-both-busy", CORE_BOTH, "octave", { rhythm: "busy", fluentTempo: 72, introduces: ["cut-time"] }),
       stage("two-core-both-busy-medium", CORE_BOTH, "two-octaves", { rhythm: "busy", accidentals: "medium", fluentTempo: 72 }),
     ],
   },
@@ -202,6 +206,14 @@ export const PLACED_STAGES: readonly PlacedStage[] = CHAPTERS.flatMap((chapter, 
 
 export function placedStage(stageId: string): PlacedStage | undefined {
   return PLACED_STAGES.find((p) => p.stage.id === stageId);
+}
+
+/** Notation a stage's phrases may use: everything introduced up to and including it. */
+export function stageNotations(stage: Stage): Set<Notation> {
+  const order = placedStage(stage.id)?.order ?? PLACED_STAGES.length;
+  const notations = new Set<Notation>(stage.introduces);
+  for (const placed of PLACED_STAGES.slice(0, order)) for (const n of placed.stage.introduces) notations.add(n);
+  return notations;
 }
 
 /** "B♭" from a key id, "F♯m" for F♯ minor. */
@@ -267,6 +279,7 @@ export function tierTempo(stage: Stage, tier: Tier): number | undefined {
  * in a row so a mixed stage really mixes.
  */
 export function stageExercises(clef: Clef, stage: Stage, random: Random = Math.random): () => Exercise {
+  const durations = allowedDurations(stageNotations(stage));
   let previousKey: string | undefined;
   return () => {
     const choices = stage.keys.length > 1 ? stage.keys.filter((k) => k !== previousKey) : stage.keys;
@@ -274,7 +287,7 @@ export function stageExercises(clef: Clef, stage: Stage, random: Random = Math.r
     previousKey = key;
     return generateExercise(
       spanLevel(clef, key, stage.span),
-      { bars: stage.bars, key, accidentalFrequency: stage.accidentals, rhythm: stage.rhythm },
+      { bars: stage.bars, key, accidentalFrequency: stage.accidentals, rhythm: stage.rhythm, durations },
       random,
     );
   };

@@ -54,6 +54,19 @@ describe("parseBank", () => {
     expect(phraseInKey(tied, "C", staffStep({ letter: "C", alter: 0, octave: 4 }))!.bars[0][1].tie).toBe(true);
     expect(bank([FIVE])[0].source).toBe("Bach (chorales and more): bwv1 (Soprano)");
   });
+
+  it("tags the notation each phrase uses", () => {
+    const [plain, eighths, cut] = bank([
+      FIVE,
+      ["p", 1, "part 1", 1, 1, 1, 1, 1, 3, 2, "-3q|0q. 1#8 2q|4h. 4w~", 1],
+      ["c", 0, "S", 0, 2, 0, 2, 0, 0, 1, "0h 1h", 0],
+    ]);
+    expect([...plain.notations].sort()).toEqual(["half", "quarter"]);
+    expect([...eighths.notations].sort()).toEqual(
+      ["dotted-half", "dotted-quarter", "eighth", "pickup", "quarter", "three-four", "tie", "whole"],
+    );
+    expect([...cut.notations].sort()).toEqual(["cut-time", "half"]);
+  });
 });
 
 describe("phraseInKey", () => {
@@ -100,6 +113,20 @@ describe("stagePool", () => {
     const mixed = [...copies(FIVE, 60, (r) => ((r[6] = 1), r)), ...copies(FIVE, 40)];
     // 60 of its own and a quarter as many basic ones.
     expect(stagePool(mixed, "treble", eighths, "major")).toHaveLength(75);
+  });
+
+  it("leaves out phrases using notation the stage hasn't introduced yet", () => {
+    const corpus = [
+      ...copies(FIVE, 60),
+      ...copies(FIVE, 5, (r) => ((r[10] = "0q 1q 2h.|4h 0h|2q 1q 2q 3q|4h 0h"), r)), // dotted half
+      ...copies(FIVE, 5, (r) => ((r[4] = 1), (r[10] = "0q 1q 2q|4h 0q|2q 1q 2q|4h."), r)), // 3/4
+      ...copies(FIVE, 5, (r) => ((r[5] = 1), r)), // pickup
+    ];
+    const pool = (id: string) => stagePool(corpus, "treble", placedStage(id)!.stage, "major");
+    expect(pool("five-c")).toHaveLength(60);
+    expect(pool("five-g")).toHaveLength(65);
+    expect(pool("five-cgf")).toHaveLength(70);
+    expect(pool("five-d")).toHaveLength(75);
   });
 });
 

@@ -2,10 +2,11 @@ import { generateExercise, type Random } from "../music/generator";
 import { phraseInKey, type CorpusPhrase } from "../music/corpus";
 import { keyAlter, keyById, MINOR_KEYS, type KeyMode } from "../music/keys";
 import { levelById } from "../music/levels";
+import { allowedDurations, usesOnly } from "../music/notation";
 import { midiOf, naturalFromStaffStep, staffStep } from "../music/pitch";
 import type { AccidentalFrequency, Clef, Exercise, RhythmFlavor } from "../music/types";
 import type { Settings } from "../practice/settings";
-import type { Stage } from "./curriculum";
+import { stageNotations, type Stage } from "./curriculum";
 import { spanLevel, spanMidiRange, type SpanId } from "./spans";
 
 /** A stage with fewer real phrases than this uses generated ones instead. */
@@ -53,7 +54,10 @@ function shuffled<T>(items: readonly T[], random: Random): T[] {
   return copy;
 }
 
-/** Phrases of one mode for a stage: its own rhythm level plus a few from lower levels. */
+/**
+ * Phrases of one mode for a stage: its own rhythm level plus a few from lower levels, using
+ * only notation the curriculum has introduced by this stage.
+ */
 export function stagePool(
   corpus: readonly CorpusPhrase[],
   clef: Clef,
@@ -62,13 +66,15 @@ export function stagePool(
   random: Random = Math.random,
 ): CorpusPhrase[] {
   const level = RHYTHM_ORDER.indexOf(stage.rhythm);
+  const notations = stageNotations(stage);
   const base = corpus.filter(
     (p) =>
       p.clef === clef &&
       p.mode === mode &&
       p.bars === stage.bars &&
       SPAN_WINDOWS[stage.span].includes(p.window) &&
-      matchesAccidentals(p.chromatic, stage.accidentals),
+      matchesAccidentals(p.chromatic, stage.accidentals) &&
+      usesOnly(p.notations, notations),
   );
   const own = base.filter((p) => p.rhythm === stage.rhythm);
   const lower = base.filter((p) => RHYTHM_ORDER.indexOf(p.rhythm) < level);
@@ -127,6 +133,7 @@ function stageTonicStep(clef: Clef, stage: Stage, key: string): number {
  */
 export function stageSource(corpus: readonly CorpusPhrase[] | null, clef: Clef, stage: Stage, random: Random = Math.random): () => Exercise {
   const pools = stagePools(corpus, clef, stage, random);
+  const durations = allowedDurations(stageNotations(stage));
   const deals = new Map<string, () => Exercise | null>();
   const real = (key: string) => {
     const pool = pools[keyById(key).mode];
@@ -135,7 +142,7 @@ export function stageSource(corpus: readonly CorpusPhrase[] | null, clef: Clef, 
     return deals.get(key)!();
   };
   const generated = (key: string) =>
-    generateExercise(spanLevel(clef, key, stage.span), { bars: stage.bars, key, accidentalFrequency: stage.accidentals, rhythm: stage.rhythm }, random);
+    generateExercise(spanLevel(clef, key, stage.span), { bars: stage.bars, key, accidentalFrequency: stage.accidentals, rhythm: stage.rhythm, durations }, random);
   let previousKey: string | undefined;
   return () => {
     const choices = stage.keys.length > 1 ? stage.keys.filter((k) => k !== previousKey) : stage.keys;

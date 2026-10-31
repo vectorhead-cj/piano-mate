@@ -1,4 +1,5 @@
 import { keyAlter, keyById, type KeyMode } from "./keys";
+import { notationsOf, type Notation } from "./notation";
 import { naturalFromStaffStep } from "./pitch";
 import type { Alter, Clef, Duration, Exercise, Note, RhythmFlavor, TimeSignature } from "./types";
 
@@ -36,6 +37,8 @@ export interface CorpusPhrase {
   low: number;
   high: number;
   notes: CorpusNote[][];
+  /** Rhythm and meter notation it uses, which decides the stages it can appear in. */
+  notations: ReadonlySet<Notation>;
 }
 
 type Row = [string, number, string, 0 | 1, number, number, number, number, number, number, string, 0 | 1];
@@ -67,11 +70,12 @@ export function parseBank(file: BankFile): CorpusPhrase[] {
     );
     const steps = notes.flat().map((n) => n.step);
     const name = file.sources[source];
+    const timeSignature = file.times[time];
     return {
       id,
       source: /^part \d+$/.test(voice) ? name : `${name} (${voice})`,
       clef: clef === 0 ? "treble" : "bass",
-      time: file.times[time],
+      time: timeSignature,
       pickup,
       rhythm: file.rhythms[rhythm],
       mode: mode === 0 ? "major" : "minor",
@@ -81,6 +85,7 @@ export function parseBank(file: BankFile): CorpusPhrase[] {
       low: Math.min(...steps),
       high: Math.max(...steps),
       notes,
+      notations: notationsOf(timeSignature, pickup, notes),
     };
   });
 }

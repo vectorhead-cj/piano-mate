@@ -37,6 +37,8 @@ export interface GeneratorOptions {
   rhythm: RhythmFlavor;
   /** Defaults to 4/4. */
   time?: GeneratedTime;
+  /** Note values the phrase may use; defaults to all of the rhythm flavor's. */
+  durations?: readonly Duration[];
 }
 
 export type Random = () => number;
@@ -76,7 +78,7 @@ export function generateExercise(
   random: Random = Math.random,
 ): Exercise {
   const key = keyById(options.key);
-  const rhythm = rhythmById(options.rhythm);
+  const rhythm = restrictedProfile(rhythmById(options.rhythm), options.durations);
   const time = options.time ?? DEFAULT_TIME;
   const rhythms = generatePhraseRhythm(rhythm, time, options.bars, random);
   const durations = rhythms.flat();
@@ -88,6 +90,18 @@ export function generateExercise(
   );
 
   return { clef: level.clef, key: key.id, time, pickup: 0, bars };
+}
+
+/** The profile without cells that use other note values, keeping a time's cells if none would be left. */
+function restrictedProfile(profile: RhythmProfile, durations: readonly Duration[] | undefined): RhythmProfile {
+  if (!durations) return profile;
+  const allowed = (c: RhythmCell) => c.pattern.every((d) => durations.includes(d));
+  const keep = (cells: readonly RhythmCell[]) => (cells.some(allowed) ? cells.filter(allowed) : cells);
+  return {
+    ...profile,
+    durations: profile.durations.filter((d) => durations.includes(d)),
+    cells: { "4/4": keep(profile.cells["4/4"]), "3/4": keep(profile.cells["3/4"]) },
+  };
 }
 
 function generatePhraseRhythm(

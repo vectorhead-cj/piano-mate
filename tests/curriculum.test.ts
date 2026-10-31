@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   COMPLETE_STREAK,
   PLACED_STAGES,
+  placedStage,
   STAR_STREAK,
   stageExercises,
+  stageNotations,
   stageTitle,
   type Tier,
 } from "../src/curriculum/curriculum";
@@ -77,6 +79,21 @@ describe("curriculum", () => {
   it("has unique stage ids", () => {
     const ids = PLACED_STAGES.map((p) => p.stage.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("introduces each notation once, starting from whole, half and quarter notes", () => {
+    const introduced = PLACED_STAGES.flatMap((p) => p.stage.introduces);
+    expect(new Set(introduced).size).toBe(introduced.length);
+    expect(PLACED_STAGES[0].stage.introduces).toEqual(["whole", "half", "quarter"]);
+    expect([...stageNotations(placedStage("five-g")!.stage)].sort()).toEqual(["dotted-half", "half", "quarter", "whole"]);
+    expect(stageNotations(PLACED_STAGES[PLACED_STAGES.length - 1].stage).size).toBe(introduced.length);
+  });
+
+  it("generates stage phrases with only the note values introduced so far", () => {
+    const next = stageExercises("treble", placedStage("five-c")!.stage, seeded(3));
+    for (let i = 0; i < 20; i++) {
+      for (const note of next().bars.flat()) expect(["w", "h", "q"]).toContain(note.duration);
+    }
   });
 
   it("keeps every stage phrase inside its span and key set", () => {
