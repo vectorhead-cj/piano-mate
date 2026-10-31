@@ -6,6 +6,8 @@ import { levelById } from "../src/music/levels";
 import {
   PHRASE_SCORE_DELAY_MS,
   PracticeController,
+  RETRY_PITCH,
+  SLOW_DOWN_AFTER_FAILURES,
 } from "../src/practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "../src/practice/settings";
 import { seeded } from "./helpers";
@@ -66,7 +68,9 @@ describe("PracticeController (wait mode)", () => {
           ]
         : [[i, "correct"]],
     );
-    expect(notation.setState.mock.calls).toEqual(expectedStateCalls);
+    // A clean pass then repaints every note green.
+    const passCalls = pitches.map((_, i) => [i, "correct"]);
+    expect(notation.setState.mock.calls).toEqual([...expectedStateCalls, ...passCalls]);
     expect(keyboard.flash.mock.calls).toEqual(pitches.map((p) => [p, "correct"]));
     expect(sound.play).toHaveBeenCalledTimes(pitches.length);
     expect(notation.flashWrong).not.toHaveBeenCalled();
@@ -85,8 +89,9 @@ describe("PracticeController (wait mode)", () => {
     expect(notation.setState).not.toHaveBeenCalled();
 
     press(first);
+    // The note stays marked as an error once found.
     expect(notation.setState.mock.calls).toEqual([
-      [0, "correct"],
+      [0, "wrong"],
       [1, "current"],
     ]);
 
@@ -95,7 +100,7 @@ describe("PracticeController (wait mode)", () => {
     expect(keyboard.flash).toHaveBeenLastCalledWith(second, "hint");
   });
 
-  it("scores first-try notes and advances after the score delay", () => {
+  it("retries a failed phrase on a clean sheet after the score delay", () => {
     const { controller, notation, score, expectedPitches, press } = setup();
     const firstExercise = controller.exercise;
     const pitches = expectedPitches();
@@ -104,6 +109,7 @@ describe("PracticeController (wait mode)", () => {
     pitches.forEach(press);
     expect(score.show).toHaveBeenLastCalledWith(pitches.length - 1, pitches.length, undefined);
     expect(score.setIncludeRhythm).toHaveBeenCalledWith(false);
+    expect(notation.setState).not.toHaveBeenCalledWith(0, "correct");
 
     notation.setState.mockClear();
     notation.flashWrong.mockClear();
@@ -111,13 +117,37 @@ describe("PracticeController (wait mode)", () => {
     expect(notation.setState).not.toHaveBeenCalled();
     expect(notation.flashWrong).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(PHRASE_SCORE_DELAY_MS - 1);
+    vi.advanceTimersByTime(PHRASE_SCORE_DELAY_MS);
     expect(controller.exercise).toBe(firstExercise);
-
-    vi.advanceTimersByTime(1);
-    expect(controller.exercise).not.toBe(firstExercise);
     expect(notation.show).toHaveBeenCalledTimes(2);
     expect(notation.setState).toHaveBeenLastCalledWith(0, "current");
+    expect(score.show).toHaveBeenLastCalledWith(0, pitches.length, undefined);
+  });
+
+  it("moves on after one clean pass", () => {
+    const { controller, expectedPitches, press } = setup();
+    const firstExercise = controller.exercise;
+    expectedPitches().forEach(press);
+
+    vi.advanceTimersByTime(PHRASE_SCORE_DELAY_MS);
+    expect(controller.exercise).not.toBe(firstExercise);
+  });
+
+  it("restarts the phrase from the bottom key of a MIDI keyboard without grading it", () => {
+    const { controller, notation, sound, stream, expectedPitches, press } = setup();
+    const first = controller.exercise;
+    press(expectedPitches()[0]);
+    notation.show.mockClear();
+    notation.flashWrong.mockClear();
+
+    stream.emit({ kind: "on", pitch: RETRY_PITCH, time: 0, source: "midi" });
+    stream.emit({ kind: "off", pitch: RETRY_PITCH, time: 0, source: "midi" });
+    vi.advanceTimersByTime(0);
+
+    expect(controller.exercise).toBe(first);
+    expect(notation.show).toHaveBeenCalledTimes(1);
+    expect(notation.flashWrong).not.toHaveBeenCalled();
+    expect(sound.play).toHaveBeenCalledTimes(1);
   });
 
   it("tracks pressed keys from on/off events without grading releases", () => {
@@ -327,6 +357,71 @@ describe("PracticeController (rhythm mode)", () => {
     expect(controller.exercise).not.toBe(first);
     expect(controller.isRhythmRunning).toBe(true);
     expect(score.show).toHaveBeenCalledWith(0, expect.any(Number), 0);
+  });
+});
+
+describe("PracticeController rhythm retries", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const settings: Settings = { ...DEFAULT_SETTINGS, mode: "rhythm", tempo: 60, bars: 1 };
+
+  /** Runs one attempt from now: plays every note on time, or lets the phrase pass silently. */
+  function attempt(ctx: ReturnType<typeof setup>, tempo: number, clean: boolean): void {
+    const beat = 60_000 / tempo;
+    const notes = ctx.controller.exercise.bars.flat();
+    const start = performance.now();
+    let onset = 4 * beat;
+    for (const note of notes) {
+      vi.advanceTimersByTime(start + onset - performance.now());
+      if (clean) ctx.press(midiOf(note), start + onset);
+      onset += BEATS[note.duration] * beat;
+    }
+    // Through the end of the phrase's last bar.
+    vi.advanceTimersByTime(Math.max(0, start + Math.ceil(onset / (4 * beat)) * 4 * beat - performance.now()));
+  }
+
+  it("rests a beat, then counts in a bar on the same phrase after a failure", () => {
+    const ctx = setup(settings);
+    const first = ctx.controller.exercise;
+    ctx.controller.playRhythm();
+    attempt(ctx, 60, false);
+    ctx.notation.show.mockClear();
+
+    vi.advanceTimersByTime(999);
+    expect(ctx.notation.show).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(ctx.controller.exercise).toBe(first);
+    expect(ctx.notation.show).toHaveBeenCalledTimes(1);
+    expect(ctx.controller.isRhythmRunning).toBe(true);
+  });
+
+  it("offers a slow-down after repeated failures, then needs two clean passes at full tempo", () => {
+    const ctx = setup(settings);
+    const first = ctx.controller.exercise;
+    ctx.controller.playRhythm();
+    ctx.controller.slowDown();
+    expect(ctx.controller.retry.slowTempo).toBeUndefined();
+
+    for (let i = 0; i < SLOW_DOWN_AFTER_FAILURES; i++) {
+      expect(ctx.controller.retry.canSlowDown).toBe(false);
+      attempt(ctx, 60, false);
+      vi.advanceTimersByTime(1000);
+    }
+    expect(ctx.controller.retry.canSlowDown).toBe(true);
+
+    ctx.controller.slowDown();
+    expect(ctx.controller.retry.slowTempo).toBe(51);
+    attempt(ctx, 51, true);
+    expect(ctx.controller.retry.slowTempo).toBeUndefined();
+    vi.advanceTimersByTime(60_000 / 51);
+
+    attempt(ctx, 60, true);
+    vi.advanceTimersByTime(1000);
+    expect(ctx.controller.exercise).toBe(first);
+
+    attempt(ctx, 60, true);
+    expect(ctx.controller.exercise).not.toBe(first);
   });
 });
 

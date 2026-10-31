@@ -103,6 +103,8 @@ async function main(): Promise<void> {
   const keyboardElement = element("keyboard");
   const transport = element<HTMLButtonElement>("transport");
   const scoreElement = element<HTMLElement>("phrase-score");
+  const slowDown = element<HTMLButtonElement>("slow-down");
+  const nextPhrase = element<HTMLButtonElement>("next");
 
   const stream = new NoteStream();
   const synth = new Synth();
@@ -217,6 +219,10 @@ async function main(): Promise<void> {
     },
     onRhythmPlaybackChange: syncTransport,
     onPhraseComplete: recordPhrase,
+    onRetryChange(state) {
+      slowDown.hidden = !state.canSlowDown;
+      slowDown.title = state.slowTempo ? `Practising at ${state.slowTempo} bpm; slow down further` : "Retry this phrase slower";
+    },
   });
   late.practice = practice;
   const lightMidiKeys = element<HTMLFormElement>("settings").elements.namedItem("lightMidiKeys") as HTMLInputElement;
@@ -238,6 +244,16 @@ async function main(): Promise<void> {
   function recordPhrase(result: PhraseResult): void {
     // Nothing played (rhythm mode left running), or practice hidden behind the menu.
     if (result.sources.length === 0 || view.name !== "practice") return;
+    // Slowed-down attempts are practice towards the real tempo, not progress.
+    if (result.slowed) {
+      banner.show(
+        result.passed
+          ? `Clean at ${result.tempo} bpm · now at full tempo`
+          : `${faultOf(result)} · again at ${result.tempo} bpm`,
+        "info",
+      );
+      return;
+    }
     const { exercise } = result;
     const stage = context.kind === "curriculum" ? placedStage(context.stageId)?.stage : undefined;
     const level = stage ? spanLevel(exercise.clef, exercise.key, stage.span) : levelById(settings.range);
@@ -275,16 +291,12 @@ async function main(): Promise<void> {
     const before = store.progress;
     store.record(event);
     const perfect = isPerfect(event);
-    const fault = firstFault(event);
-    const faultText = fault
-      ? fault.kind === "wrong"
-        ? `Wrong note in bar ${fault.bar}`
-        : `Missed a note in bar ${fault.bar}`
-      : "";
+    const faultText = faultOf(result);
+    const again = !perfect ? " · again" : result.passesNeeded > 0 ? " · once more" : "";
 
     if (context.kind === "custom") {
       customStreak = perfect ? customStreak + 1 : 0;
-      banner.show(perfect ? `Perfect · streak ${customStreak}` : `${faultText} · streak back to 0`, perfect ? "perfect" : "fault");
+      banner.show(perfect ? `Perfect · streak ${customStreak}${again}` : `${faultText} · streak back to 0${again}`, perfect ? "perfect" : "fault");
       renderStreak();
       return;
     }
@@ -293,7 +305,7 @@ async function main(): Promise<void> {
     let text: string;
     let tone: ResultTone;
     if (!countsForProgress(event)) {
-      text = `${perfect ? "Perfect" : faultText} · screen keys don't count towards progress`;
+      text = `${perfect ? "Perfect" : faultText} · screen keys don't count towards progress${again}`;
       tone = "info";
     } else {
       const milestone = milestoneBetween(before, store.progress, clef, stageId);
@@ -306,15 +318,22 @@ async function main(): Promise<void> {
         text = `Stage complete · ${COMPLETE_STREAK} in a row`;
         tone = "milestone";
       } else if (perfect) {
-        text = `Perfect · streak ${streak}`;
+        text = `Perfect · streak ${streak}${again}`;
         tone = "perfect";
       } else {
-        text = `${faultText} · streak back to 0`;
+        text = `${faultText} · streak back to 0${again}`;
         tone = "fault";
       }
     }
     banner.show(text, tone, tone === "milestone" ? 4000 : 2400);
     renderView();
+  }
+
+  /** Where a failed attempt first went wrong, for the result banner. */
+  function faultOf(result: PhraseResult): string {
+    const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length) });
+    if (!fault) return "";
+    return fault.kind === "wrong" ? `Wrong note in bar ${fault.bar}` : `Missed a note in bar ${fault.bar}`;
   }
 
   /** Streak in the score row: the curriculum goal for this tier, or a plain count in custom. */
@@ -388,6 +407,8 @@ async function main(): Promise<void> {
     navBack.hidden = view.name === "home";
     customControls.hidden = !(practising && context.kind === "custom");
     practiceBar.hidden = !(practising && context.kind === "curriculum");
+    // A stage moves on only once the phrase is played clean.
+    nextPhrase.hidden = context.kind === "curriculum";
     app.dataset.view = view.name;
 
     if (view.name === "home") {
@@ -465,11 +486,15 @@ async function main(): Promise<void> {
     synth.unlock();
     practice.toggleRhythmPlayback();
   });
+  slowDown.addEventListener("click", () => {
+    synth.unlock();
+    practice.slowDown();
+  });
   element("restart").addEventListener("click", () => {
     synth.unlock();
     practice.restartExercise();
   });
-  element("next").addEventListener("click", () => {
+  nextPhrase.addEventListener("click", () => {
     synth.unlock();
     practice.startNewExercise(true);
   });

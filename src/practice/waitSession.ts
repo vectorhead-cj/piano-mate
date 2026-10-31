@@ -49,6 +49,11 @@ export class WaitSession {
     return this.index >= this.notes.length;
   }
 
+  /** Wrong keys pressed while `index` was the note to play. */
+  wrongAt(index: number): number {
+    return this.wrongs[index];
+  }
+
   score(): WaitScore {
     return { notesCorrect: this.firstTryCorrect, total: pressedCount(this.notes) };
   }

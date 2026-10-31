@@ -104,6 +104,11 @@ export class RhythmSession {
     this.phraseStartAt = now + this.countInMs;
   }
 
+  /** Wrong keys pressed while `index` was the note to play. */
+  wrongAt(index: number): number {
+    return this.wrongs[index];
+  }
+
   /** Counts pressed notes only: a tied note is one press. */
   score(): PhraseScore {
     const pressed = this.notes.map((_, i) => i).filter((i) => !isTieContinuation(this.notes, i));

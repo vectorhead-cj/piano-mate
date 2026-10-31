@@ -1,4 +1,5 @@
 import { onTimeWindowMs } from "../practice/timing";
+import type { NoteResult } from "../practice/waitSession";
 import type { AccidentalFrequency, Alter, Clef, Duration, Letter, RhythmFlavor, Spelling, TimeSignature } from "../music/types";
 import type { Tier } from "./curriculum";
 
@@ -101,7 +102,7 @@ export function timingBonus(event: PhraseCompleted): number | undefined {
 export type PhraseFault = { kind: "wrong" | "missed"; bar: number; index: number };
 
 /** The first note that kept a phrase from being perfect, if any. */
-export function firstFault(event: PhraseCompleted): PhraseFault | undefined {
+export function firstFault(event: Pick<PhraseCompleted, "barSizes"> & { notes: readonly NoteResult[] }): PhraseFault | undefined {
   const index = event.notes.findIndex((n) => !n.hit || n.wrong > 0);
   if (index < 0) return undefined;
   const note = event.notes[index];
