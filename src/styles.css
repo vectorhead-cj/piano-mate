@@ -831,10 +831,14 @@ dialog.midi-debug::backdrop {
   font-weight: 560;
 }
 
-/* Dots and count on one row, what they're working towards under them. */
+/*
+ * Dots and count on one row, what they're working towards under them. The count's column
+ * is the flexible one, so a caption wider than the dots widens it rather than squeezing
+ * the dots under the count.
+ */
 .score-streak {
   display: grid;
-  grid-template-columns: auto minmax(0, auto) auto;
+  grid-template-columns: auto minmax(0, auto) 1fr;
   align-items: center;
   gap: 4px 10px;
 }
