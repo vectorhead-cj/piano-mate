@@ -144,6 +144,16 @@ export class NotationView {
     this.drawBarMark();
   }
 
+  /** Where the drawn music starts, clef included, in CSS pixels from the top of the viewport. */
+  inkTop(): number | null {
+    let top = Infinity;
+    for (const shape of this.root.querySelectorAll("svg path, svg rect, svg text")) {
+      const box = shape.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) top = Math.min(top, box.top);
+    }
+    return Number.isFinite(top) ? top : null;
+  }
+
   /** A clean phrase: the notes hop one after another, left to right. */
   celebrate(): void {
     this.graphicalNotes.forEach((note, i) => {

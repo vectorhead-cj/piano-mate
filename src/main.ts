@@ -72,6 +72,8 @@ const INTRO_NEXT_DELAY_MS = 1500;
 const CLEAN_WORDS = ["Perfect", "Spot on", "Clean", "Nailed it"];
 /** Clean phrases in a row that swap the sparkle for a flame. */
 const HOT_RUN = 5;
+/** The result never sits closer than this to the top of the notation panel. */
+const RESULT_MIN_TOP_PX = 8;
 
 const UNLOCK_ALL_KEY = "piano-mate.unlockAll";
 
@@ -191,7 +193,8 @@ async function main(): Promise<void> {
   const introPanel = element("intro-panel");
   const milestonePanel = element("milestone");
   element("dev-notice").hidden = !import.meta.env.DEV;
-  const banner = new PhraseResultBanner(element("phrase-result"));
+  const resultElement = element("phrase-result");
+  const banner = new PhraseResultBanner(resultElement);
   const store = new ProgressStore(openEventLog());
   const accountDialog = bindAccountDialog(element<HTMLDialogElement>("account-dialog"));
   let account: string | null = null;
@@ -506,9 +509,18 @@ async function main(): Promise<void> {
     return { emoji: streakDots.run() >= HOT_RUN ? "🔥" : "✨", title, detail, tone: "perfect" };
   }
 
+  /** Centres the result between the top of the panel and the top of the music. */
+  function placeResult(): void {
+    const inkTop = notationView.inkTop();
+    if (inkTop === null) return;
+    const musicTop = inkTop - notationPanel.getBoundingClientRect().top;
+    resultElement.style.top = `${Math.max(RESULT_MIN_TOP_PX, (musicTop - resultElement.offsetHeight) / 2)}px`;
+  }
+
   /** Writes the message on the panel; the notes hop for a clean phrase, and a fault washes its bar. */
   function showResult(result: PhraseResult, message: ResultMessage): void {
     banner.show(message);
+    placeResult();
     if (result.passed) {
       notationView.celebrate();
       return;

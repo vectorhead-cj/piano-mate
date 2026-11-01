@@ -353,7 +353,8 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
     const button = h(
       "button",
       { class: earned || !open ? "btn-secondary" : "btn-primary", type: "button", disabled: !open },
-      open ? `Start ${TIER_LABELS[tier]}` : "Locked",
+      // Once a tier has been played, its button picks up where that left off.
+      open ? `${tierProgress.attempts > 0 ? "Continue" : "Start"} ${TIER_LABELS[tier]}` : "Locked",
     );
     button.addEventListener("click", () => actions.start(stageId, tier));
     return h(
