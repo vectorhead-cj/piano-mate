@@ -95,6 +95,8 @@ export interface PracticeDependencies {
   onHotChange?: (hot: boolean) => void;
   onPhraseComplete?: (result: PhraseResult) => void;
   onRetryChange?: (state: RetryState) => void;
+  /** Every key pressed or released (not the start/stop key), hot or cold. */
+  onPlayed?: (pitch: number, down: boolean) => void;
   /** Override for tests; defaults to performance.now. */
   now?: () => number;
 }
@@ -175,6 +177,7 @@ export class PracticeController {
       if (event.kind === "off" || event.source !== "midi" || this.lightMidiKeys) {
         deps.keyboard.setPressed(event.pitch, event.kind === "on");
       }
+      deps.onPlayed?.(event.pitch, event.kind === "on");
       if (event.kind === "on" && this.hot) {
         this.phraseSources.add(event.source);
         const { pitch, time } = event;

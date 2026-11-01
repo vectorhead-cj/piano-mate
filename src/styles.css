@@ -929,6 +929,64 @@ dialog.midi-debug::backdrop {
   line-height: 1;
 }
 
+/* Played notes in free play; drawn behind the music by NotationView (#notation isolates the stack). */
+#notation {
+  isolation: isolate;
+}
+
+.played-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.played-line {
+  stroke: var(--accent);
+  stroke-width: 3px;
+  stroke-linecap: round;
+}
+
+.played-space {
+  fill: var(--accent);
+  opacity: 0.22;
+}
+
+.played-ledger {
+  stroke: var(--accent);
+  stroke-width: 1px;
+  stroke-dasharray: 4 4;
+  opacity: 0.5;
+}
+
+.ghost-ledger {
+  stroke: var(--accent);
+  stroke-width: 1.5px;
+}
+
+.ghost-head {
+  fill: var(--accent);
+}
+
+.ghost-accidental {
+  fill: none;
+  stroke: var(--accent);
+}
+
+.played-note.fading {
+  animation: played-fade 150ms ease forwards;
+}
+
+@keyframes played-fade {
+  to {
+    opacity: 0;
+  }
+}
+
 #notation > svg,
 #notation > canvas {
   display: block;

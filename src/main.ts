@@ -256,6 +256,7 @@ async function main(): Promise<void> {
     notationPanel.dataset.hot = String(hot);
     const midi = midiDevices !== null && midiDevices.length > 0;
     const key = midiNoteName(late.practice?.retryPitch ?? RETRY_PITCH);
+    notationView.setFreePlay(!hot);
     hotState.textContent = hot ? "● Live" : `Free play · ${midi ? `${key} or Space` : "Space"} to start`;
   }
 
@@ -296,6 +297,7 @@ async function main(): Promise<void> {
       }
       syncHot(hot);
     },
+    onPlayed: (pitch, down) => notationView.setPlayed(pitch, down),
     onPhraseComplete: recordPhrase,
     onRetryChange(state) {
       slowDown.hidden = !state.canSlowDown;
@@ -316,6 +318,9 @@ async function main(): Promise<void> {
   const staffLetters = element<HTMLFormElement>("settings").elements.namedItem("staffLetters") as HTMLInputElement;
   notationView.setStaffLetters(staffLetters.checked);
   staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
+  const highlightPlayed = element<HTMLFormElement>("settings").elements.namedItem("highlightPlayed") as HTMLInputElement;
+  notationView.setHighlightPlayed(highlightPlayed.checked);
+  highlightPlayed.addEventListener("change", () => notationView.setHighlightPlayed(highlightPlayed.checked));
   bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {
