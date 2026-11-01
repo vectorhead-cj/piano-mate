@@ -6,10 +6,11 @@ import { nextStepAfter, renderMilestone } from "../src/ui/curriculumViews";
 
 const [first, second] = PLACED_STAGES.map((p) => p.stage.id);
 
-function card(stars: number, kind: "star" | "mastered" = "star") {
+/** A milestone card, on 1.2 unless said: the first stage with Mix. */
+function card(stars: number, kind: "star" | "mastered" = "star", stageId = second) {
   const root = document.createElement("div");
   const choose = vi.fn();
-  renderMilestone(root, { clef: "treble", stageId: first, milestone: { kind, stars }, progress: projectProgress([]) }, choose);
+  renderMilestone(root, { clef: "treble", stageId, milestone: { kind, stars }, progress: projectProgress([]) }, choose);
   const buttons = [...root.querySelectorAll<HTMLButtonElement>("button")];
   return { root, choose, buttons, keys: buttons.map((b) => b.querySelector("kbd")!.textContent) };
 }
@@ -24,21 +25,34 @@ describe("milestone card", () => {
 
   it("pops in the star just earned, or the crown when mastered", () => {
     const stars = [...card(2).root.querySelectorAll(".star")];
-    expect(stars.map((star) => star.classList.contains("fresh"))).toEqual([false, true, false]);
-    expect(card(3, "mastered").root.querySelector(".mastery-mark")?.classList.contains("fresh")).toBe(true);
+    expect(stars.map((star) => star.classList.contains("fresh"))).toEqual([false, true, false, false]);
+    expect(card(4, "mastered").root.querySelector(".mastery-mark")?.classList.contains("fresh")).toBe(true);
   });
 
-  it("adds Fluent on C5, right-most, after ★★ Play", () => {
-    const { buttons, keys, choose } = card(2);
+  it("offers Mix on C4 after ★★ Play", () => {
+    const { root, buttons } = card(2);
+    expect(root.textContent).toContain("Next up is Mix");
+    expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance"]);
+  });
+
+  it("adds Fluent on C5, right-most, after ★★★ Mix", () => {
+    const { buttons, keys, choose } = card(3);
     expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance", "fluent"]);
     expect(keys).toEqual(["C3", "C4", "C5"]);
     buttons[2].click();
     expect(choose).toHaveBeenCalledWith("fluent");
   });
 
-  it("asks to stay and master the stage after ★★★", () => {
-    const { root, buttons } = card(3);
-    expect(buttons[0].textContent).toContain("Master 1.1");
+  it("passes 1.1 at ★★ Play, since it has no Mix, offering Fluent", () => {
+    const { root, buttons } = card(2, "star", first);
+    expect(root.textContent).toContain("Stage 1.1 passed");
+    expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance", "fluent"]);
+    expect(root.querySelectorAll(".star")).toHaveLength(3);
+  });
+
+  it("asks to stay and master the stage after ★★★★", () => {
+    const { root, buttons } = card(4);
+    expect(buttons[0].textContent).toContain("Master 1.2");
     expect(root.querySelector(".mastery-mark")?.classList.contains("on")).toBe(false);
   });
 
@@ -72,6 +86,7 @@ describe("stage detail", () => {
     const actions = { select() {}, start() {}, intro() {}, startHere() {} };
     renderTrack(root, "treble", projectProgress([played]), first, actions);
     const labels = [...root.querySelectorAll(".tier-card button")].map((b) => b.textContent);
+    // 1.1 has nothing earlier to mix, so no Mix.
     expect(labels).toEqual(["Continue Read", "Locked", "Locked"]);
   });
 });

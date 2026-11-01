@@ -4,12 +4,19 @@ import { allowedDurations, type Notation } from "../music/notation";
 import type { AccidentalFrequency, Clef, Exercise, RhythmFlavor } from "../music/types";
 import { spanById, spanLevel, type SpanId } from "./spans";
 
-/** ★ Read = wait mode, ★★ Play = rhythm at the stage tempo, ★★★ Fluent = rhythm at the target tempo. */
-export type Tier = "read" | "play" | "fluent";
+/**
+ * ★ Read = wait mode, ★★ Play = rhythm at the stage tempo, ★★★ Mix = Play with earlier
+ * stages' phrases mixed in (it opens the next stage), ★★★★ Fluent = Mix at the target tempo.
+ * The first stage has nothing earlier to mix, so it has no Mix (see stageTiers).
+ */
+export type Tier = "read" | "play" | "mix" | "fluent";
 
-export const TIERS: readonly Tier[] = ["read", "play", "fluent"];
+export const TIERS: readonly Tier[] = ["read", "play", "mix", "fluent"];
 
-export const TIER_LABELS: Record<Tier, string> = { read: "Read", play: "Play", fluent: "Fluent" };
+export const TIER_LABELS: Record<Tier, string> = { read: "Read", play: "Play", mix: "Mix", fluent: "Fluent" };
+
+/** Share of a mixing tier's phrases from the stage itself; the rest come from earlier stages. */
+export const MIX_SHARE = 0.5;
 
 /** A streak forgives one miss in any this many phrases in a row; a second one breaks it. */
 export const MISS_WINDOW = 10;
@@ -25,7 +32,7 @@ export const STAR_STREAK = 10;
 
 /**
  * Rounds of MISS_WINDOW phrases at Fluent, each STAR_HITS clean or better, in a row, that
- * master a stage once it has ★★★. A round below that starts the count over.
+ * master a stage once it has every star. A round below that starts the count over.
  */
 export const MASTERY_ROUNDS = 5;
 
@@ -302,6 +309,47 @@ export function tierMode(tier: Tier): "wait" | "rhythm" {
 export function tierTempo(stage: Stage, tier: Tier): number | undefined {
   if (tier === "read") return undefined;
   return tier === "fluent" ? stage.fluentTempo : stage.tempo;
+}
+
+/** Whether a tier mixes in earlier stages' phrases: Mix and Fluent (and so mastery) do. */
+export function tierMixes(tier: Tier): boolean {
+  return TIERS.indexOf(tier) >= TIERS.indexOf("mix");
+}
+
+/** An earlier stage a mixing tier draws from, and how often relative to the others. */
+export interface Review {
+  stage: Stage;
+  weight: number;
+}
+
+/**
+ * Earlier stages a stage's mixing tiers draw from: those in its track before it whose span
+ * fits inside its own, so their phrases fit its keyboard. The most recent weighs most, and
+ * each further back less (1, 1/2, 1/3…), so old stages still turn up now and then.
+ */
+export function stageReviews(stage: Stage): Review[] {
+  const order = placedStage(stage.id)?.order ?? PLACED_STAGES.length;
+  const width = spanById(stage.span).steps;
+  return PLACED_STAGES.slice(0, order)
+    .filter((p) => spanById(p.stage.span).steps <= width)
+    .reverse()
+    .map((p, i) => ({ stage: p.stage, weight: 1 / (i + 1) }));
+}
+
+/** A stage's tiers in order: all of them, less Mix when there's nothing earlier to mix in. */
+export function stageTiers(stage: Stage): Tier[] {
+  return stageReviews(stage).length > 0 ? [...TIERS] : TIERS.filter((t) => t !== "mix");
+}
+
+/** Every tier's star: a stage's full set. */
+export function maxStars(stage: Stage): number {
+  return stageTiers(stage).length;
+}
+
+/** Stars that pass a stage and open the next: up to and including Mix, or Play without one. */
+export function advanceStars(stage: Stage): number {
+  const tiers = stageTiers(stage);
+  return tiers.indexOf(tiers.includes("mix") ? "mix" : "play") + 1;
 }
 
 /**

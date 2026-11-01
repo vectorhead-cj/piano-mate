@@ -1,20 +1,23 @@
 import {
+  advanceStars,
   ADVANCE_TEXT,
   CHAPTERS,
   CLEF_TRACKS,
   MASTERY_ROUNDS,
+  maxStars,
   MISS_WINDOW,
   PLACED_STAGES,
   TIER_LABELS,
-  TIERS,
   TRACK_LABELS,
   hasIntro,
   keyFullName,
   placedStage,
   stageFacts,
   stageNewKeys,
+  stageTiers,
   stageTitle,
   tierTempo,
+  type Stage,
   type Tier,
 } from "../curriculum/curriculum";
 import type { IntroStep } from "../curriculum/intros";
@@ -43,14 +46,14 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Mastery's mark, after the third star. */
+/** Mastery's mark, after the last star. */
 export const MASTERY_SYMBOL = "♛";
 
 /**
  * A stage's stars; with `mastered` given, mastery's mark follows them, lit once earned, so
  * every row has it in the same place.
  */
-function stars(count: number, of = 3, mastered?: boolean): HTMLElement {
+function stars(count: number, of: number, mastered?: boolean): HTMLElement {
   const label = `${count} of ${of} stars${mastered ? ", mastered" : ""}`;
   return h(
     "span",
@@ -235,11 +238,11 @@ export interface TrackActions {
   startHere(stageId: string): void;
 }
 
-function stageStatus(progress: StageProgress): { text: string; tone: string } {
+function stageStatus(stage: Stage, progress: StageProgress): { text: string; tone: string } {
   if (!progress.unlocked) return { text: "Locked", tone: "locked" };
   if (progress.mastered) return { text: "Mastered", tone: "done" };
-  if (progress.stars >= 2) return { text: "Passed", tone: "passed" };
-  const tier: Tier = progress.stars === 0 ? "read" : "play";
+  if (progress.stars >= advanceStars(stage)) return { text: "Passed", tone: "passed" };
+  const tier = stageTiers(stage)[progress.stars];
   return { text: `${recentHits(progress.tiers[tier].recent)} / ${MISS_WINDOW}`, tone: "current" };
 }
 
@@ -253,10 +256,10 @@ export function renderTrack(
   const track = progress[clef];
   const chapters = CHAPTERS.map((chapter, chapterIndex) => {
     const placed = PLACED_STAGES.filter((p) => p.chapterIndex === chapterIndex);
-    const passed = placed.filter((p) => track.stages[p.stage.id].stars >= 2).length;
+    const passed = placed.filter((p) => track.stages[p.stage.id].stars >= advanceStars(p.stage)).length;
     const rows = placed.flatMap((p) => {
       const stageProgress = track.stages[p.stage.id];
-      const status = stageStatus(stageProgress);
+      const status = stageStatus(p.stage, stageProgress);
       const selected = p.stage.id === selectedStageId;
       const row = h(
         "button",
@@ -269,8 +272,8 @@ export function renderTrack(
         h("span", { class: "stage-number" }, p.number),
         h("span", { class: "stage-title" }, stageTitle(p.stage)),
         // Pips only once mastery is in play; the empty cell keeps the columns lined up.
-        stageProgress.stars === 3 ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
-        stars(stageProgress.stars, 3, stageProgress.mastered),
+        stageProgress.stars === maxStars(p.stage) ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
+        stars(stageProgress.stars, maxStars(p.stage), stageProgress.mastered),
         h("span", { class: "stage-status" }, status.text),
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
@@ -340,12 +343,18 @@ function introRow(stageId: string, number: string, progress: StageProgress, acti
 const TIER_HINTS: Record<Tier, string> = {
   read: "Wait mode",
   play: "Rhythm mode",
-  fluent: "Rhythm, faster",
+  mix: "Half earlier stages",
+  fluent: "Mix, faster",
 };
+
+/** A tier's hint; Fluent mixes like Mix, except on a stage without one. */
+function tierHint(stage: Stage, tier: Tier): string {
+  return tier === "fluent" && !stageTiers(stage).includes("mix") ? "Rhythm, faster" : TIER_HINTS[tier];
+}
 
 function stageDetail(stageId: string, progress: StageProgress, actions: TrackActions): HTMLElement {
   const { stage } = placedStage(stageId)!;
-  const tiers = TIERS.map((tier, i) => {
+  const tiers = stageTiers(stage).map((tier, i) => {
     const tierProgress = progress.tiers[tier];
     const open = progress.tierOpen[tier];
     const earned = progress.stars > i;
@@ -361,7 +370,7 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
       "div",
       { class: "tier-card", "data-open": open ? "true" : "false" },
       h("div", { class: "tier-card-head" }, stars(i + 1, i + 1), h("span", { class: "tier-name" }, TIER_LABELS[tier])),
-      h("span", { class: "menu-muted" }, tempo ? `${TIER_HINTS[tier]} · ${tempo} bpm` : TIER_HINTS[tier]),
+      h("span", { class: "menu-muted" }, tempo ? `${tierHint(stage, tier)} · ${tempo} bpm` : tierHint(stage, tier)),
       h(
         "span",
         { class: "menu-muted" },
@@ -387,9 +396,9 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         { class: "menu-muted" },
         progress.mastered
           ? "Mastered"
-          : progress.stars === 3
+          : progress.stars === maxStars(stage)
             ? `Master: ${MASTERY_TEXT} · ${rounds} of ${MASTERY_ROUNDS}`
-            : `Master: after ★★★, ${MASTERY_TEXT}`,
+            : `Master: after ${"★".repeat(maxStars(stage))}, ${MASTERY_TEXT}`,
       ),
       masteryPips(rounds),
     ),
@@ -424,7 +433,7 @@ export interface PracticeBarModel {
 
 export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, onTier: (tier: Tier) => void): void {
   const placed = placedStage(model.stageId)!;
-  const tiers = TIERS.map((tier, i) => {
+  const tiers = stageTiers(placed.stage).map((tier, i) => {
     const open = model.progress.tierOpen[tier];
     const button = h(
       "button",
@@ -435,7 +444,8 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
         disabled: !open,
         title: open ? undefined : `Earn ${"★".repeat(i)} first`,
       },
-      `${"★".repeat(i + 1)} ${TIER_LABELS[tier]}`,
+      h("span", { class: "tier-tab-stars" }, `${"★".repeat(i + 1)} `),
+      TIER_LABELS[tier],
     );
     button.addEventListener("click", () => onTier(tier));
     return button;
@@ -447,7 +457,7 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
       { class: "practice-bar-title" },
       h("span", { class: "practice-bar-number" }, `${TRACK_LABELS[model.clef]} ${placed.number}`),
       h("span", { class: "practice-bar-name" }, stageTitle(placed.stage)),
-      stars(model.progress.stars, 3, model.progress.mastered),
+      stars(model.progress.stars, maxStars(placed.stage), model.progress.mastered),
     ),
     h("div", { class: "tier-tabs", role: "group", "aria-label": "Tier" }, ...tiers),
     h(
@@ -550,7 +560,10 @@ export function nextStepAfter(progress: Progress, clef: Clef, stageId: string): 
   const next = PLACED_STAGES[placedStage(stageId)!.order + 1];
   if (!next) return { kind: "track" };
   const stage = progress[clef].stages[next.stage.id];
-  if (stage.unlocked) return { kind: "stage", stageId: next.stage.id, tier: TIERS[Math.min(stage.stars, TIERS.length - 1)] };
+  if (stage.unlocked) {
+    const tiers = stageTiers(next.stage);
+    return { kind: "stage", stageId: next.stage.id, tier: tiers[Math.min(stage.stars, tiers.length - 1)] };
+  }
   if (stage.introOpen && !stage.introDone) return { kind: "intro", stageId: next.stage.id };
   return { kind: "track" };
 }
@@ -568,8 +581,9 @@ export interface MilestoneModel {
 }
 
 /** The choices a milestone offers, left to right. */
-export function milestoneChoices(milestone: Milestone): MilestoneChoice[] {
-  return milestone.kind === "star" && milestone.stars === 2 ? ["stay", "advance", "fluent"] : ["stay", "advance"];
+export function milestoneChoices(milestone: Milestone, stageId: string): MilestoneChoice[] {
+  const advance = advanceStars(placedStage(stageId)!.stage);
+  return milestone.kind === "star" && milestone.stars === advance ? ["stay", "advance", "fluent"] : ["stay", "advance"];
 }
 
 /** Replaces the staff after a star or a completed stage: stay on this tier, or move on. */
@@ -598,22 +612,26 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
     headline = `Nice. You can read stage ${number}.`;
     line = `Next up is Play: the same music, in time with the metronome at ${stage.tempo} bpm.`;
     labels = { stay: "Keep reading", advance: "Start Play", fluent: "" };
-  } else if (milestone.stars === 2) {
+  } else if (milestone.stars < advanceStars(stage)) {
+    headline = `You can play stage ${number} in time.`;
+    line = `Next up is Mix: half this stage, half earlier ones, at ${stage.tempo} bpm. It opens the next stage.`;
+    labels = { stay: "Keep playing", advance: "Start Mix", fluent: "" };
+  } else if (milestone.stars === advanceStars(stage)) {
     headline = next.kind === "stage" && milestone.openedStageId ? `Stage ${number} passed. Stage ${nextNumber} is open.` : `Stage ${number} passed.`;
     line = `${nextLine} Or push this one to Fluent, at ${stage.fluentTempo} bpm.`;
     labels = { stay: `Stay on ${number}`, advance: goNext, fluent: "Try Fluent" };
   } else {
-    headline = `Fluent at ${stage.fluentTempo} bpm. That's all three stars.`;
+    headline = `Fluent at ${stage.fluentTempo} bpm. That's every star.`;
     line = `Stay to master it: ${MASTERY_TEXT}. ${nextLine}`;
     labels = { stay: `Master ${number}`, advance: goNext, fluent: "" };
   }
 
-  const mastered = milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined;
-  const earned = stars(milestone.stars, 3, mastered);
+  const mastered = milestone.kind === "mastered" ? true : milestone.stars === maxStars(stage) ? false : undefined;
+  const earned = stars(milestone.stars, maxStars(stage), mastered);
   // What was just earned pops in: the crown when mastered, else the newest star.
   const fresh = milestone.kind === "mastered" ? earned.querySelector(".mastery-mark") : earned.querySelectorAll(".star.on")[milestone.stars - 1];
   fresh?.classList.add("fresh");
-  root.replaceChildren(choiceCard(earned, headline, line, milestoneChoices(milestone), labels, choose));
+  root.replaceChildren(choiceCard(earned, headline, line, milestoneChoices(milestone, stageId), labels, choose));
 }
 
 /** Ends an intro before its stage starts: watch it again, or go on. Uses the milestone keys, C3 and C4. */
