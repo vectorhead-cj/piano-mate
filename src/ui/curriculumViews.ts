@@ -1,10 +1,8 @@
 import {
-  ADVANCE_STARS,
   ADVANCE_TEXT,
   CHAPTERS,
   CLEF_TRACKS,
   MASTERY_ROUNDS,
-  MAX_STARS,
   MISS_WINDOW,
   PLACED_STAGES,
   TIER_LABELS,
@@ -45,14 +43,14 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Mastery's mark, after the last star. */
+/** Mastery's mark, after the third star. */
 export const MASTERY_SYMBOL = "♛";
 
 /**
  * A stage's stars; with `mastered` given, mastery's mark follows them, lit once earned, so
  * every row has it in the same place.
  */
-function stars(count: number, of = MAX_STARS, mastered?: boolean): HTMLElement {
+function stars(count: number, of = 3, mastered?: boolean): HTMLElement {
   const label = `${count} of ${of} stars${mastered ? ", mastered" : ""}`;
   return h(
     "span",
@@ -240,8 +238,8 @@ export interface TrackActions {
 function stageStatus(progress: StageProgress): { text: string; tone: string } {
   if (!progress.unlocked) return { text: "Locked", tone: "locked" };
   if (progress.mastered) return { text: "Mastered", tone: "done" };
-  if (progress.stars >= ADVANCE_STARS) return { text: "Passed", tone: "passed" };
-  const tier = TIERS[progress.stars];
+  if (progress.stars >= 2) return { text: "Passed", tone: "passed" };
+  const tier: Tier = progress.stars === 0 ? "read" : "play";
   return { text: `${recentHits(progress.tiers[tier].recent)} / ${MISS_WINDOW}`, tone: "current" };
 }
 
@@ -255,7 +253,7 @@ export function renderTrack(
   const track = progress[clef];
   const chapters = CHAPTERS.map((chapter, chapterIndex) => {
     const placed = PLACED_STAGES.filter((p) => p.chapterIndex === chapterIndex);
-    const passed = placed.filter((p) => track.stages[p.stage.id].stars >= ADVANCE_STARS).length;
+    const passed = placed.filter((p) => track.stages[p.stage.id].stars >= 2).length;
     const rows = placed.flatMap((p) => {
       const stageProgress = track.stages[p.stage.id];
       const status = stageStatus(stageProgress);
@@ -271,8 +269,8 @@ export function renderTrack(
         h("span", { class: "stage-number" }, p.number),
         h("span", { class: "stage-title" }, stageTitle(p.stage)),
         // Pips only once mastery is in play; the empty cell keeps the columns lined up.
-        stageProgress.stars === MAX_STARS ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
-        stars(stageProgress.stars, MAX_STARS, stageProgress.mastered),
+        stageProgress.stars === 3 ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
+        stars(stageProgress.stars, 3, stageProgress.mastered),
         h("span", { class: "stage-status" }, status.text),
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
@@ -342,8 +340,7 @@ function introRow(stageId: string, number: string, progress: StageProgress, acti
 const TIER_HINTS: Record<Tier, string> = {
   read: "Wait mode",
   play: "Rhythm mode",
-  mix: "Half earlier stages",
-  fluent: "Mix, faster",
+  fluent: "Rhythm, faster",
 };
 
 function stageDetail(stageId: string, progress: StageProgress, actions: TrackActions): HTMLElement {
@@ -390,9 +387,9 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         { class: "menu-muted" },
         progress.mastered
           ? "Mastered"
-          : progress.stars === MAX_STARS
+          : progress.stars === 3
             ? `Master: ${MASTERY_TEXT} · ${rounds} of ${MASTERY_ROUNDS}`
-            : `Master: after ${"★".repeat(MAX_STARS)}, ${MASTERY_TEXT}`,
+            : `Master: after ★★★, ${MASTERY_TEXT}`,
       ),
       masteryPips(rounds),
     ),
@@ -438,8 +435,7 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
         disabled: !open,
         title: open ? undefined : `Earn ${"★".repeat(i)} first`,
       },
-      h("span", { class: "tier-tab-stars" }, `${"★".repeat(i + 1)} `),
-      TIER_LABELS[tier],
+      `${"★".repeat(i + 1)} ${TIER_LABELS[tier]}`,
     );
     button.addEventListener("click", () => onTier(tier));
     return button;
@@ -451,7 +447,7 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
       { class: "practice-bar-title" },
       h("span", { class: "practice-bar-number" }, `${TRACK_LABELS[model.clef]} ${placed.number}`),
       h("span", { class: "practice-bar-name" }, stageTitle(placed.stage)),
-      stars(model.progress.stars, MAX_STARS, model.progress.mastered),
+      stars(model.progress.stars, 3, model.progress.mastered),
     ),
     h("div", { class: "tier-tabs", role: "group", "aria-label": "Tier" }, ...tiers),
     h(
@@ -573,7 +569,7 @@ export interface MilestoneModel {
 
 /** The choices a milestone offers, left to right. */
 export function milestoneChoices(milestone: Milestone): MilestoneChoice[] {
-  return milestone.kind === "star" && milestone.stars === ADVANCE_STARS ? ["stay", "advance", "fluent"] : ["stay", "advance"];
+  return milestone.kind === "star" && milestone.stars === 2 ? ["stay", "advance", "fluent"] : ["stay", "advance"];
 }
 
 /** Replaces the staff after a star or a completed stage: stay on this tier, or move on. */
@@ -603,21 +599,17 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
     line = `Next up is Play: the same music, in time with the metronome at ${stage.tempo} bpm.`;
     labels = { stay: "Keep reading", advance: "Start Play", fluent: "" };
   } else if (milestone.stars === 2) {
-    headline = `You can play stage ${number} in time.`;
-    line = `Next up is Mix: half this stage, half earlier ones, at ${stage.tempo} bpm. It opens the next stage.`;
-    labels = { stay: "Keep playing", advance: "Start Mix", fluent: "" };
-  } else if (milestone.stars === ADVANCE_STARS) {
     headline = next.kind === "stage" && milestone.openedStageId ? `Stage ${number} passed. Stage ${nextNumber} is open.` : `Stage ${number} passed.`;
     line = `${nextLine} Or push this one to Fluent, at ${stage.fluentTempo} bpm.`;
     labels = { stay: `Stay on ${number}`, advance: goNext, fluent: "Try Fluent" };
   } else {
-    headline = `Fluent at ${stage.fluentTempo} bpm. That's all four stars.`;
+    headline = `Fluent at ${stage.fluentTempo} bpm. That's all three stars.`;
     line = `Stay to master it: ${MASTERY_TEXT}. ${nextLine}`;
     labels = { stay: `Master ${number}`, advance: goNext, fluent: "" };
   }
 
-  const mastered = milestone.kind === "mastered" ? true : milestone.stars === MAX_STARS ? false : undefined;
-  const earned = stars(milestone.stars, MAX_STARS, mastered);
+  const mastered = milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined;
+  const earned = stars(milestone.stars, 3, mastered);
   // What was just earned pops in: the crown when mastered, else the newest star.
   const fresh = milestone.kind === "mastered" ? earned.querySelector(".mastery-mark") : earned.querySelectorAll(".star.on")[milestone.stars - 1];
   fresh?.classList.add("fresh");

@@ -6,7 +6,7 @@ import { allowedDurations, usesOnly, type Notation } from "../music/notation";
 import { midiOf, naturalFromStaffStep, staffStep } from "../music/pitch";
 import type { AccidentalFrequency, Clef, Exercise, RhythmFlavor } from "../music/types";
 import type { Settings } from "../practice/settings";
-import { MIX_SHARE, stageNotations, type Stage } from "./curriculum";
+import { stageNotations, type Stage } from "./curriculum";
 import { spanLevel, spanMidiRange, type SpanId } from "./spans";
 
 /** A stage with fewer real phrases than this uses generated ones instead. */
@@ -259,25 +259,4 @@ function customDealer(corpus: readonly CorpusPhrase[], s: Settings, random: Rand
   const pool = base.filter((p) => p.bars === s.bars);
   if (pool.length < MIN_CUSTOM_POOL) return null;
   return dealer(pool, [s.key], (phrase) => phraseInKey(phrase, keys[phrase.mode], tonicStep(phrase)!), random);
-}
-
-/**
- * A mixing tier's phrases: about MIX_SHARE from the stage's own source, the rest from its
- * reviews' sources, picked by weight. With no reviews, every phrase is the stage's own.
- */
-export function mixedSource(
-  own: () => Exercise,
-  reviews: readonly { source: () => Exercise; weight: number }[],
-  random: Random = Math.random,
-): () => Exercise {
-  const total = reviews.reduce((sum, r) => sum + r.weight, 0);
-  return () => {
-    if (reviews.length === 0 || random() < MIX_SHARE) return own();
-    let pick = random() * total;
-    for (const review of reviews) {
-      pick -= review.weight;
-      if (pick < 0) return review.source();
-    }
-    return reviews[reviews.length - 1].source();
-  };
 }

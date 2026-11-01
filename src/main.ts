@@ -5,22 +5,16 @@ import { NoteStream } from "./input/noteStream";
 import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
 import {
-  ADVANCE_STARS,
   ADVANCE_TEXT,
   MASTERY_ROUNDS,
-  MAX_STARS,
   MISS_WINDOW,
   STAR_STREAK,
   placedStage,
-  stageReviews,
-  TIERS,
-  tierMixes,
   tierMode,
   tierTempo,
-  type Stage,
   type Tier,
 } from "./curriculum/curriculum";
-import { customSource, mixedSource, stageMidiRange, stageSource } from "./curriculum/corpusSource";
+import { customSource, stageMidiRange, stageSource } from "./curriculum/corpusSource";
 import { currentUser, signOut } from "./account";
 import { openEventLog } from "./curriculum/eventLog";
 import {
@@ -240,10 +234,8 @@ async function main(): Promise<void> {
     finished: boolean;
   } | null = null;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
-  /** Each stage's phrases by "clef stage", kept for the page so its tiers, and later stages' mixes, deal from one deck. */
+  /** Each stage's phrases by "clef stage", kept for the page so its tiers deal from one deck. */
   const stageSources = new Map<string, () => Exercise>();
-  /** Phrases a mixing tier dealt from an earlier stage, and which. */
-  const reviewStages = new WeakMap<Exercise, Stage>();
 
   function levelMidiRange(level: Level): { lowest: number; highest: number } {
     return { lowest: midiOf(level.lowest), highest: midiOf(level.highest) };
@@ -374,8 +366,7 @@ async function main(): Promise<void> {
       return;
     }
     const { exercise } = result;
-    const review = reviewStages.get(exercise);
-    const stage = context.kind === "curriculum" ? (review ?? placedStage(context.stageId)?.stage) : undefined;
+    const stage = context.kind === "curriculum" ? placedStage(context.stageId)?.stage : undefined;
     const level = stage ? spanLevel(exercise.clef, exercise.key, stage.span) : levelById(settings.range);
     const notes = exercise.bars.flat();
     const event: PhraseCompleted = {
@@ -394,13 +385,12 @@ async function main(): Promise<void> {
         key: exercise.key,
         lowest: spellingText(level.lowest),
         highest: spellingText(level.highest),
-        accidentals: stage?.accidentals ?? settings.accidentalFrequency,
-        rhythm: stage?.rhythm ?? settings.rhythm,
+        accidentals: settings.accidentalFrequency,
+        rhythm: settings.rhythm,
         bars: settings.bars,
         time: exercise.time,
       },
       phraseId: exercise.source?.id,
-      reviewStageId: review?.id,
       barSizes: exercise.bars.map((bar) => bar.length),
       notes: notes.map((note, i) => ({
         pitch: spellingText(note),
@@ -448,8 +438,8 @@ async function main(): Promise<void> {
     closeMilestone();
     if (choice === "fluent") {
       startStage(clef, stageId, "fluent");
-    } else if (choice === "advance" && earned.kind === "star" && earned.stars < ADVANCE_STARS) {
-      startStage(clef, stageId, TIERS[earned.stars]);
+    } else if (choice === "advance" && earned.kind === "star" && earned.stars === 1) {
+      startStage(clef, stageId, "play");
     } else if (choice === "advance") {
       const next = nextStepAfter(store.progress, clef, stageId);
       if (next.kind === "stage") startStage(clef, next.stageId, next.tier);
@@ -504,11 +494,11 @@ async function main(): Promise<void> {
     renderView();
   }
 
-  /** The Fluent tier while a mastery round is under way: every star earned, not yet mastered. */
+  /** The Fluent tier while a mastery round is under way: ★★★ earned, not yet mastered. */
   function masteryUnderWay(): TierProgress | null {
     if (context.kind !== "curriculum" || context.tier !== "fluent") return null;
     const stage = store.progress[context.clef].stages[context.stageId];
-    return stage.stars === MAX_STARS && !stage.mastered ? stage.tiers.fluent : null;
+    return stage.stars === 3 && !stage.mastered ? stage.tiers.fluent : null;
   }
 
   /** How the mastery round went with this phrase, when one is under way; `was` is before it. */
@@ -727,32 +717,12 @@ async function main(): Promise<void> {
       rhythm: stage.rhythm,
       bars: stage.bars,
     };
-    const reviews = tierMixes(tier) ? stageReviews(stage) : [];
-    keyboardSpan = [stage, ...reviews.map((r) => r.stage)]
-      .map((s) => stageMidiRange(corpus, clef, s))
-      .reduce((a, b) => ({ lowest: Math.min(a.lowest, b.lowest), highest: Math.max(a.highest, b.highest) }));
-    practice.exerciseSource = tierMixes(tier)
-      ? mixedSource(
-          sourceFor(clef, stage),
-          reviews.map((r) => ({
-            weight: r.weight,
-            source: () => {
-              const exercise = sourceFor(clef, r.stage)();
-              reviewStages.set(exercise, r.stage);
-              return exercise;
-            },
-          })),
-        )
-      : sourceFor(clef, stage);
+    keyboardSpan = stageMidiRange(corpus, clef, stage);
+    const sourceKey = `${clef} ${stageId}`;
+    if (!stageSources.has(sourceKey)) stageSources.set(sourceKey, stageSource(corpus, clef, stage));
+    practice.exerciseSource = stageSources.get(sourceKey)!;
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
-  }
-
-  /** A stage's own phrases in a track, dealt from one deck wherever they're played. */
-  function sourceFor(clef: Clef, stage: Stage): () => Exercise {
-    const key = `${clef} ${stage.id}`;
-    if (!stageSources.has(key)) stageSources.set(key, stageSource(corpus, clef, stage));
-    return stageSources.get(key)!;
   }
 
   function openCustom(): void {
@@ -898,7 +868,7 @@ async function main(): Promise<void> {
     player.stop();
     practice.toggleHot();
   });
-  // C3 stays (or repeats the intro), C4 moves on, C5 (after ★★★) goes to Fluent; practice is
+  // C3 stays (or repeats the intro), C4 moves on, C5 (after ★★) goes to Fluent; practice is
   // cold while a card is up, so they can't be notes.
   stream.subscribe((event) => {
     const choices = cardChoices();

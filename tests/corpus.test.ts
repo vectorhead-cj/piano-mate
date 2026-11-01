@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placedStage, type Stage } from "../src/curriculum/curriculum";
-import { customSource, matchesAccidentals, MIN_STAGE_POOL, mixedSource, stagePool, stageSource } from "../src/curriculum/corpusSource";
+import { customSource, matchesAccidentals, MIN_STAGE_POOL, stagePool, stageSource } from "../src/curriculum/corpusSource";
 import { spanLevel } from "../src/curriculum/spans";
 import { parseBank, phraseInKey, type CorpusPhrase } from "../src/music/corpus";
 import { staffStep } from "../src/music/pitch";
@@ -201,29 +201,6 @@ describe("stageSource", () => {
     const next = stageSource(copies(FIVE, MIN_STAGE_POOL - 1), "treble", fiveStage, seeded(1));
     expect(next().source).toBeUndefined();
     expect(stageSource(null, "treble", fiveStage, seeded(1))().source).toBeUndefined();
-  });
-});
-
-describe("mixedSource", () => {
-  const tagged = (label: string) => {
-    const generated = stageSource(null, "treble", fiveStage, seeded(1));
-    return () => ({ ...generated(), source: { id: label, label } });
-  };
-
-  it("deals about half the stage's own phrases, the rest from reviews by weight", () => {
-    const next = mixedSource(tagged("own"), [
-      { source: tagged("recent"), weight: 1 },
-      { source: tagged("older"), weight: 0.5 },
-    ], seeded(5));
-    const ids = Array.from({ length: 3000 }, () => next().source!.id);
-    const share = (id: string) => ids.filter((i) => i === id).length / ids.length;
-    expect(share("own")).toBeCloseTo(0.5, 1);
-    expect(share("recent") / share("older")).toBeCloseTo(2, 0);
-  });
-
-  it("deals only the stage's own phrases when there's nothing earlier", () => {
-    const next = mixedSource(tagged("own"), [], seeded(5));
-    expect(Array.from({ length: 20 }, () => next().source!.id).every((id) => id === "own")).toBe(true);
   });
 });
 
