@@ -58,8 +58,12 @@ const BOTTOM_LINE_STEP: Record<Clef, number> = {
   treble: staffStep({ letter: "E", alter: 0, octave: 4 }),
   bass: staffStep({ letter: "G", alter: 0, octave: 2 }),
 };
-/** Room after the final barline for the played note written out, in staff spaces. */
-const GHOST_GUTTER_UNITS = 5;
+/** A short empty bar after the final barline where played notes are written out, in staff spaces. */
+const SCRATCH_GAP_UNITS = 1;
+const SCRATCH_BAR_UNITS = 6;
+const GHOST_GUTTER_UNITS = SCRATCH_GAP_UNITS + SCRATCH_BAR_UNITS;
+/** Where the written-out notehead sits in the scratch bar, leaving room for accidentals before it. */
+const GHOST_X_UNITS = 3.6;
 /** Played notes further out than this many ledger lines get an arrow instead. */
 const MAX_LEDGERS = 4;
 const RELEASE_FADE_MS = 150;
@@ -100,6 +104,11 @@ export class NotationView {
   private readonly held = new Set<number>();
   /** Released keys still fading out, with the timer that removes them. */
   private readonly fading = new Map<number, number>();
+  /**
+   * Notehead and accidental column of each played key, kept from press to release, so a
+   * note pushed aside by a close neighbour doesn't jump when the neighbour is let go.
+   */
+  private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
 
   constructor(root: HTMLElement) {
@@ -138,6 +147,7 @@ export class NotationView {
     clearTimeout(this.wrongFlashTimer);
     this.exercise = exercise;
     this.markedBar = null;
+    this.columns.clear();
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
     void this.reload();
@@ -344,6 +354,8 @@ export class NotationView {
           const last = measures[measures.length - 1].PositionAndShape;
           const left = staffLine.PositionAndShape.AbsolutePosition.x * unit;
           const right = (last.AbsolutePosition.x + last.BorderRight) * unit;
+          // The right-hand letters go after the scratch bar, when there is one.
+          const scratchRight = right + (this.highlightPlayed ? GHOST_GUTTER_UNITS * unit : 0);
           // StaffLine's y is its top line; lines are one staff space apart.
           const bottom = (first.AbsolutePosition.y + 4) * unit;
 
@@ -354,12 +366,13 @@ export class NotationView {
             for (const side of ["left", "right"] as const) {
               const label = document.createElement("span");
               label.className = "staff-letter";
+              label.dataset.step = String(step);
               label.textContent = letter;
               label.style.top = `${y}px`;
               label.style.fontSize = fontSize;
               label.style.width = `${column}px`;
               label.style.textAlign = "center";
-              label.style.left = `${side === "left" ? left - inset - column : right + inset}px`;
+              label.style.left = `${side === "left" ? left - inset - column : scratchRight + inset}px`;
               this.lettersLayer.append(label);
             }
           });
@@ -370,26 +383,53 @@ export class NotationView {
   }
 
   /**
-   * Each played note thickens its staff line or tints its space across the staff (ledger
-   * notes get faint ledger lines out to them), and is written once after the final barline
-   * as the key would spell it, accidental included. Drawn behind the music.
+   * In free play, a short empty bar follows the music. Each played note thickens its staff
+   * line or tints its space across the staff and that bar (ledger notes get faint ledger
+   * lines out to them), lights its margin letter, and is written in the bar as the key
+   * would spell it, accidental included. Drawn behind the music.
    */
   private drawPlayed(): void {
     const layer = this.playedLayer;
     layer.replaceChildren();
+    for (const label of this.lettersLayer.querySelectorAll(".staff-letter.lit")) label.classList.remove("lit");
     const exercise = this.exercise;
-    if (!this.highlightPlayed || !this.freePlay || !this.ready || !exercise || this.held.size + this.fading.size === 0) {
+    if (!this.highlightPlayed || !this.freePlay || !this.ready || !exercise) {
       layer.remove();
       return;
     }
     const key = keyById(exercise.key);
     const bottomStep = BOTTOM_LINE_STEP[exercise.clef];
-    const notes = [...this.held, ...this.fading.keys()]
-      .map((pitch) => {
-        const { spelling, accidental } = spellInKey(pitch, key);
-        return { position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch) };
-      })
-      .sort((a, b) => a.position - b.position);
+    const pitches = [...this.held, ...this.fading.keys()];
+    for (const pitch of this.columns.keys()) if (!pitches.includes(pitch)) this.columns.delete(pitch);
+    const notes = pitches.map((pitch) => {
+      const { spelling, accidental } = spellInKey(pitch, key);
+      return { pitch, position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch) };
+    });
+    // A newly pressed key takes the first column free of close neighbours: seconds sit side by
+    // side, and accidentals close together step left, as engravers do.
+    for (const note of notes) {
+      if (this.columns.has(note.pitch)) continue;
+      const placed = notes.filter((other) => this.columns.has(other.pitch));
+      const free = (taken: number[]) => {
+        let column = 0;
+        while (taken.includes(column)) column++;
+        return column;
+      };
+      const head = free(
+        placed.filter((other) => Math.abs(other.position - note.position) <= 1).map((other) => this.columns.get(other.pitch)!.head),
+      );
+      const sign = note.accidental
+        ? free(
+            placed
+              .filter((other) => other.accidental && Math.abs(other.position - note.position) < 6)
+              .map((other) => this.columns.get(other.pitch)!.sign),
+          )
+        : 0;
+      this.columns.set(note.pitch, { head, sign });
+    }
+    for (const label of this.lettersLayer.querySelectorAll<HTMLElement>(".staff-letter")) {
+      if (notes.some((note) => String(note.position) === label.dataset.step)) label.classList.add("lit");
+    }
 
     const unit = 10 * this.osmd.Zoom;
     const add = (parent: Element, tag: string, attrs: Record<string, string | number>, className: string) => {
@@ -413,12 +453,20 @@ export class NotationView {
           if (right <= left) continue;
           const bottom = (first.AbsolutePosition.y + 4) * unit;
           const y = (position: number) => bottom - (position * unit) / 2;
-          const ghostX = right + (this.staffLetters ? LETTER_GUTTER_UNITS * unit : 0) + 3.5 * unit;
+          const scratchLeft = right + SCRATCH_GAP_UNITS * unit;
+          const scratchRight = scratchLeft + SCRATCH_BAR_UNITS * unit;
+          const ghostX = scratchLeft + GHOST_X_UNITS * unit;
           const lowest = -2 * MAX_LEDGERS;
           const highest = 8 + 2 * MAX_LEDGERS;
-          // Seconds sit side by side, and accidentals close together step left, as engravers do.
-          let previousHead: { position: number; shifted: boolean } | null = null;
-          let previousSign: { position: number; shifted: boolean } | null = null;
+          // Across the music and across the scratch bar.
+          const spans = [
+            [left, right],
+            [scratchLeft, scratchRight],
+          ];
+
+          for (let line = 0; line <= 8; line += 2) {
+            add(layer, "line", { x1: scratchLeft, x2: scratchRight, y1: y(line), y2: y(line), "stroke-width": 0.1 * unit }, "scratch-line");
+          }
 
           for (const note of notes) {
             const group = add(layer, "g", {}, note.fading ? "played-note fading" : "played-note");
@@ -430,22 +478,25 @@ export class NotationView {
               add(group, "path", { d: `M${ghostX - 0.6 * unit} ${base} L${ghostX} ${tip} L${ghostX + 0.6 * unit} ${base} Z` }, "ghost-head");
               continue;
             }
+            const { head, sign } = this.columns.get(note.pitch)!;
+            const cx = ghostX + head * 1.2 * unit;
             const ledgers: number[] = [];
             for (let line = -2; line >= position; line -= 2) ledgers.push(line);
             for (let line = 10; line <= position; line += 2) ledgers.push(line);
             for (const line of ledgers) {
-              if (line !== position) add(group, "line", { x1: left, x2: right, y1: y(line), y2: y(line) }, "played-ledger");
-              add(group, "line", { x1: ghostX - 1.1 * unit, x2: ghostX + 1.1 * unit, y1: y(line), y2: y(line) }, "ghost-ledger");
+              if (line !== position) {
+                for (const [x1, x2] of spans) add(group, "line", { x1, x2, y1: y(line), y2: y(line) }, "played-ledger");
+              }
+              add(group, "line", { x1: cx - 1.1 * unit, x2: cx + 1.1 * unit, y1: y(line), y2: y(line) }, "ghost-ledger");
             }
-            if (position % 2 === 0) {
-              add(group, "line", { x1: left, x2: right, y1: y(position), y2: y(position) }, "played-line");
-            } else {
-              add(group, "rect", { x: left, y: y(position) - unit / 2, width: right - left, height: unit }, "played-space");
+            for (const [x1, x2] of spans) {
+              if (position % 2 === 0) {
+                add(group, "line", { x1, x2, y1: y(position), y2: y(position) }, "played-line");
+              } else {
+                add(group, "rect", { x: x1, y: y(position) - unit / 2, width: x2 - x1, height: unit }, "played-space");
+              }
             }
 
-            const shifted: boolean = previousHead !== null && !previousHead.shifted && position - previousHead.position <= 1;
-            previousHead = { position, shifted };
-            const cx = ghostX + (shifted ? 1.2 * unit : 0);
             add(
               group,
               "ellipse",
@@ -453,13 +504,11 @@ export class NotationView {
               "ghost-head",
             );
             if (note.accidental) {
-              const signShifted: boolean = previousSign !== null && !previousSign.shifted && position - previousSign.position < 6;
-              previousSign = { position, shifted: signShifted };
-              const x = ghostX - 1.5 * unit - (signShifted ? 1.1 * unit : 0);
-              const sign = add(group, "g", { transform: `translate(${x} ${y(position)}) scale(${unit})` }, "ghost-accidental");
+              const x = ghostX - 1.5 * unit - sign * 1.1 * unit;
+              const glyph = add(group, "g", { transform: `translate(${x} ${y(position)}) scale(${unit})` }, "ghost-accidental");
               const strokes = ACCIDENTAL_STROKES[note.accidental];
-              add(sign, "path", { d: strokes.thin, "stroke-width": 0.12 }, "");
-              add(sign, "path", { d: strokes.thick, "stroke-width": 0.28 }, "");
+              add(glyph, "path", { d: strokes.thin, "stroke-width": 0.12 }, "");
+              add(glyph, "path", { d: strokes.thick, "stroke-width": 0.28 }, "");
             }
           }
         }

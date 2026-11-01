@@ -929,6 +929,11 @@ dialog.midi-debug::backdrop {
   line-height: 1;
 }
 
+.staff-letter.lit {
+  color: var(--accent);
+  font-weight: 800;
+}
+
 /* Played notes in free play; drawn behind the music by NotationView (#notation isolates the stack). */
 #notation {
   isolation: isolate;
@@ -945,9 +950,13 @@ dialog.midi-debug::backdrop {
   pointer-events: none;
 }
 
+.scratch-line {
+  stroke: var(--ink);
+}
+
 .played-line {
   stroke: var(--accent);
-  stroke-width: 3px;
+  stroke-width: 4.5px;
   stroke-linecap: round;
 }
 
