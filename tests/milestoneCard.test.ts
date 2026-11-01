@@ -24,20 +24,26 @@ describe("milestone card", () => {
 
   it("pops in the star just earned, or the crown when mastered", () => {
     const stars = [...card(2).root.querySelectorAll(".star")];
-    expect(stars.map((star) => star.classList.contains("fresh"))).toEqual([false, true, false]);
-    expect(card(3, "mastered").root.querySelector(".mastery-mark")?.classList.contains("fresh")).toBe(true);
+    expect(stars.map((star) => star.classList.contains("fresh"))).toEqual([false, true, false, false]);
+    expect(card(4, "mastered").root.querySelector(".mastery-mark")?.classList.contains("fresh")).toBe(true);
   });
 
-  it("adds Fluent on C5, right-most, after ★★ Play", () => {
-    const { buttons, keys, choose } = card(2);
+  it("offers Mix on C4 after ★★ Play", () => {
+    const { root, buttons } = card(2);
+    expect(root.textContent).toContain("Next up is Mix");
+    expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance"]);
+  });
+
+  it("adds Fluent on C5, right-most, after ★★★ Mix", () => {
+    const { buttons, keys, choose } = card(3);
     expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance", "fluent"]);
     expect(keys).toEqual(["C3", "C4", "C5"]);
     buttons[2].click();
     expect(choose).toHaveBeenCalledWith("fluent");
   });
 
-  it("asks to stay and master the stage after ★★★", () => {
-    const { root, buttons } = card(3);
+  it("asks to stay and master the stage after ★★★★", () => {
+    const { root, buttons } = card(4);
     expect(buttons[0].textContent).toContain("Master 1.1");
     expect(root.querySelector(".mastery-mark")?.classList.contains("on")).toBe(false);
   });
@@ -72,6 +78,6 @@ describe("stage detail", () => {
     const actions = { select() {}, start() {}, intro() {}, startHere() {} };
     renderTrack(root, "treble", projectProgress([played]), first, actions);
     const labels = [...root.querySelectorAll(".tier-card button")].map((b) => b.textContent);
-    expect(labels).toEqual(["Continue Read", "Locked", "Locked"]);
+    expect(labels).toEqual(["Continue Read", "Locked", "Locked", "Locked"]);
   });
 });

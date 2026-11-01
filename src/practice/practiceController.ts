@@ -436,6 +436,11 @@ export class PracticeController {
     const { notation, keyboard } = this.deps;
     const { missed, result } = session.play(pitch, time);
     this.applyMisses(missed);
+    // A fault fails the attempt there and then, rather than when the phrase runs out.
+    if (missed.length > 0) {
+      this.finishRhythmPhrase();
+      return;
+    }
 
     switch (result.kind) {
       case "correct": {
@@ -455,12 +460,12 @@ export class PracticeController {
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
         keyboard.flash(result.expectedPitch, "hint");
-        this.publishLiveScore();
+        this.finishRhythmPhrase();
         break;
       case "early":
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
-        this.publishLiveScore();
+        this.finishRhythmPhrase();
         break;
       case "ignored":
         if (session.isComplete) this.finishRhythmPhrase();
@@ -482,7 +487,7 @@ export class PracticeController {
       const now = this.now();
       const { missed, currentIndex, completed } = session.tick(now);
       this.applyMisses(missed);
-      if (completed) {
+      if (completed || missed.length > 0) {
         this.finishRhythmPhrase();
         return;
       }

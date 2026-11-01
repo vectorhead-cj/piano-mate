@@ -509,7 +509,8 @@ describe("PracticeController rhythm retries", () => {
     expect(ctx.controller.isHot).toBe(true);
   });
 
-  it("counts a note pressed before its window, but not during the count-in, and stopping reports it", () => {
+  /** Four quarter notes, C D E F, so onsets fall a beat apart at 60 bpm. */
+  function quartersSetup() {
     const ctx = setup(settings);
     const quarters: Exercise = {
       clef: "treble",
@@ -520,25 +521,64 @@ describe("PracticeController rhythm retries", () => {
     };
     ctx.controller.exerciseSource = () => quarters;
     ctx.controller.startNewExercise();
+    return ctx;
+  }
 
-    // A beat's rest, then a bar's count-in: playing in it is free.
-    ctx.controller.goHot();
-    vi.advanceTimersByTime(2000);
-    ctx.press(62, performance.now());
-    ctx.controller.goCold();
-    expect(ctx.onPhraseComplete).not.toHaveBeenCalled();
-
+  /** Goes hot and plays C on time; returns when it was due. */
+  function playFirst(ctx: ReturnType<typeof setup>): number {
     ctx.controller.goHot();
     const firstAt = performance.now() + 1000 + 4000;
     vi.advanceTimersByTime(firstAt - performance.now());
     ctx.press(60, firstAt);
+    return firstAt;
+  }
+
+  function expectFailedAt(ctx: ReturnType<typeof setup>, index: number, note: object): void {
+    expect(ctx.controller.isHot).toBe(false);
+    expect(ctx.onPhraseComplete).toHaveBeenCalledTimes(1);
+    const result = ctx.onPhraseComplete.mock.lastCall![0];
+    expect(result).toMatchObject({ passed: false, abandoned: false });
+    expect(result.notes[index]).toMatchObject(note);
+  }
+
+  it("ignores the count-in, then fails the attempt at once on a note pressed before its window", () => {
+    const ctx = quartersSetup();
+    // A beat's rest, then a bar's count-in: playing in it is free.
+    ctx.controller.goHot();
+    vi.advanceTimersByTime(2000);
+    ctx.press(62, performance.now());
+    expect(ctx.controller.isHot).toBe(true);
+    ctx.controller.goCold();
+    expect(ctx.onPhraseComplete).not.toHaveBeenCalled();
+
+    playFirst(ctx);
     // D is due a beat later; its window opens half a beat before.
     vi.advanceTimersByTime(100);
     ctx.press(62, performance.now());
     expect(ctx.notation.flashWrong).toHaveBeenLastCalledWith(1);
-    ctx.controller.goCold();
-    expect(ctx.onPhraseComplete).toHaveBeenLastCalledWith(expect.objectContaining({ passed: false, abandoned: true }));
-    expect(ctx.onPhraseComplete.mock.lastCall![0].notes[1]).toMatchObject({ wrong: 1, early: 1, hit: false });
+    expectFailedAt(ctx, 1, { wrong: 1, early: 1, hit: false });
+  });
+
+  it("fails the attempt at once on a wrong note", () => {
+    const ctx = quartersSetup();
+    const firstAt = playFirst(ctx);
+    vi.advanceTimersByTime(firstAt + 1000 - performance.now());
+    ctx.press(63, firstAt + 1000);
+    expectFailedAt(ctx, 1, { wrong: 1, hit: false });
+  });
+
+  it("fails the attempt as soon as a note's window closes unplayed", () => {
+    const ctx = quartersSetup();
+    const firstAt = playFirst(ctx);
+    // D's window closes half a beat after it's due.
+    vi.advanceTimersByTime(firstAt + 1000 + 500 - performance.now());
+    expect(ctx.controller.isHot).toBe(true);
+    vi.advanceTimersByTime(40);
+    expectFailedAt(ctx, 1, { wrong: 0, hit: false });
+    expect(ctx.sound.click).toHaveBeenCalled();
+    ctx.sound.click.mockClear();
+    vi.advanceTimersByTime(5000);
+    expect(ctx.sound.click).not.toHaveBeenCalled();
   });
 
   it("slowing down mid-attempt counts as bailing out", () => {

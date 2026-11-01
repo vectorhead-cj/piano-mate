@@ -1,8 +1,10 @@
 import type { Clef } from "../music/types";
 import {
+  ADVANCE_STARS,
   CLEF_TRACKS,
   hasIntro,
   MASTERY_ROUNDS,
+  MAX_STARS,
   MISS_WINDOW,
   PLACED_STAGES,
   placedStage,
@@ -46,13 +48,13 @@ export interface TierProgress extends Streak {
 
 export interface StageProgress {
   tiers: Record<Tier, TierProgress>;
-  /** 0–3: ★ Read, ★★ Play, ★★★ Fluent, each earned in order. */
+  /** 0–4: ★ Read, ★★ Play, ★★★ Mix, ★★★★ Fluent, each earned in order. */
   stars: number;
-  /** ★★★ and MASTERY_ROUNDS clean rounds at Fluent. */
+  /** Every star and MASTERY_ROUNDS clean rounds at Fluent. */
   mastered: boolean;
   /**
    * The stage has new notation, and its intro (a row of its own before the stage) can be
-   * watched: the previous stage has ★★, or this is the first stage.
+   * watched: the previous stage has ★★★, or this is the first stage.
    */
   introOpen: boolean;
   /**
@@ -60,7 +62,7 @@ export interface StageProgress {
    * in this one; false when it has none.
    */
   introDone: boolean;
-  /** The stage can be practised: the previous stage has ★★ and its intro, if any, is done. */
+  /** The stage can be practised: the previous stage has ★★★ and its intro, if any, is done. */
   unlocked: boolean;
   /** Read is open on an unlocked stage; each later tier needs the star before it. */
   tierOpen: Record<Tier, boolean>;
@@ -68,11 +70,11 @@ export interface StageProgress {
 
 export interface TrackProgress {
   stages: Record<string, StageProgress>;
-  /** Stages with ★★ (the ones that opened their successor). */
+  /** Stages with ★★★ (the ones that opened their successor). */
   passed: number;
   mastered: number;
   /**
-   * The furthest unlocked stage without ★★ (or the stage whose intro is next), or the last
+   * The furthest unlocked stage without ★★★ (or the stage whose intro is next), or the last
    * stage once all are passed.
    */
   currentStageId: string;
@@ -95,7 +97,7 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
     const key = `${clef}/${stageId}`;
     let tiers = tiersByTrack.get(key);
     if (!tiers) {
-      tiers = { read: emptyTier(), play: emptyTier(), fluent: emptyTier() };
+      tiers = { read: emptyTier(), play: emptyTier(), mix: emptyTier(), fluent: emptyTier() };
       tiersByTrack.set(key, tiers);
     }
     return tiers;
@@ -117,7 +119,7 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
     tier.attempts++;
     const perfect = isPerfect(event);
     if (perfect) tier.perfects++;
-    // Mastery counts from the phrase after ★★★, and stops once it's reached.
+    // Mastery counts from the phrase after Fluent's star, and stops once it's reached.
     if (event.context.tier === "fluent" && tier.best >= STAR_STREAK && tier.rounds < MASTERY_ROUNDS) {
       tier.round = [...tier.round, perfect];
       if (tier.round.length === MISS_WINDOW) {
@@ -163,18 +165,18 @@ function trackProgress(
       if (tiers[tier].best < STAR_STREAK) break;
       stars++;
     }
-    const isMastered = stars === 3 && tiers.fluent.rounds >= MASTERY_ROUNDS;
-    const tierOpen = { read: unlocked, play: unlocked && stars >= 1, fluent: unlocked && stars >= 2 };
+    const isMastered = stars === MAX_STARS && tiers.fluent.rounds >= MASTERY_ROUNDS;
+    const tierOpen = Object.fromEntries(TIERS.map((tier, i) => [tier, unlocked && stars >= i])) as Record<Tier, boolean>;
     stages[stage.id] = { tiers, stars, mastered: isMastered, introOpen, introDone, unlocked, tierOpen };
 
-    if (stars >= 2) passed++;
+    if (stars >= ADVANCE_STARS) passed++;
     if (isMastered) mastered++;
     // Stages skipped by starting further on aren't where the track continues.
-    if ((unlocked || introOpen) && stars < 2 && order >= startOrder && !currentFound) {
+    if ((unlocked || introOpen) && stars < ADVANCE_STARS && order >= startOrder && !currentFound) {
       currentStageId = stage.id;
       currentFound = true;
     }
-    previousPassed = unlocked && stars >= 2;
+    previousPassed = unlocked && stars >= ADVANCE_STARS;
   }
 
   return { stages, passed, mastered, currentStageId };
@@ -194,7 +196,7 @@ export function unlockAll(progress: Progress): Progress {
               ...stage,
               introOpen: stage.introOpen || hasIntro(placedStage(id)!.stage),
               unlocked: true,
-              tierOpen: { read: true, play: true, fluent: true },
+              tierOpen: { read: true, play: true, mix: true, fluent: true },
             },
           ]),
         ),

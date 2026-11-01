@@ -1532,7 +1532,7 @@ dialog.account-dialog::backdrop {
 .stage-row {
   display: grid;
   /* Fixed widths, so pips, stars and status line up from stage to stage. */
-  grid-template-columns: 2.6rem minmax(0, 1fr) 5.5rem 4.2rem 5.5rem;
+  grid-template-columns: 2.6rem minmax(0, 1fr) 5.5rem 5.2rem 5.5rem;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -2252,7 +2252,7 @@ dialog.account-dialog::backdrop {
   }
 
   .stage-row {
-    grid-template-columns: 2.2rem minmax(0, 1fr) 4.2rem;
+    grid-template-columns: 2.2rem minmax(0, 1fr) 5.2rem;
   }
 
   .stage-row .stage-status,
@@ -2284,6 +2284,15 @@ dialog.account-dialog::backdrop {
     left: 50%;
     font-size: 0.6rem;
     transform: translateX(-50%);
+  }
+
+  /* Four tier tabs fit a phone's width by their names alone. */
+  .tier-tab {
+    padding: 0 10px;
+  }
+
+  .tier-tab-stars {
+    display: none;
   }
 
   /* Three choices still fit a phone's width side by side. */

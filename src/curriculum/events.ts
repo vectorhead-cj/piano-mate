@@ -62,6 +62,8 @@ export interface PhraseCompleted {
   };
   /** The real phrase played (see src/music/corpus.ts); absent for generated phrases. */
   phraseId?: string;
+  /** In a mixing tier, the earlier stage the phrase was dealt from; absent for the stage's own. */
+  reviewStageId?: string;
   /** Notes per bar, so a note index maps back to its bar. */
   barSizes: number[];
   notes: NoteOutcome[];
