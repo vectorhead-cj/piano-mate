@@ -54,6 +54,7 @@ import {
   nextStepAfter,
   renderHome,
   renderIntro,
+  renderIntroDone,
   renderMilestone,
   renderPracticeBar,
   renderTrack,
@@ -207,7 +208,15 @@ async function main(): Promise<void> {
   let milestone: Milestone | null = null;
   const streakDots = new StreakDots();
   /** A stage's intro, while it runs; its phrases are echoed, not recorded. */
-  let intro: { clef: Clef; stageId: string; steps: IntroStep[]; index: number; replay: boolean } | null = null;
+  let intro: {
+    clef: Clef;
+    stageId: string;
+    steps: IntroStep[];
+    index: number;
+    replay: boolean;
+    /** Every example played clean: its card asks to repeat the intro or go on. */
+    finished: boolean;
+  } | null = null;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
 
   function levelMidiRange(level: Level): { lowest: number; highest: number } {
@@ -263,6 +272,11 @@ async function main(): Promise<void> {
       if (hot) {
         player.stop();
         closeMilestone();
+        // Playing the last example again, instead of choosing.
+        if (intro?.finished) {
+          intro.finished = false;
+          renderView();
+        }
       }
       syncHot(hot);
     },
@@ -420,6 +434,21 @@ async function main(): Promise<void> {
     }
   }
 
+  /** The choices on the card standing in for the staff, if one is up. */
+  function cardChoices(): MilestoneChoice[] | null {
+    if (milestone) return milestoneChoices(milestone);
+    return intro?.finished ? ["stay", "advance"] : null;
+  }
+
+  function chooseCard(choice: MilestoneChoice): void {
+    if (!intro?.finished) {
+      chooseMilestone(choice);
+      return;
+    }
+    if (choice === "advance") finishIntro(false);
+    else startIntro(intro.clef, intro.stageId);
+  }
+
   function closeMilestone(): void {
     if (!milestone) return;
     milestone = null;
@@ -502,17 +531,19 @@ async function main(): Promise<void> {
       banner.show(result.slowed ? `Clean at ${result.tempo} bpm · now at full tempo` : "Clean · once more", "info");
       return;
     }
-    const last = run.index === run.steps.length - 1;
-    banner.show(last ? "Clean · on to the stage" : `Clean · next: ${run.steps[run.index + 1].title}`, "perfect");
-    if (!last) {
-      // The next explanation shows at once; Start plays its example even before it's drawn.
-      run.index++;
+    if (run.index === run.steps.length - 1) {
+      // A pause before the stage: the card asks to watch it again or go on.
+      run.finished = true;
+      banner.hide();
       renderView();
+      return;
     }
+    banner.show(`Clean · next: ${run.steps[run.index + 1].title}`, "perfect");
+    // The next explanation shows at once; Start plays its example even before it's drawn.
+    run.index++;
+    renderView();
     setTimeout(() => {
-      if (intro !== run) return;
-      if (last) finishIntro(false);
-      else if (!practice.isHot) practice.startNewExercise();
+      if (intro === run && !practice.isHot) practice.startNewExercise();
     }, INTRO_NEXT_DELAY_MS);
   }
 
@@ -525,7 +556,7 @@ async function main(): Promise<void> {
     if (steps.length === 0) return;
     player.stop();
     milestone = null;
-    intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone };
+    intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone, finished: false };
     context = { kind: "curriculum", clef, stageId, tier: "read" };
     settings = {
       ...customSettings,
@@ -641,13 +672,15 @@ async function main(): Promise<void> {
     customControls.hidden = !(practising && context.kind === "custom");
     practiceBar.hidden = !(practising && context.kind === "curriculum" && !intro);
     introPanel.hidden = !(practising && intro);
-    const showMilestone = practising && milestone !== null && context.kind === "curriculum";
-    milestonePanel.hidden = !showMilestone;
-    if (showMilestone) notationPanel.dataset.milestone = "";
+    const showCard = practising && context.kind === "curriculum" && (milestone !== null || intro?.finished === true);
+    milestonePanel.hidden = !showCard;
+    if (showCard) notationPanel.dataset.milestone = "";
     else delete notationPanel.dataset.milestone;
-    if (showMilestone && context.kind === "curriculum") {
+    if (showCard && intro) {
+      renderIntroDone(milestonePanel, intro, chooseCard);
+    } else if (showCard && context.kind === "curriculum") {
       const { clef, stageId } = context;
-      renderMilestone(milestonePanel, { clef, stageId, milestone: milestone!, progress: store.progress }, chooseMilestone);
+      renderMilestone(milestonePanel, { clef, stageId, milestone: milestone!, progress: store.progress }, chooseCard);
     }
     if (intro) app.dataset.intro = "";
     else delete app.dataset.intro;
@@ -744,17 +777,19 @@ async function main(): Promise<void> {
     player.stop();
     practice.toggleHot();
   });
-  // C3 stays, C4 moves on, C5 (after ★★) goes to Fluent; practice is cold, so they can't be notes.
+  // C3 stays (or repeats the intro), C4 moves on, C5 (after ★★) goes to Fluent; practice is
+  // cold while a card is up, so they can't be notes.
   stream.subscribe((event) => {
-    if (!milestone || event.kind !== "on" || event.source !== "midi") return;
-    const choice = milestoneChoices(milestone).find((c) => MILESTONE_KEYS[c] === event.pitch);
-    if (choice) chooseMilestone(choice);
+    const choices = cardChoices();
+    if (!choices || event.kind !== "on" || event.source !== "midi") return;
+    const choice = choices.find((c) => MILESTONE_KEYS[c] === event.pitch);
+    if (choice) chooseCard(choice);
   });
   document.addEventListener("keydown", (event) => {
-    if (!milestone || view.name !== "practice" || (event.key !== "Enter" && event.key !== "Escape")) return;
+    if (!cardChoices() || view.name !== "practice" || (event.key !== "Enter" && event.key !== "Escape")) return;
     if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
     event.preventDefault();
-    chooseMilestone(event.key === "Enter" ? "advance" : "stay");
+    chooseCard(event.key === "Enter" ? "advance" : "stay");
   });
   document.addEventListener("keydown", (event) => {
     if (event.code !== "Space" || event.repeat || view.name !== "practice") return;

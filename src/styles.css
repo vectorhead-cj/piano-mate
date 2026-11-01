@@ -659,6 +659,15 @@ body::before {
   display: none;
 }
 
+/* Just the button: no box around it. */
+.app[data-intro] .transport {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
 .phrase-score[data-mode="wait"] [data-rhythm-only] {
   display: none;
 }
@@ -1731,10 +1740,7 @@ dialog.account-dialog::backdrop {
   }
 
   .app[data-intro] .transport {
-    min-height: 0;
     margin-left: auto;
-    padding: 6px 14px;
-    box-shadow: none;
     pointer-events: auto;
   }
 

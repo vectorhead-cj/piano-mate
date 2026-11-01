@@ -16,7 +16,7 @@ const corpus = parseBank(JSON.parse(readFileSync("public/phrases.json", "utf8"))
 describe("introSteps", () => {
   const introStages = PLACED_STAGES.filter((p) => hasIntro(p.stage));
 
-  it("gives every introducing stage a whole example per notation and a scale per new key, then a real phrase", () => {
+  it("gives every introducing stage a scale per new key, then a whole example per notation, then a real phrase", () => {
     for (const clef of CLEF_TRACKS) {
       for (const { stage } of introStages) {
         const steps = introSteps(corpus, clef, stage, seeded(1));
@@ -25,15 +25,17 @@ describe("introSteps", () => {
         const range = introMidiRange(steps, stageMidiRange(corpus, clef, stage));
         const allowed = stageNotations(stage);
         for (const [i, { exercise }] of steps.entries()) {
-          const scaleIndex = i - stage.introduces.length;
-          if (i < stage.introduces.length) expect(exercise.key).toBe(stage.keys[0]);
-          else if (scaleIndex < newKeys.length) expect(exercise.key).toBe(newKeys[scaleIndex]);
+          const scaleIndex = i;
+          const notationIndex = i - newKeys.length;
+          const isNotation = notationIndex >= 0 && notationIndex < stage.introduces.length;
+          if (scaleIndex < newKeys.length) expect(exercise.key).toBe(newKeys[scaleIndex]);
+          else if (isNotation) expect(exercise.key).toBe(stage.keys[0]);
           else expect(exercise.key).toBe(newKeys[0] ?? stage.keys[0]);
           const used = notationsOf(exercise.time, exercise.pickup, exercise.bars);
           // An example uses nothing the stage hasn't introduced, and shows its own notation.
           expect(usesOnly(used, allowed)).toBe(true);
-          if (i < stage.introduces.length) expect(used.has(stage.introduces[i])).toBe(true);
-          if (scaleIndex >= 0 && scaleIndex < newKeys.length) {
+          if (isNotation) expect(used.has(stage.introduces[notationIndex])).toBe(true);
+          if (scaleIndex < newKeys.length) {
             const pitches = exercise.bars.flat().map(midiOf);
             expect(pitches).toHaveLength(15);
             expect(pitches[7] - pitches[0]).toBe(12);

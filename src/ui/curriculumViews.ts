@@ -305,14 +305,14 @@ function listText(items: readonly string[]): string {
   return items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items[0];
 }
 
-/** "Quarter notes, half notes, whole notes and the C major scale" */
+/** "The C major scale, quarter notes, half notes and whole notes": in the order the intro takes them. */
 export function introTitle(stageId: string): string {
   const { stage } = placedStage(stageId)!;
   // Lower-case notation names after the first, but not "3/4 time" or "Cut time (2/2)"'s capitals mid-name.
   const notations = stage.introduces.map((n) => NOTATION_LABELS[n].replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()));
   const keys = stageNewKeys(stage).map(keyFullName);
   const scales = keys.length > 0 ? [`the ${listText(keys)} scale${keys.length > 1 ? "s" : ""}`] : [];
-  const title = listText([...notations, ...scales]);
+  const title = listText([...scales, ...notations]);
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
@@ -595,30 +595,56 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
     labels = { stay: `Master ${number}`, advance: goNext, fluent: "" };
   }
 
-  const choices = milestoneChoices(milestone);
+  const mastered = milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined;
   root.replaceChildren(
+    choiceCard(stars(milestone.stars, 3, mastered), headline, line, milestoneChoices(milestone), labels, choose),
+  );
+}
+
+/** Ends an intro before its stage starts: watch it again, or go on. Uses the milestone keys, C3 and C4. */
+export function renderIntroDone(
+  root: HTMLElement,
+  model: { stageId: string; replay: boolean },
+  choose: (choice: MilestoneChoice) => void,
+): void {
+  const { stage, number } = placedStage(model.stageId)!;
+  const line = model.replay
+    ? "Watch it again, or head back to the track."
+    : `Next up is stage ${number}: ${stageTitle(stage)}. Read comes first, at your own pace.`;
+  const labels = { stay: "Repeat intro", advance: model.replay ? "Back to the track" : "Let's go", fluent: "" };
+  root.replaceChildren(choiceCard(null, `That's the intro to ${number}.`, line, ["stay", "advance"], labels, choose));
+}
+
+/** A card that stands in for the staff: what happened, then a button per choice, each with its key. */
+function choiceCard(
+  top: Node | null,
+  headline: string,
+  line: string,
+  choices: readonly MilestoneChoice[],
+  labels: Record<MilestoneChoice, string>,
+  choose: (choice: MilestoneChoice) => void,
+): HTMLElement {
+  return h(
+    "div",
+    { class: "milestone-card" },
+    top,
+    h("p", { class: "milestone-headline" }, headline),
+    h("p", { class: "milestone-line" }, line),
     h(
       "div",
-      { class: "milestone-card" },
-      stars(milestone.stars, 3, milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined),
-      h("p", { class: "milestone-headline" }, headline),
-      h("p", { class: "milestone-line" }, line),
-      h(
-        "div",
-        { class: "milestone-actions", "data-count": String(choices.length) },
-        ...choices.map((choice) => {
-          const key = h("kbd", { class: "milestone-key" }, midiNoteName(MILESTONE_KEYS[choice]));
-          const label = h("span", {}, labels[choice]);
-          // Stay's key sits on its left, the others' on their right: towards where they lie on the piano.
-          const button = h(
-            "button",
-            { type: "button", class: choice === "advance" ? "btn-primary" : "btn-secondary", "data-choice": choice },
-            ...(choice === "stay" ? [key, label] : [label, key]),
-          );
-          button.addEventListener("click", () => choose(choice));
-          return button;
-        }),
-      ),
+      { class: "milestone-actions", "data-count": String(choices.length) },
+      ...choices.map((choice) => {
+        const key = h("kbd", { class: "milestone-key" }, midiNoteName(MILESTONE_KEYS[choice]));
+        const label = h("span", {}, labels[choice]);
+        // Stay's key sits on its left, the others' on their right: towards where they lie on the piano.
+        const button = h(
+          "button",
+          { type: "button", class: choice === "advance" ? "btn-primary" : "btn-secondary", "data-choice": choice },
+          ...(choice === "stay" ? [key, label] : [label, key]),
+        );
+        button.addEventListener("click", () => choose(choice));
+        return button;
+      }),
     ),
   );
 }

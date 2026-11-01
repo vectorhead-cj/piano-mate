@@ -138,17 +138,8 @@ export function introSteps(corpus: readonly CorpusPhrase[] | null, clef: Clef, s
   if (stage.introduces.length === 0 && newKeys.length === 0) return [];
   const key = stage.keys[0];
   const tonic = stageTonicStep(clef, stage, key);
-  const steps: IntroStep[] = stage.introduces.map((notation) => {
-    const lesson = LESSONS[notation];
-    const bars = notesInKey(parseNotes(lesson.notes), key, tonic);
-    if (!bars) throw new Error(`The ${notation} example can't be written in ${key}`);
-    return {
-      title: NOTATION_LABELS[notation],
-      text: lesson.text,
-      count: lesson.count,
-      exercise: { clef, key: keyById(key).id, time: lesson.time ?? "4/4", pickup: lesson.pickup ?? 0, bars },
-    };
-  });
+  // New keys come first: their scales, then the new notation, then a real phrase.
+  const steps: IntroStep[] = [];
   for (const scaleKey of newKeys) {
     // Where an octave stage would put it, so the scale sits on the staff.
     const scaleTonic = staffStep(spanLevel(clef, scaleKey, "octave").lowest);
@@ -160,6 +151,17 @@ export function introSteps(corpus: readonly CorpusPhrase[] | null, clef: Clef, s
       text: scaleText(scaleKey),
       count: SCALE_COUNT,
       exercise: { clef, key: keyById(scaleKey).id, time: "4/4", pickup: 0, bars },
+    });
+  }
+  for (const notation of stage.introduces) {
+    const lesson = LESSONS[notation];
+    const bars = notesInKey(parseNotes(lesson.notes), key, tonic);
+    if (!bars) throw new Error(`The ${notation} example can't be written in ${key}`);
+    steps.push({
+      title: NOTATION_LABELS[notation],
+      text: lesson.text,
+      count: lesson.count,
+      exercise: { clef, key: keyById(key).id, time: lesson.time ?? "4/4", pickup: lesson.pickup ?? 0, bars },
     });
   }
   // The real phrase is in the stage's first new key, when it has one.
