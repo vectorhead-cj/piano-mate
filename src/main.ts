@@ -72,6 +72,10 @@ const INTRO_NEXT_DELAY_MS = 1500;
 const CLEAN_WORDS = ["Perfect", "Spot on", "Clean", "Nailed it"];
 /** Clean phrases in a row that swap the sparkle for a flame. */
 const HOT_RUN = 5;
+/** How long a star or mastery is cheered on the staff before its card comes up. */
+const CELEBRATE_MS = 2200;
+/** Space between the result and the top of the music below it. */
+const RESULT_GAP_PX = 16;
 /** The result never sits closer than this to the top of the notation panel. */
 const RESULT_MIN_TOP_PX = 8;
 
@@ -214,6 +218,8 @@ async function main(): Promise<void> {
   let settings: Settings = DEFAULT_SETTINGS;
   /** A star or completed stage just earned: its card stands in for the staff until a choice is made. */
   let milestone: Milestone | null = null;
+  /** A milestone being celebrated on the staff; its card follows after CELEBRATE_MS. */
+  let celebrating: Milestone | null = null;
   const streakDots = new StreakDots();
   /** Clean phrases so far, to take the headline words in turn. */
   let cleanCount = 0;
@@ -407,11 +413,7 @@ async function main(): Promise<void> {
       streakDots.push(perfect);
       const earned = milestoneBetween(before, store.progress, clef, stageId);
       if (earned) {
-        // The card says it all; the next phrase waits until a choice is made.
-        milestone = earned;
-        practice.pauseAfterPass = true;
-        banner.hide();
-        renderView();
+        celebrate(result, earned);
         return;
       }
       message = outcome(roundText(before[clef].stages[stageId].tiers.fluent, perfect) ?? hitsText());
@@ -457,9 +459,29 @@ async function main(): Promise<void> {
     else startIntro(intro.clef, intro.stageId);
   }
 
+  /**
+   * Cheers a star or a mastered stage on the staff first; then its card stands in for the
+   * staff. The next phrase waits throughout, until a choice is made.
+   */
+  function celebrate(result: PhraseResult, earned: Milestone): void {
+    celebrating = earned;
+    practice.pauseAfterPass = true;
+    const title = earned.kind === "mastered" ? "Mastered" : `${"★".repeat(earned.stars)} earned`;
+    showResult(result, { emoji: earned.kind === "mastered" ? "👑" : "🌟", title, detail: hitsText(), tone: "perfect" });
+    renderView();
+    setTimeout(() => {
+      if (celebrating !== earned) return;
+      celebrating = null;
+      milestone = earned;
+      banner.hide();
+      renderView();
+    }, CELEBRATE_MS);
+  }
+
   function closeMilestone(): void {
-    if (!milestone) return;
+    if (!milestone && !celebrating) return;
     milestone = null;
+    celebrating = null;
     practice.pauseAfterPass = intro !== null;
     renderView();
   }
@@ -509,12 +531,12 @@ async function main(): Promise<void> {
     return { emoji: streakDots.run() >= HOT_RUN ? "🔥" : "✨", title, detail, tone: "perfect" };
   }
 
-  /** Centres the result between the top of the panel and the top of the music. */
+  /** Sets the result just above the music, a little clear of it. */
   function placeResult(): void {
     const inkTop = notationView.inkTop();
     if (inkTop === null) return;
     const musicTop = inkTop - notationPanel.getBoundingClientRect().top;
-    resultElement.style.top = `${Math.max(RESULT_MIN_TOP_PX, (musicTop - resultElement.offsetHeight) / 2)}px`;
+    resultElement.style.top = `${Math.max(RESULT_MIN_TOP_PX, musicTop - resultElement.offsetHeight - RESULT_GAP_PX)}px`;
   }
 
   /** Writes the message on the panel; the notes hop for a clean phrase, and a fault washes its bar. */
@@ -605,6 +627,7 @@ async function main(): Promise<void> {
     if (steps.length === 0) return;
     player.stop();
     milestone = null;
+    celebrating = null;
     intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone, finished: false };
     context = { kind: "curriculum", clef, stageId, tier: "read" };
     settings = {
@@ -667,6 +690,7 @@ async function main(): Promise<void> {
     const { stage } = placed;
     stopIntro();
     milestone = null;
+    celebrating = null;
     context = { kind: "curriculum", clef, stageId, tier };
     streakDots.reset(store.progress[clef].stages[stageId].tiers[tier].recent);
     settings = {
@@ -688,6 +712,7 @@ async function main(): Promise<void> {
   function openCustom(): void {
     stopIntro();
     milestone = null;
+    celebrating = null;
     context = { kind: "custom" };
     streakDots.reset();
     settings = customSettings;
@@ -700,6 +725,7 @@ async function main(): Promise<void> {
   function showView(next: View): void {
     if (view.name === "practice" && next.name !== "practice") {
       milestone = null;
+      celebrating = null;
       stopIntro();
       practice.goCold();
       banner.hide();

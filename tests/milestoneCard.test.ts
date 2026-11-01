@@ -22,6 +22,12 @@ describe("milestone card", () => {
     expect(keys).toEqual(["C3", "C4"]);
   });
 
+  it("pops in the star just earned, or the crown when mastered", () => {
+    const stars = [...card(2).root.querySelectorAll(".star")];
+    expect(stars.map((star) => star.classList.contains("fresh"))).toEqual([false, true, false]);
+    expect(card(3, "mastered").root.querySelector(".mastery-mark")?.classList.contains("fresh")).toBe(true);
+  });
+
   it("adds Fluent on C5, right-most, after ★★ Play", () => {
     const { buttons, keys, choose } = card(2);
     expect(buttons.map((b) => b.dataset.choice)).toEqual(["stay", "advance", "fluent"]);

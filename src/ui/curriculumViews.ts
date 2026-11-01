@@ -609,9 +609,11 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
   }
 
   const mastered = milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined;
-  root.replaceChildren(
-    choiceCard(stars(milestone.stars, 3, mastered), headline, line, milestoneChoices(milestone), labels, choose),
-  );
+  const earned = stars(milestone.stars, 3, mastered);
+  // What was just earned pops in: the crown when mastered, else the newest star.
+  const fresh = milestone.kind === "mastered" ? earned.querySelector(".mastery-mark") : earned.querySelectorAll(".star.on")[milestone.stars - 1];
+  fresh?.classList.add("fresh");
+  root.replaceChildren(choiceCard(earned, headline, line, milestoneChoices(milestone), labels, choose));
 }
 
 /** Ends an intro before its stage starts: watch it again, or go on. Uses the milestone keys, C3 and C4. */
