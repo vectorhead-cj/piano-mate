@@ -486,7 +486,7 @@ export function renderIntro(root: HTMLElement, model: IntroModel, actions: Intro
     listen.blur();
     actions.listen();
   });
-  const skip = h("button", { class: "btn-secondary", type: "button" }, model.replay ? "Back to the track" : last ? "Skip to the stage" : "Skip intro");
+  const skip = h("button", { class: "btn-secondary", type: "button" }, model.replay ? "Continue on the track" : last ? "Skip to the stage" : "Skip intro");
   skip.addEventListener("click", actions.skip);
   const count = step.count ? [h("p", { class: "intro-count" }, h("span", { class: "intro-count-label" }, "Count"), step.count)] : [];
   root.replaceChildren(
@@ -511,15 +511,27 @@ export function renderIntro(root: HTMLElement, model: IntroModel, actions: Intro
 export type ResultTone = "perfect" | "fault" | "info";
 
 /** Shows a short message over the notation after each phrase. */
+/** How a phrase went, written on the notation panel: one emoji, a headline, and what it means. */
+export interface ResultMessage {
+  emoji: string;
+  title: string;
+  detail?: string;
+  tone: ResultTone;
+}
+
 export class PhraseResultBanner {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly root: HTMLElement) {}
 
-  show(text: string, tone: ResultTone, ms = 2400): void {
+  show({ emoji, title, detail, tone }: ResultMessage, ms = 2600): void {
     clearTimeout(this.timer);
-    this.root.textContent = text;
+    const headline = h("span", { class: "result-title" }, h("span", { class: "result-emoji", "aria-hidden": "true" }, emoji), title);
+    this.root.replaceChildren(headline, ...(detail ? [h("span", { class: "result-detail" }, detail)] : []));
     this.root.dataset.tone = tone;
+    // Shown afresh, so the entrance plays again even while the last message is up.
+    this.root.hidden = true;
+    void this.root.offsetWidth;
     this.root.hidden = false;
     this.timer = setTimeout(() => this.hide(), ms);
   }
@@ -609,9 +621,9 @@ export function renderIntroDone(
 ): void {
   const { stage, number } = placedStage(model.stageId)!;
   const line = model.replay
-    ? "Watch it again, or head back to the track."
+    ? "Watch it again, or continue on the track."
     : `Next up is stage ${number}: ${stageTitle(stage)}. Read comes first, at your own pace.`;
-  const labels = { stay: "Repeat intro", advance: model.replay ? "Back to the track" : "Let's go", fluent: "" };
+  const labels = { stay: "Repeat intro", advance: model.replay ? "Continue on the track" : "Let's go", fluent: "" };
   root.replaceChildren(choiceCard(null, `That's the intro to ${number}.`, line, ["stay", "advance"], labels, choose));
 }
 

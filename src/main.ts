@@ -59,6 +59,7 @@ import {
   renderPracticeBar,
   renderTrack,
   type MilestoneChoice,
+  type ResultMessage,
   type ResultTone,
 } from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
@@ -67,6 +68,10 @@ import { bindPrefsPopover, bindTheme } from "./ui/theme";
 
 /** Time to see a clean intro example turn green before the next one comes up. */
 const INTRO_NEXT_DELAY_MS = 1500;
+/** Words for a clean phrase, taken in turn so the fortieth doesn't read like the first. */
+const CLEAN_WORDS = ["Perfect", "Spot on", "Clean", "Nailed it"];
+/** Clean phrases in a row that swap the sparkle for a flame. */
+const HOT_RUN = 5;
 
 const UNLOCK_ALL_KEY = "piano-mate.unlockAll";
 
@@ -207,6 +212,8 @@ async function main(): Promise<void> {
   /** A star or completed stage just earned: its card stands in for the staff until a choice is made. */
   let milestone: Milestone | null = null;
   const streakDots = new StreakDots();
+  /** Clean phrases so far, to take the headline words in turn. */
+  let cleanCount = 0;
   /** A stage's intro, while it runs; its phrases are echoed, not recorded. */
   let intro: {
     clef: Clef;
@@ -333,11 +340,11 @@ async function main(): Promise<void> {
     }
     // Slowed-down attempts are practice towards the real tempo, not progress.
     if (result.slowed) {
-      banner.show(
+      showResult(
+        result,
         result.passed
-          ? `Clean at ${result.tempo} bpm · now at full tempo`
-          : `${faultOf(result)} at ${result.tempo} bpm`,
-        "info",
+          ? { emoji: "🐇", title: `Clean at ${result.tempo} bpm`, detail: "now at full tempo", tone: "info" }
+          : faultMessage(result, `at ${result.tempo} bpm`, "info"),
       );
       return;
     }
@@ -378,22 +385,21 @@ async function main(): Promise<void> {
     const before = store.progress;
     store.record(event);
     const perfect = isPerfect(event);
-    const faultText = faultOf(result);
-    const again = perfect && result.passesNeeded > 0 ? " · once more" : "";
+    const again = perfect && result.passesNeeded > 0;
+    const outcome = (detail: string): ResultMessage =>
+      perfect ? cleanMessage(detail, again) : faultMessage(result, detail);
 
     if (context.kind === "custom") {
       streakDots.push(perfect);
-      banner.show(`${perfect ? "Perfect" : faultText} · ${hitsText()}${again}`, perfect ? "perfect" : "fault");
+      showResult(result, outcome(hitsText()));
       renderStreak();
       return;
     }
 
     const { clef, stageId } = context;
-    let text: string;
-    let tone: ResultTone;
+    let message: ResultMessage;
     if (!countsForProgress(event)) {
-      text = `${perfect ? "Perfect" : faultText} · screen keys don't count towards progress${again}`;
-      tone = "info";
+      message = { ...outcome("screen keys don't count towards progress"), emoji: "🖱️", tone: "info" };
     } else {
       streakDots.push(perfect);
       const earned = milestoneBetween(before, store.progress, clef, stageId);
@@ -405,10 +411,9 @@ async function main(): Promise<void> {
         renderView();
         return;
       }
-      text = `${perfect ? "Perfect" : faultText} · ${roundText(before[clef].stages[stageId].tiers.fluent, perfect) ?? hitsText()}${again}`;
-      tone = perfect ? "perfect" : "fault";
+      message = outcome(roundText(before[clef].stages[stageId].tiers.fluent, perfect) ?? hitsText());
     }
-    banner.show(text, tone);
+    showResult(result, message);
     renderView();
   }
 
@@ -479,12 +484,39 @@ async function main(): Promise<void> {
     return `${streakDots.hits()}/${MISS_WINDOW}`;
   }
 
-  /** Where a failed attempt first went wrong, for the result banner. */
-  function faultOf(result: PhraseResult): string {
-    if (result.abandoned) return "Stopped mid-phrase";
+  /** Where a failed attempt first went wrong: what to say, and the bar to wash on the staff. */
+  function faultOf(result: PhraseResult): { emoji: string; text: string; bar?: number } {
+    if (result.abandoned) return { emoji: "✋", text: "Stopped mid-phrase" };
     const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length) });
-    if (!fault) return "";
-    return fault.kind === "wrong" ? `Wrong note in bar ${fault.bar}` : `Missed a note in bar ${fault.bar}`;
+    if (!fault) return { emoji: "❌", text: "Not quite" };
+    return fault.kind === "wrong"
+      ? { emoji: "❌", text: `Wrong note in bar ${fault.bar}`, bar: fault.bar }
+      : { emoji: "🙈", text: `Missed a note in bar ${fault.bar}`, bar: fault.bar };
+  }
+
+  function faultMessage(result: PhraseResult, detail: string, tone: ResultTone = "fault"): ResultMessage {
+    const { emoji, text } = faultOf(result);
+    return { emoji, title: text, detail, tone };
+  }
+
+  /** A clean phrase's message; its headline word changes each time, and a run of them catches fire. */
+  function cleanMessage(detail: string, again = false): ResultMessage {
+    if (again) return { emoji: "🔁", title: "Clean", detail: `once more · ${detail}`, tone: "perfect" };
+    const title = CLEAN_WORDS[cleanCount++ % CLEAN_WORDS.length];
+    return { emoji: streakDots.run() >= HOT_RUN ? "🔥" : "✨", title, detail, tone: "perfect" };
+  }
+
+  /** Writes the message on the panel; the notes hop for a clean phrase, and a fault washes its bar. */
+  function showResult(result: PhraseResult, message: ResultMessage): void {
+    banner.show(message);
+    if (result.passed) {
+      notationView.celebrate();
+      return;
+    }
+    notationView.markBar(faultOf(result).bar ?? null);
+    delete notationPanel.dataset.nudge;
+    void notationPanel.offsetWidth;
+    notationPanel.dataset.nudge = "";
   }
 
   /**
@@ -524,11 +556,16 @@ async function main(): Promise<void> {
   function introPhrase(result: PhraseResult): void {
     const run = intro!;
     if (!result.passed) {
-      banner.show(`${faultOf(result)} · listen again, or press Start to retry`, "fault");
+      showResult(result, faultMessage(result, "listen again, or press Start to retry"));
       return;
     }
     if (result.next !== "new") {
-      banner.show(result.slowed ? `Clean at ${result.tempo} bpm · now at full tempo` : "Clean · once more", "info");
+      showResult(
+        result,
+        result.slowed
+          ? { emoji: "🐇", title: `Clean at ${result.tempo} bpm`, detail: "now at full tempo", tone: "info" }
+          : { emoji: "🔁", title: "Clean", detail: "once more", tone: "info" },
+      );
       return;
     }
     if (run.index === run.steps.length - 1) {
@@ -538,7 +575,7 @@ async function main(): Promise<void> {
       renderView();
       return;
     }
-    banner.show(`Clean · next: ${run.steps[run.index + 1].title}`, "perfect");
+    showResult(result, { emoji: "👂", title: "Clean", detail: `next: ${run.steps[run.index + 1].title}`, tone: "perfect" });
     // The next explanation shows at once; Start plays its example even before it's drawn.
     run.index++;
     renderView();

@@ -67,6 +67,9 @@ export class NotationView {
   private colors = readThemeColors();
   private staffLetters = false;
   private readonly lettersLayer = document.createElement("div");
+  /** A soft wash behind the bar a phrase went wrong in, from 1; null when none. */
+  private markedBar: number | null = null;
+  private readonly barMark = document.createElement("div");
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -94,11 +97,14 @@ export class NotationView {
     rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
     this.lettersLayer.className = "staff-letters";
     this.lettersLayer.setAttribute("aria-hidden", "true");
+    this.barMark.className = "bar-mark";
+    this.barMark.setAttribute("aria-hidden", "true");
   }
 
   show(exercise: Exercise, options: NotationOptions): void {
     clearTimeout(this.wrongFlashTimer);
     this.exercise = exercise;
+    this.markedBar = null;
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
     void this.reload();
@@ -130,6 +136,26 @@ export class NotationView {
     this.wrongFlashTimer = window.setTimeout(() => {
       if (this.states[index] === "wrong") this.setState(index, "current");
     }, WRONG_FLASH_MS);
+  }
+
+  /** Washes the bar (from 1) a phrase went wrong in, until the next phrase is shown; null clears it. */
+  markBar(bar: number | null): void {
+    this.markedBar = bar;
+    this.drawBarMark();
+  }
+
+  /** A clean phrase: the notes hop one after another, left to right. */
+  celebrate(): void {
+    this.graphicalNotes.forEach((note, i) => {
+      // The SVG backend's notes have their own group; the type only knows the base class.
+      const group = (note as GraphicalNote & { getSVGGElement?(): SVGGElement }).getSVGGElement?.();
+      if (!group) return;
+      group.classList.remove("note-wave");
+      // Restart the animation on a group that ran it last time.
+      void group.getBoundingClientRect();
+      group.style.animationDelay = `${i * 60}ms`;
+      group.classList.add("note-wave");
+    });
   }
 
   /** Re-read the theme colors and redraw; staff lines and clefs only recolor on a reload. */
@@ -180,6 +206,7 @@ export class NotationView {
       this.graphicalNotes = collectGraphicalNotes(this.osmd);
       this.applyColors();
       this.drawStaffLetters();
+      this.drawBarMark();
       return;
     }
 
@@ -197,6 +224,25 @@ export class NotationView {
     this.graphicalNotes = collectGraphicalNotes(this.osmd);
     this.applyColors();
     this.drawStaffLetters();
+    this.drawBarMark();
+  }
+
+  /** Places the bar wash over the marked bar's staff, a little above and below the lines. */
+  private drawBarMark(): void {
+    const measure = this.markedBar === null ? undefined : this.osmd.GraphicSheet?.MeasureList[this.markedBar - 1]?.[0];
+    if (!measure) {
+      this.barMark.remove();
+      return;
+    }
+    const unit = 10 * this.osmd.Zoom;
+    const box = measure.PositionAndShape;
+    const { x, y } = box.AbsolutePosition;
+    // A bar's box starts at its barline; the staff is four spaces tall from its top line.
+    this.barMark.style.left = `${(x + box.BorderLeft) * unit}px`;
+    this.barMark.style.width = `${(box.BorderRight - box.BorderLeft) * unit}px`;
+    this.barMark.style.top = `${(y - 1.5) * unit}px`;
+    this.barMark.style.height = `${7 * unit}px`;
+    this.root.prepend(this.barMark);
   }
 
   /** Lay letters beside every staff line and space, outside the clef and final barline. */

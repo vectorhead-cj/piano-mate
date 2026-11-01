@@ -28,6 +28,12 @@ export class StreakDots {
     this.results = recent.slice(-STREAK_DOTS);
   }
 
+  /** Clean phrases in a row, up to now. */
+  run(): number {
+    const lastMiss = this.results.lastIndexOf(false);
+    return this.results.length - 1 - lastMiss;
+  }
+
   /** Green dots: clean phrases out of the last STREAK_DOTS. */
   hits(): number {
     return recentHits(this.results);

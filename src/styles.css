@@ -1853,38 +1853,138 @@ dialog.account-dialog::backdrop {
   position: relative;
 }
 
+/* How a phrase went, written straight on the panel above the staff: no box, it rises in,
+   holds, and fades. */
 .phrase-result {
   position: absolute;
   top: 10px;
   left: 50%;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   max-width: calc(100% - 24px);
-  box-sizing: border-box;
-  padding: 7px 14px;
-  border: 1px solid var(--surface-edge);
-  border-radius: 10px;
-  background: var(--surface-top);
-  box-shadow: var(--shadow-soft);
   color: var(--ink);
-  font-size: 0.9rem;
-  font-weight: 600;
   text-align: center;
   transform: translateX(-50%);
   pointer-events: none;
+  animation: result-in 2600ms ease forwards;
 }
 
-.phrase-result[data-tone="perfect"] {
-  border-color: color-mix(in srgb, var(--correct) 55%, var(--surface-edge));
+.phrase-result[hidden] {
+  display: none;
+}
+
+.result-title {
+  font-family: Fraunces, "Times New Roman", serif;
+  font-optical-sizing: auto;
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.result-emoji {
+  margin-right: 0.35em;
+}
+
+.result-detail {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.phrase-result[data-tone="perfect"] .result-title {
   color: var(--correct);
 }
 
-.phrase-result[data-tone="fault"] {
-  border-color: color-mix(in srgb, var(--wrong) 55%, var(--surface-edge));
+.phrase-result[data-tone="fault"] .result-title {
   color: var(--wrong);
 }
 
-.phrase-result[data-tone="info"] {
-  color: var(--muted);
+.phrase-result[data-tone="info"] .result-title {
+  color: var(--ink);
+}
+
+@keyframes result-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  10%,
+  85% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* The bar a phrase went wrong in, washed behind the notes until the next attempt. */
+.bar-mark {
+  position: absolute;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wrong) 14%, transparent);
+  pointer-events: none;
+  animation: fade-in 240ms ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A clean phrase: each note hops in turn (delays set per note). */
+.note-wave {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: note-hop 420ms ease;
+}
+
+@keyframes note-hop {
+  40% {
+    transform: translateY(-14%);
+  }
+}
+
+/* A fault: a small sideways nudge of the panel. */
+.notation-panel[data-nudge] {
+  animation: nudge 280ms ease;
+}
+
+@keyframes nudge {
+  25% {
+    translate: -5px 0;
+  }
+  75% {
+    translate: 5px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phrase-result {
+    animation-name: result-fade;
+  }
+
+  .note-wave,
+  .notation-panel[data-nudge] {
+    animation: none;
+  }
+}
+
+@keyframes result-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  10%,
+  85% {
+    opacity: 1;
+  }
 }
 
 /* Hot (graded attempt): an accent ring round the sheet and a Live tag. Cold (free
