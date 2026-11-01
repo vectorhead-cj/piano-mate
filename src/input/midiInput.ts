@@ -23,6 +23,8 @@ export interface MidiPortInfo {
   manufacturer: string;
   state: string;
   connection: string;
+  /** Why the browser refused to open the port, if it did. */
+  openError?: string;
 }
 
 /**
@@ -43,6 +45,9 @@ export function parseMidiMessage(data: ArrayLike<number>, time: number): NoteEve
   return null;
 }
 
+/** How often to look for a device while none is connected. */
+const RESCAN_INTERVAL_MS = 2000;
+
 /**
  * Feeds notes from every connected MIDI input into the stream, including devices plugged in later.
  * connect() asks the browser for MIDI access (it may prompt); call it from a user gesture
@@ -50,6 +55,8 @@ export function parseMidiMessage(data: ArrayLike<number>, time: number): NoteEve
  */
 export class MidiInput {
   private access: MIDIAccess | null = null;
+  private rescanning = false;
+  private readonly openErrors = new Map<string, string>();
   private status: MidiStatus;
 
   constructor(
@@ -79,22 +86,69 @@ export class MidiInput {
       manufacturer: input.manufacturer || "(unknown maker)",
       state: input.state,
       connection: input.connection,
+      openError: this.openErrors.get(input.id),
     }));
   }
 
+  /**
+   * Asks for MIDI access the first time; after that, rescans for devices.
+   * Safe to call repeatedly: it never needs a page reload to pick up a device.
+   */
   async connect(): Promise<void> {
-    if (this.status.state === "unsupported" || this.status.state === "requesting") return;
-    if (this.access) return;
+    if (this.status.state === "unsupported") return;
+    if (this.access) return this.rescan();
+    if (this.status.state === "requesting") return;
     this.setStatus({ state: "requesting" });
     try {
-      this.access = await navigator.requestMIDIAccess();
+      this.attach(await navigator.requestMIDIAccess());
     } catch (error) {
       const reason = error instanceof Error ? error.message || error.name : String(error);
       this.setStatus({ state: "blocked", reason });
       return;
     }
-    this.access.addEventListener("statechange", () => this.bindInputs());
+    this.watchForDevices();
+  }
+
+  /**
+   * Swaps in a fresh MIDIAccess. Firefox doesn't reliably fire statechange on hot-plug, and an
+   * access object can keep showing the device list from when it was made; a new one is current.
+   * Once permission is granted this doesn't prompt.
+   */
+  async rescan(): Promise<void> {
+    if (!this.access || this.rescanning) return;
+    this.rescanning = true;
+    try {
+      this.attach(await navigator.requestMIDIAccess());
+    } catch {
+      // Keep the access we have; the next rescan tries again.
+    } finally {
+      this.rescanning = false;
+    }
+  }
+
+  private attach(access: MIDIAccess): void {
+    if (this.access) {
+      this.access.removeEventListener("statechange", this.onStateChange);
+      // Same objects may come back from the new access; bindInputs re-assigns those.
+      for (const input of this.access.inputs.values()) input.onmidimessage = null;
+    }
+    this.access = access;
+    access.addEventListener("statechange", this.onStateChange);
     this.bindInputs();
+  }
+
+  private readonly onStateChange = () => this.bindInputs();
+
+  /** Rescans while no device is listening, and whenever the tab comes back into view. */
+  private watchForDevices(): void {
+    window.setInterval(() => {
+      const idle = this.status.state === "ready" && this.status.devices.length === 0;
+      if (idle && document.visibilityState === "visible") void this.rescan();
+    }, RESCAN_INTERVAL_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void this.rescan();
+    });
+    window.addEventListener("focus", () => void this.rescan());
   }
 
   private bindInputs(): void {
@@ -116,12 +170,23 @@ export class MidiInput {
           note,
         });
       };
-      if (input.state === "connected") devices.push(input.name || "MIDI device");
+      if (input.state === "connected") {
+        devices.push(input.name || "MIDI device");
+        // Setting onmidimessage should open the port implicitly, but Firefox leaves it closed.
+        if (input.connection === "closed") {
+          input.open().then(
+            () => this.openErrors.delete(input.id),
+            (error) => this.openErrors.set(input.id, error instanceof Error ? error.message || error.name : String(error)),
+          );
+        }
+      }
     }
     this.setStatus({ state: "ready", devices });
   }
 
   private setStatus(status: MidiStatus): void {
+    // Rescans repeat the same answer; only report changes so the app doesn't redraw for nothing.
+    if (JSON.stringify(status) === JSON.stringify(this.status)) return;
     this.status = status;
     this.onStatus(status);
   }

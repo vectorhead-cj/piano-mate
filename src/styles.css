@@ -679,6 +679,29 @@ body::before {
   display: none;
 }
 
+/* A modal over whatever view is showing; MIDI keeps arriving while it's open. */
+dialog.midi-debug {
+  width: min(960px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 32px));
+  max-height: min(640px, calc(100dvh - 32px));
+  margin: auto;
+  color: var(--ink);
+  background: var(--surface-top);
+}
+
+dialog.midi-debug:not([open]) {
+  display: none;
+}
+
+dialog.midi-debug::backdrop {
+  background: color-mix(in srgb, #0e141b 45%, transparent);
+}
+
+.midi-debug-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* Summary and message log sit side by side when there's room, stacked otherwise. */
 .midi-debug-body {
   display: grid;

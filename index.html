@@ -205,16 +205,6 @@
           </div>
           <pre class="phrase-debug-xml" data-phrase-xml></pre>
         </section>
-        <section id="midi-debug" class="phrase-debug midi-debug" hidden aria-label="MIDI debug">
-          <div class="phrase-debug-header">
-            <span class="phrase-debug-title">MIDI debug</span>
-            <button type="button" class="btn-secondary phrase-debug-copy" data-midi-clear>Clear</button>
-          </div>
-          <div class="midi-debug-body">
-            <pre class="phrase-debug-xml" data-midi-summary></pre>
-            <pre class="phrase-debug-xml" data-midi-log></pre>
-          </div>
-        </section>
         <section id="notation-panel" class="notation-panel" data-hot="false" aria-label="Notation">
           <div id="hot-state" class="hot-state" aria-live="polite"></div>
           <div id="phrase-result" class="phrase-result" role="status" hidden></div>
@@ -228,6 +218,21 @@
         </section>
       </main>
     </div>
+
+    <!-- Lives outside the views so it works anywhere in the app. -->
+    <dialog id="midi-debug" class="phrase-debug midi-debug" aria-label="MIDI debug">
+      <div class="phrase-debug-header">
+        <span class="phrase-debug-title">MIDI debug</span>
+        <div class="midi-debug-actions">
+          <button type="button" class="btn-secondary phrase-debug-copy" data-midi-clear>Clear</button>
+          <button type="button" class="btn-secondary phrase-debug-copy" data-midi-close>Close</button>
+        </div>
+      </div>
+      <div class="midi-debug-body">
+        <pre class="phrase-debug-xml" data-midi-summary></pre>
+        <pre class="phrase-debug-xml" data-midi-log></pre>
+      </div>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

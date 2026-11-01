@@ -68,16 +68,17 @@ function describeMessage(info: MidiMessageInfo, range: { lowest: number; highest
   return "system message";
 }
 
-/** Checkbox + panel that shows MIDI connection details and a log of incoming messages. */
+/** Checkbox + modal that shows MIDI connection details and a log of incoming messages. */
 export function bindMidiDebug(
   checkbox: HTMLInputElement,
-  panel: HTMLElement,
+  panel: HTMLDialogElement,
   sources: MidiDebugSources,
 ): MidiDebug {
   const summary = panel.querySelector<HTMLElement>("[data-midi-summary]");
   const log = panel.querySelector<HTMLElement>("[data-midi-log]");
   const clearButton = panel.querySelector<HTMLButtonElement>("[data-midi-clear]");
-  if (!summary || !log || !clearButton) throw new Error("MIDI debug panel is missing its parts");
+  const closeButton = panel.querySelector<HTMLButtonElement>("[data-midi-close]");
+  if (!summary || !log || !clearButton || !closeButton) throw new Error("MIDI debug panel is missing its parts");
 
   let status: MidiStatus | undefined;
   let lines: string[] = [];
@@ -103,7 +104,8 @@ export function bindMidiDebug(
         : ports.map(
             (port, i): [string, string] => [
               i === 0 ? "Inputs" : "",
-              `${port.name} · ${port.manufacturer} · ${port.state}/${port.connection}`,
+              `${port.name} · ${port.manufacturer} · ${port.state}/${port.connection}` +
+                (port.openError ? ` · open failed: ${port.openError}` : ""),
             ],
           )),
       ["Keyboard", `${named(range.lowest)} – ${named(range.highest)}`],
@@ -141,16 +143,34 @@ export function bindMidiDebug(
   };
 
   checkbox.addEventListener("change", () => {
-    panel.hidden = !checkbox.checked;
+    if (checkbox.checked && !panel.open) panel.showModal();
+    if (!checkbox.checked && panel.open) panel.close();
     render();
+  });
+  const hide = () => {
+    checkbox.checked = false;
+    if (panel.open) panel.close();
+  };
+  // Escape fires cancel then close; "close" alone can arrive late, so keep the checkbox in step on both.
+  panel.addEventListener("cancel", () => {
+    checkbox.checked = false;
+  });
+  panel.addEventListener("close", () => {
+    checkbox.checked = false;
+  });
+  closeButton.addEventListener("click", hide);
+  panel.addEventListener("click", (event) => {
+    // The dialog's own padding also targets the dialog, so check the click fell outside its box.
+    const box = panel.getBoundingClientRect();
+    const outside =
+      event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+    if (event.target === panel && outside) hide();
   });
   clearButton.addEventListener("click", () => {
     lines = [];
     realtimeCount = 0;
     render();
   });
-  panel.hidden = !checkbox.checked;
-
   return {
     onStatus(next) {
       status = next;

@@ -61,7 +61,7 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-/** Shows MIDI status on the top-bar button; clicking it asks for MIDI access. */
+/** Shows MIDI status on the top-bar button; clicking it asks for MIDI access, or rescans once granted. */
 function bindMidi(
   button: HTMLButtonElement,
   stream: NoteStream,
@@ -88,7 +88,7 @@ function bindMidi(
         show("blocked", "MIDI blocked", `MIDI access was refused: ${status.reason.replace(/\.$/, "")}. Click to retry.`);
         break;
       case "ready":
-        if (status.devices.length === 0) show("waiting", "No MIDI device", "MIDI is on; plug in or wake a device");
+        if (status.devices.length === 0) show("waiting", "No MIDI device", "MIDI is on; plug in or wake a device. Click to rescan.");
         else show("ready", status.devices.join(", "), `Listening to ${status.devices.join(", ")}`);
         break;
     }
@@ -144,7 +144,7 @@ async function main(): Promise<void> {
   const late: { midi?: MidiInput; practice?: PracticeController } = {};
   const midiDebug = bindMidiDebug(
     element<HTMLFormElement>("settings").elements.namedItem("showMidiDebug") as HTMLInputElement,
-    element("midi-debug"),
+    element<HTMLDialogElement>("midi-debug"),
     {
       ports: () => late.midi?.ports() ?? [],
       keyboardRange: () => keyboard.visibleRange,
