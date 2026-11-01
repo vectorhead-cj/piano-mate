@@ -17,6 +17,8 @@ export interface NoteResult {
   hit: boolean;
   /** Rhythm mode: press time minus expected onset, in ms. */
   offsetMs?: number;
+  /** Rhythm mode: of the `wrong` presses, how many were the right key before its window. */
+  early?: number;
   /** Held on from the note before through a tie, so it shares that note's result. */
   tied?: true;
 }

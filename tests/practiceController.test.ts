@@ -10,6 +10,7 @@ import {
   SLOW_DOWN_AFTER_FAILURES,
 } from "../src/practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "../src/practice/settings";
+import type { Exercise } from "../src/music/types";
 import { seeded } from "./helpers";
 
 function setup(settings: Settings = DEFAULT_SETTINGS) {
@@ -506,6 +507,38 @@ describe("PracticeController rhythm retries", () => {
     attempt(ctx, 60, true);
     expect(ctx.controller.exercise).not.toBe(first);
     expect(ctx.controller.isHot).toBe(true);
+  });
+
+  it("counts a note pressed before its window, but not during the count-in, and stopping reports it", () => {
+    const ctx = setup(settings);
+    const quarters: Exercise = {
+      clef: "treble",
+      key: "C",
+      time: "4/4",
+      pickup: 0,
+      bars: [(["C", "D", "E", "F"] as const).map((letter) => ({ letter, alter: 0 as const, octave: 4, duration: "q" as const }))],
+    };
+    ctx.controller.exerciseSource = () => quarters;
+    ctx.controller.startNewExercise();
+
+    // A beat's rest, then a bar's count-in: playing in it is free.
+    ctx.controller.goHot();
+    vi.advanceTimersByTime(2000);
+    ctx.press(62, performance.now());
+    ctx.controller.goCold();
+    expect(ctx.onPhraseComplete).not.toHaveBeenCalled();
+
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    ctx.press(60, firstAt);
+    // D is due a beat later; its window opens half a beat before.
+    vi.advanceTimersByTime(100);
+    ctx.press(62, performance.now());
+    expect(ctx.notation.flashWrong).toHaveBeenLastCalledWith(1);
+    ctx.controller.goCold();
+    expect(ctx.onPhraseComplete).toHaveBeenLastCalledWith(expect.objectContaining({ passed: false, abandoned: true }));
+    expect(ctx.onPhraseComplete.mock.lastCall![0].notes[1]).toMatchObject({ wrong: 1, early: 1, hit: false });
   });
 
   it("slowing down mid-attempt counts as bailing out", () => {

@@ -72,6 +72,24 @@ describe("RhythmSession", () => {
     expect(session.marks()).toEqual({ notes: ["correct", "correct", "pending"], rhythm: ["wrong", "wrong", "pending"] });
   });
 
+  it("spoils a note pressed before its window, once the count-in is over", () => {
+    const session = sessionAt(0);
+    session.play(60, COUNT_IN);
+    // D is due at 5000; the accept window opens at 4500.
+    expect(session.play(62, COUNT_IN + 100).result).toEqual({ kind: "early", index: 1 });
+    expect(session.currentIndex).toBe(1);
+    expect(session.play(62, COUNT_IN + 1000).result).toMatchObject({ kind: "correct", index: 1, timing: "on-time" });
+    expect(session.results()[1]).toMatchObject({ wrong: 1, early: 1, hit: true });
+    expect(session.marks()).toEqual({ notes: ["correct", "correct", "pending"], rhythm: ["correct", "wrong", "pending"] });
+  });
+
+  it("counts a wrong key pressed before the window as a wrong note", () => {
+    const session = sessionAt(0);
+    session.play(60, COUNT_IN);
+    expect(session.play(64, COUNT_IN + 100).result).toEqual({ kind: "wrong", index: 1, expectedPitch: 62 });
+    expect(session.results()[1].early).toBeUndefined();
+  });
+
   it("rejects wrong pitch without advancing", () => {
     const session = sessionAt(0);
     const { result } = session.play(61, COUNT_IN);

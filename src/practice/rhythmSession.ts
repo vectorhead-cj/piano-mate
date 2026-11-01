@@ -15,6 +15,7 @@ import {
 export type RhythmPlayResult =
   | { kind: "correct"; index: number; timing: TimingGrade; completed: boolean }
   | { kind: "wrong"; index: number; expectedPitch: number }
+  | { kind: "early"; index: number }
   | { kind: "ignored" };
 
 /** A mark per pressed note for its pitch and its timing, side by side. */
@@ -54,6 +55,7 @@ export class RhythmSession {
   private readonly pitchOk: boolean[];
   private readonly timingOk: boolean[];
   private readonly wrongs: number[];
+  private readonly earlies: number[];
   private readonly offsets: (number | undefined)[];
 
   constructor(
@@ -73,6 +75,7 @@ export class RhythmSession {
     this.pitchOk = this.notes.map(() => false);
     this.timingOk = this.notes.map(() => false);
     this.wrongs = this.notes.map(() => 0);
+    this.earlies = this.notes.map(() => 0);
     this.offsets = this.notes.map(() => undefined);
   }
 
@@ -104,7 +107,7 @@ export class RhythmSession {
     this.phraseStartAt = now + this.countInMs;
   }
 
-  /** Wrong keys pressed while `index` was the note to play. */
+  /** Wrong keys, and right keys before its window, pressed while `index` was the note to play. */
   wrongAt(index: number): number {
     return this.wrongs[index];
   }
@@ -113,8 +116,12 @@ export class RhythmSession {
   marks(): PhraseMarks {
     const pressed = pressedIndices(this.notes);
     return {
-      notes: pressed.map((i) => (this.wrongs[i] > 0 ? "wrong" : i < this.index ? (this.pitchOk[i] ? "correct" : "wrong") : "pending")),
-      rhythm: pressed.map((i) => (i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending")),
+      notes: pressed.map((i) =>
+        this.wrongs[i] > this.earlies[i] ? "wrong" : i < this.index ? (this.pitchOk[i] ? "correct" : "wrong") : "pending",
+      ),
+      rhythm: pressed.map((i) =>
+        this.earlies[i] > 0 ? "wrong" : i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending",
+      ),
     };
   }
 
@@ -122,7 +129,12 @@ export class RhythmSession {
     return this.notes.map((_, i) =>
       isTieContinuation(this.notes, i)
         ? { wrong: 0, hit: this.pitchOk[i], tied: true as const }
-        : { wrong: this.wrongs[i], hit: this.pitchOk[i], offsetMs: this.offsets[i] },
+        : {
+            wrong: this.wrongs[i],
+            hit: this.pitchOk[i],
+            offsetMs: this.offsets[i],
+            ...(this.earlies[i] > 0 && { early: this.earlies[i] }),
+          },
     );
   }
 
@@ -167,8 +179,10 @@ export class RhythmSession {
     const index = this.index;
     const window = acceptWindowMs(this.tempo);
     const expectedAt = this.phraseStartAt + this.onsets[index];
-    // Accept from the early edge (may overlap the end of count-in for note 0).
-    if (time < expectedAt - window) {
+    // Accept from the early edge (may overlap the end of count-in for note 0). The count-in
+    // is free to noodle in; after it, a press before the window spoils the note to play.
+    const tooEarly = time < expectedAt - window;
+    if (tooEarly && this.isCountingIn(time)) {
       return { missed, result: { kind: "ignored" } };
     }
 
@@ -176,6 +190,11 @@ export class RhythmSession {
     if (!this.matches(expectedPitch, pitch)) {
       this.wrongs[index]++;
       return { missed, result: { kind: "wrong", index, expectedPitch } };
+    }
+    if (tooEarly) {
+      this.wrongs[index]++;
+      this.earlies[index]++;
+      return { missed, result: { kind: "early", index } };
     }
 
     const timing = timingGrade(time - expectedAt, this.tempo);

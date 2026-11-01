@@ -13,7 +13,7 @@ export interface NoteOutcome {
   /** Spelled pitch, e.g. "F#4" or "Bb3". */
   pitch: string;
   duration: Duration;
-  /** Wrong keys pressed while this note was the one to play. */
+  /** Wrong keys pressed while this note was the one to play (rhythm mode: and right keys too early). */
   wrong: number;
   /** Played with the right pitch (rhythm mode: inside the accept window; wait mode: always). */
   hit: boolean;
@@ -21,6 +21,8 @@ export interface NoteOutcome {
   tied?: true;
   /** Rhythm mode only: ms from the expected onset to the press (negative = early). */
   offsetMs?: number;
+  /** Rhythm mode only: of the `wrong` presses, how many were the right key before its window. */
+  early?: number;
 }
 
 export type PracticeContext =
@@ -125,7 +127,7 @@ export function timingBonus(event: PhraseCompleted): number | undefined {
   return onTime.length / pressed.length;
 }
 
-export type PhraseFault = { kind: "wrong" | "missed"; bar: number; index: number };
+export type PhraseFault = { kind: "wrong" | "early" | "missed"; bar: number; index: number };
 
 /** The first note that kept a phrase from being perfect, if any. */
 export function firstFault(event: Pick<PhraseCompleted, "barSizes"> & { notes: readonly NoteResult[] }): PhraseFault | undefined {
@@ -138,7 +140,8 @@ export function firstFault(event: Pick<PhraseCompleted, "barSizes"> & { notes: r
     notesBefore += event.barSizes[bar];
     bar++;
   }
-  return { kind: note.wrong > 0 ? "wrong" : "missed", bar: bar + 1, index };
+  const kind = note.wrong === 0 ? "missed" : note.wrong === note.early ? "early" : "wrong";
+  return { kind, bar: bar + 1, index };
 }
 
 export function newId(): string {

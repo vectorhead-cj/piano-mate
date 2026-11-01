@@ -457,6 +457,11 @@ export class PracticeController {
         keyboard.flash(result.expectedPitch, "hint");
         this.publishLiveScore();
         break;
+      case "early":
+        notation.flashWrong(result.index);
+        keyboard.flash(pitch, "wrong");
+        this.publishLiveScore();
+        break;
       case "ignored":
         if (session.isComplete) this.finishRhythmPhrase();
         break;

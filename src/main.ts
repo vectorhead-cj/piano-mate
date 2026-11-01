@@ -519,12 +519,18 @@ async function main(): Promise<void> {
 
   /** Where a failed attempt first went wrong: what to say, and the bar to wash on the staff. */
   function faultOf(result: PhraseResult): { emoji: string; text: string; bar?: number } {
-    if (result.abandoned) return { emoji: "✋", text: "Stopped mid-phrase" };
     const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length) });
+    // Stopping leaves the rest unplayed, so only a key pressed before it is the real fault.
+    if (result.abandoned && fault?.kind !== "wrong" && fault?.kind !== "early") return { emoji: "✋", text: "Stopped mid-phrase" };
     if (!fault) return { emoji: "❌", text: "Not quite" };
-    return fault.kind === "wrong"
-      ? { emoji: "❌", text: `Wrong note in bar ${fault.bar}`, bar: fault.bar }
-      : { emoji: "🙈", text: `Missed a note in bar ${fault.bar}`, bar: fault.bar };
+    switch (fault.kind) {
+      case "wrong":
+        return { emoji: "❌", text: `Wrong note in bar ${fault.bar}`, bar: fault.bar };
+      case "early":
+        return { emoji: "⏩", text: `Too early in bar ${fault.bar}`, bar: fault.bar };
+      case "missed":
+        return { emoji: "🙈", text: `Missed a note in bar ${fault.bar}`, bar: fault.bar };
+    }
   }
 
   function faultMessage(result: PhraseResult, detail: string, tone: ResultTone = "fault"): ResultMessage {

@@ -284,6 +284,14 @@ describe("firstFault", () => {
     ];
     expect(firstFault(event)).toEqual({ kind: "missed", bar: 2, index: 2 });
   });
+
+  it("calls a note spoiled only by early presses early, and any wrong key wrong", () => {
+    const event = phrase(first, "read", true);
+    event.notes = [{ pitch: "C4", duration: "q", wrong: 1, early: 1, hit: true }, ...event.notes.slice(1)];
+    expect(firstFault(event)).toMatchObject({ kind: "early", index: 0 });
+    event.notes[0] = { ...event.notes[0], wrong: 2 };
+    expect(firstFault(event)).toMatchObject({ kind: "wrong", index: 0 });
+  });
 });
 
 describe("minor keys", () => {
