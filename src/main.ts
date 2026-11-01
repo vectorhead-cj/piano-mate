@@ -27,7 +27,7 @@ import {
   type PracticeContext,
 } from "./curriculum/events";
 import { INTRO_TEMPO, introMidiRange, introSteps, type IntroStep } from "./curriculum/intros";
-import { extendStreak, milestoneBetween, type Streak } from "./curriculum/progress";
+import { extendStreak, milestoneBetween, type Milestone, type Streak } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
 import { loadCorpus } from "./music/corpus";
@@ -44,11 +44,16 @@ import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindRetryKey } from "./ui/retryKey";
 import { StreakDots, renderDots } from "./ui/scoreDots";
 import {
+  MILESTONE_KEYS,
   PhraseResultBanner,
+  milestoneChoices,
+  nextStepAfter,
   renderHome,
   renderIntro,
+  renderMilestone,
   renderPracticeBar,
   renderTrack,
+  type MilestoneChoice,
   type ResultTone,
 } from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
@@ -174,6 +179,7 @@ async function main(): Promise<void> {
   const customControls = element("custom-controls");
   const navBack = element<HTMLButtonElement>("nav-back");
   const introPanel = element("intro-panel");
+  const milestonePanel = element("milestone");
   element("dev-notice").hidden = !import.meta.env.DEV;
   const banner = new PhraseResultBanner(element("phrase-result"));
   const store = new ProgressStore(openEventLog());
@@ -194,6 +200,8 @@ async function main(): Promise<void> {
   let customSettings: Settings = DEFAULT_SETTINGS;
   let settings: Settings = DEFAULT_SETTINGS;
   let customStreak: Streak = { streak: 0, sinceMiss: null };
+  /** A star or completed stage just earned: its card stands in for the staff until a choice is made. */
+  let milestone: Milestone | null = null;
   const streakDots = new StreakDots();
   /** A stage's intro, while it runs; its phrases are echoed, not recorded. */
   let intro: { clef: Clef; stageId: string; steps: IntroStep[]; index: number; replay: boolean } | null = null;
@@ -248,8 +256,11 @@ async function main(): Promise<void> {
       },
     },
     onHotChange(hot) {
-      // Going hot from the MIDI start key interrupts a playback.
-      if (hot) player.stop();
+      // Going hot from the MIDI start key interrupts a playback; it also means staying put.
+      if (hot) {
+        player.stop();
+        closeMilestone();
+      }
       syncHot(hot);
     },
     onPhraseComplete: recordPhrase,
@@ -373,17 +384,16 @@ async function main(): Promise<void> {
       tone = "info";
     } else {
       streakDots.push(perfect);
-      const milestone = milestoneBetween(before, store.progress, clef, stageId);
+      const earned = milestoneBetween(before, store.progress, clef, stageId);
       const previous = before[clef].stages[stageId].tiers[tier].streak;
       const streak = store.progress[clef].stages[stageId].tiers[tier].streak;
-      if (milestone?.kind === "star") {
-        const opened = milestone.openedStageId ? placedStage(milestone.openedStageId) : undefined;
-        const openedText = opened ? ` · ${milestone.openedIntro ? `the intro to ${opened.number}` : `stage ${opened.number}`} is open` : "";
-        text = `${"★".repeat(milestone.stars)} earned · streak of ${STAR_STREAK}${openedText}`;
-        tone = "milestone";
-      } else if (milestone?.kind === "complete") {
-        text = `Stage complete · streak of ${COMPLETE_STREAK}`;
-        tone = "milestone";
+      if (earned) {
+        // The card says it all; the next phrase waits until a choice is made.
+        milestone = earned;
+        practice.pauseAfterPass = true;
+        banner.hide();
+        renderView();
+        return;
       } else if (perfect) {
         text = `Perfect · streak ${streak}${again}`;
         tone = "perfect";
@@ -392,7 +402,36 @@ async function main(): Promise<void> {
         tone = "fault";
       }
     }
-    banner.show(text, tone, tone === "milestone" ? 4000 : 2400);
+    banner.show(text, tone);
+    renderView();
+  }
+
+  /** Acts on the milestone card: stay on this tier, or move on to the next tier, stage or intro. */
+  function chooseMilestone(choice: MilestoneChoice): void {
+    if (!milestone || context.kind !== "curriculum") return;
+    const { clef, stageId } = context;
+    const earned = milestone;
+    closeMilestone();
+    if (choice === "fluent") {
+      startStage(clef, stageId, "fluent");
+    } else if (choice === "advance" && earned.kind === "star" && earned.stars === 1) {
+      startStage(clef, stageId, "play");
+    } else if (choice === "advance") {
+      const next = nextStepAfter(store.progress, clef, stageId);
+      if (next.kind === "stage") startStage(clef, next.stageId, next.tier);
+      else if (next.kind === "intro") startIntro(clef, next.stageId);
+      else showView({ name: "track", clef, selected: stageId });
+    } else {
+      renderView();
+      // Wait mode carries straight on; rhythm waits for Start so the metronome never starts unasked.
+      if (settings.mode === "wait") practice.goHot();
+    }
+  }
+
+  function closeMilestone(): void {
+    if (!milestone) return;
+    milestone = null;
+    practice.pauseAfterPass = intro !== null;
     renderView();
   }
 
@@ -460,6 +499,7 @@ async function main(): Promise<void> {
     const steps = introSteps(corpus, clef, stage);
     if (steps.length === 0) return;
     player.stop();
+    milestone = null;
     intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone };
     context = { kind: "curriculum", clef, stageId, tier: "read" };
     settings = {
@@ -521,6 +561,7 @@ async function main(): Promise<void> {
     if (!placed) return;
     const { stage } = placed;
     stopIntro();
+    milestone = null;
     context = { kind: "curriculum", clef, stageId, tier };
     streakDots.reset(store.progress[clef].stages[stageId].tiers[tier]);
     settings = {
@@ -541,6 +582,7 @@ async function main(): Promise<void> {
 
   function openCustom(): void {
     stopIntro();
+    milestone = null;
     context = { kind: "custom" };
     customStreak = { streak: 0, sinceMiss: null };
     streakDots.reset();
@@ -553,6 +595,7 @@ async function main(): Promise<void> {
 
   function showView(next: View): void {
     if (view.name === "practice" && next.name !== "practice") {
+      milestone = null;
       stopIntro();
       practice.goCold();
       banner.hide();
@@ -574,6 +617,14 @@ async function main(): Promise<void> {
     customControls.hidden = !(practising && context.kind === "custom");
     practiceBar.hidden = !(practising && context.kind === "curriculum" && !intro);
     introPanel.hidden = !(practising && intro);
+    const showMilestone = practising && milestone !== null && context.kind === "curriculum";
+    milestonePanel.hidden = !showMilestone;
+    if (showMilestone) notationPanel.dataset.milestone = "";
+    else delete notationPanel.dataset.milestone;
+    if (showMilestone && context.kind === "curriculum") {
+      const { clef, stageId } = context;
+      renderMilestone(milestonePanel, { clef, stageId, milestone: milestone!, progress: store.progress }, chooseMilestone);
+    }
     if (intro) app.dataset.intro = "";
     else delete app.dataset.intro;
     // A stage moves on only once the phrase is played clean.
@@ -671,6 +722,18 @@ async function main(): Promise<void> {
     synth.unlock();
     player.stop();
     practice.toggleHot();
+  });
+  // C3 stays, C4 moves on, C5 (after ★★) goes to Fluent; practice is cold, so they can't be notes.
+  stream.subscribe((event) => {
+    if (!milestone || event.kind !== "on" || event.source !== "midi") return;
+    const choice = milestoneChoices(milestone).find((c) => MILESTONE_KEYS[c] === event.pitch);
+    if (choice) chooseMilestone(choice);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!milestone || view.name !== "practice" || (event.key !== "Enter" && event.key !== "Escape")) return;
+    if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
+    event.preventDefault();
+    chooseMilestone(event.key === "Enter" ? "advance" : "stay");
   });
   document.addEventListener("keydown", (event) => {
     if (event.code !== "Space" || event.repeat || view.name !== "practice") return;

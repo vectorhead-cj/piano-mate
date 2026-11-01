@@ -30,7 +30,7 @@
                 </svg>
               </button>
             </div>
-            <h1 class="brand-name">Piano Mate</h1>
+            <h1 class="brand-name">Piano Mate<span class="brand-version" title="Version">v%VITE_APP_VERSION%</span></h1>
             <div class="topbar-end">
               <button id="midi-toggle" class="midi-chip" type="button" data-state="idle" hidden>
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -213,6 +213,7 @@
         <section id="notation-panel" class="notation-panel" data-hot="false" aria-label="Notation">
           <div id="hot-state" class="hot-state" aria-live="polite"></div>
           <div id="phrase-result" class="phrase-result" role="status" hidden></div>
+          <div id="milestone" class="milestone" aria-live="polite" hidden></div>
           <div class="notation-sheet">
             <div id="notation"></div>
           </div>

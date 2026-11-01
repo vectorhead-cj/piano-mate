@@ -18,8 +18,9 @@ import {
   type Tier,
 } from "../curriculum/curriculum";
 import type { IntroStep } from "../curriculum/intros";
-import type { Progress, StageProgress } from "../curriculum/progress";
+import type { Milestone, Progress, StageProgress } from "../curriculum/progress";
 import { NOTATION_LABELS } from "../music/notation";
+import { midiNoteName } from "../music/pitch";
 import type { StoreStatus } from "../curriculum/progressStore";
 import type { Clef } from "../music/types";
 
@@ -480,7 +481,7 @@ export function renderIntro(root: HTMLElement, model: IntroModel, actions: Intro
   );
 }
 
-export type ResultTone = "perfect" | "fault" | "info" | "milestone";
+export type ResultTone = "perfect" | "fault" | "info";
 
 /** Shows a short message over the notation after each phrase. */
 export class PhraseResultBanner {
@@ -500,4 +501,103 @@ export class PhraseResultBanner {
     clearTimeout(this.timer);
     this.root.hidden = true;
   }
+}
+
+/** Where Advance leads from a stage: its successor's first tier still to earn, its intro, or the track. */
+export type NextStep = { kind: "stage"; stageId: string; tier: Tier } | { kind: "intro"; stageId: string } | { kind: "track" };
+
+export function nextStepAfter(progress: Progress, clef: Clef, stageId: string): NextStep {
+  const next = PLACED_STAGES[placedStage(stageId)!.order + 1];
+  if (!next) return { kind: "track" };
+  const stage = progress[clef].stages[next.stage.id];
+  if (stage.unlocked) return { kind: "stage", stageId: next.stage.id, tier: TIERS[Math.min(stage.stars, TIERS.length - 1)] };
+  if (stage.introOpen && !stage.introDone) return { kind: "intro", stageId: next.stage.id };
+  return { kind: "track" };
+}
+
+export type MilestoneChoice = "stay" | "advance" | "fluent";
+
+/** The MIDI key that picks each choice: Stay on the left, Fluent (when offered) on the right. */
+export const MILESTONE_KEYS: Record<MilestoneChoice, number> = { stay: 48, advance: 60, fluent: 72 };
+
+export interface MilestoneModel {
+  clef: Clef;
+  stageId: string;
+  milestone: Milestone;
+  progress: Progress;
+}
+
+/** The choices a milestone offers, left to right. */
+export function milestoneChoices(milestone: Milestone): MilestoneChoice[] {
+  return milestone.kind === "star" && milestone.stars === 2 ? ["stay", "advance", "fluent"] : ["stay", "advance"];
+}
+
+/** Replaces the staff after a star or a completed stage: stay on this tier, or move on. */
+export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose: (choice: MilestoneChoice) => void): void {
+  const { clef, stageId, milestone, progress } = model;
+  const { stage, number } = placedStage(stageId)!;
+  const next = nextStepAfter(progress, clef, stageId);
+  const nextNumber = next.kind === "track" ? undefined : placedStage(next.stageId)!.number;
+  const goNext =
+    next.kind === "intro" ? "Watch the intro" : next.kind === "stage" ? `Go to ${nextNumber}` : "Back to the track";
+  const nextLine =
+    next.kind === "intro"
+      ? `Stage ${nextNumber} brings in ${lowerFirst(introTitle(next.stageId))}. Its short intro comes first.`
+      : next.kind === "stage"
+        ? `Next up: ${stageTitle(placedStage(next.stageId)!.stage)}.`
+        : "That's the last stage in the track.";
+
+  let headline: string;
+  let line: string;
+  let labels: Record<MilestoneChoice, string>;
+  if (milestone.kind === "complete") {
+    headline = `Stage ${number} complete.`;
+    line = `${COMPLETE_STREAK} phrases, with no more than one miss in any ${MISS_WINDOW}.`;
+    labels = { stay: "Keep going", advance: goNext, fluent: "" };
+  } else if (milestone.stars === 1) {
+    headline = `Nice. You can read stage ${number}.`;
+    line = `Next up is Play: the same music, in time with the metronome at ${stage.tempo} bpm.`;
+    labels = { stay: "Keep reading", advance: "Start Play", fluent: "" };
+  } else if (milestone.stars === 2) {
+    headline = next.kind === "stage" && milestone.openedStageId ? `Stage ${number} passed. Stage ${nextNumber} is open.` : `Stage ${number} passed.`;
+    line = `${nextLine} Or push this one to Fluent, at ${stage.fluentTempo} bpm.`;
+    labels = { stay: `Stay on ${number}`, advance: goNext, fluent: "Try Fluent" };
+  } else {
+    headline = `Fluent at ${stage.fluentTempo} bpm. That's all three stars.`;
+    line = progress[clef].stages[stageId].complete
+      ? nextLine
+      : `A streak of ${COMPLETE_STREAK} at Play or Fluent completes the stage.`;
+    labels = { stay: "Keep going", advance: goNext, fluent: "" };
+  }
+
+  const choices = milestoneChoices(milestone);
+  root.replaceChildren(
+    h(
+      "div",
+      { class: "milestone-card" },
+      stars(milestone.stars),
+      h("p", { class: "milestone-headline" }, headline),
+      h("p", { class: "milestone-line" }, line),
+      h(
+        "div",
+        { class: "milestone-actions", "data-count": String(choices.length) },
+        ...choices.map((choice) => {
+          const key = h("kbd", { class: "milestone-key" }, midiNoteName(MILESTONE_KEYS[choice]));
+          const label = h("span", {}, labels[choice]);
+          // Stay's key sits on its left, the others' on their right: towards where they lie on the piano.
+          const button = h(
+            "button",
+            { type: "button", class: choice === "advance" ? "btn-primary" : "btn-secondary", "data-choice": choice },
+            ...(choice === "stay" ? [key, label] : [label, key]),
+          );
+          button.addEventListener("click", () => choose(choice));
+          return button;
+        }),
+      ),
+    ),
+  );
+}
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }

@@ -236,6 +236,7 @@ body::before {
 }
 
 .brand-name {
+  position: relative;
   margin: 0;
   font-family: Fraunces, "Times New Roman", serif;
   font-optical-sizing: auto;
@@ -890,6 +891,19 @@ dialog.midi-debug::backdrop {
   gap: var(--key-gap);
   height: clamp(128px, 30dvh, 250px);
   touch-action: none;
+}
+
+/* Hangs off the logo's right edge so the name stays centred. */
+.brand-version {
+  position: absolute;
+  bottom: 0.1em;
+  left: calc(100% + 6px);
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 /* A third of the full height, for players reading from the score rather than the keys. */
@@ -1848,9 +1862,82 @@ dialog.account-dialog::backdrop {
   text-transform: uppercase;
 }
 
-.phrase-result[data-tone="milestone"] {
-  border-color: color-mix(in srgb, var(--note-current) 60%, var(--surface-edge));
-  color: var(--note-current);
+/* A milestone's card stands in for the staff until the player picks what's next. */
+.notation-panel[data-milestone] .notation-sheet,
+.notation-panel[data-milestone] .phrase-source,
+.notation-panel[data-milestone] .hot-state {
+  visibility: hidden;
+}
+
+.milestone {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.milestone[hidden] {
+  display: none;
+}
+
+.milestone-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.milestone-card .stars {
+  gap: 4px;
+  font-size: 1.5rem;
+}
+
+.milestone-headline {
+  margin: 10px 0 4px;
+  color: var(--ink);
+  font-family: Fraunces, "Times New Roman", serif;
+  font-optical-sizing: auto;
+  font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.milestone-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+/* Stay hugs the left edge and the last choice the right, like C3 and C5 on the keys. */
+.milestone-actions {
+  display: flex;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.milestone-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+}
+
+.milestone-key {
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.7;
 }
 
 @media (max-width: 760px) {
@@ -1934,6 +2021,16 @@ dialog.account-dialog::backdrop {
 
 /* Narrow phones: the MIDI button keeps its icon and colour; the status moves to its tooltip. */
 @media (max-width: 480px) {
+  /* Three choices still fit a phone's width side by side. */
+  .milestone-actions {
+    gap: 6px;
+  }
+
+  .milestone-actions button {
+    gap: 6px;
+    padding: 0 10px;
+  }
+
   .midi-chip {
     padding: 0 9px;
   }
