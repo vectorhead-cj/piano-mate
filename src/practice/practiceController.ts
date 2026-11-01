@@ -125,6 +125,8 @@ export class PracticeController {
   private keyCapture: ((pitch: number) => void) | null = null;
   /** Whether keys played on a MIDI device also light up on the screen keyboard. */
   lightMidiKeys = false;
+  /** Whether keys played on a MIDI device also sound on the synth; the device usually has its own. */
+  soundMidiKeys = false;
   /** MIDI key that toggles hot/cold instead of playing a note. */
   retryPitch = RETRY_PITCH;
   /**
@@ -161,7 +163,7 @@ export class PracticeController {
       }
       // Sound first, before any DOM/VexFlow work — heavy sync work in the same
       // turn as AudioContext scheduling can delay the audible start.
-      if (event.kind === "on") {
+      if (event.kind === "on" && (event.source !== "midi" || this.soundMidiKeys)) {
         deps.sound.play(event.pitch, event.velocity);
       }
       // Releases always clear, so turning the option off mid-note can't leave a key stuck down.

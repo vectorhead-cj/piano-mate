@@ -203,6 +203,7 @@ describe("PracticeController (wait mode)", () => {
       stream.emit({ kind: "off", pitch, time: 0, source: "midi" });
       vi.advanceTimersByTime(0);
     };
+    controller.soundMidiKeys = true;
     const onKey = vi.fn();
     controller.captureMidiKey(onKey);
 
@@ -227,6 +228,7 @@ describe("PracticeController (wait mode)", () => {
 
   it("stops waiting for a retry key when cancelled", () => {
     const { controller, sound, stream } = setup();
+    controller.soundMidiKeys = true;
     const onKey = vi.fn();
     const cancel = controller.captureMidiKey(onKey);
     cancel();
@@ -234,6 +236,22 @@ describe("PracticeController (wait mode)", () => {
     vi.advanceTimersByTime(0);
     expect(onKey).not.toHaveBeenCalled();
     expect(sound.play).toHaveBeenCalledWith(72, undefined);
+  });
+
+  it("sounds MIDI keys on the synth only when asked, but always sounds screen keys", () => {
+    const { controller, sound, stream, press } = setup();
+    stream.emit({ kind: "on", pitch: 72, time: 0, source: "midi" });
+    vi.advanceTimersByTime(0);
+    expect(sound.play).not.toHaveBeenCalled();
+
+    press(74);
+    expect(sound.play).toHaveBeenCalledExactlyOnceWith(74, undefined);
+
+    sound.play.mockClear();
+    controller.soundMidiKeys = true;
+    stream.emit({ kind: "on", pitch: 72, time: 0, source: "midi" });
+    vi.advanceTimersByTime(0);
+    expect(sound.play).toHaveBeenCalledExactlyOnceWith(72, undefined);
   });
 
   it("tracks pressed keys from on/off events without grading releases", () => {

@@ -250,6 +250,11 @@ async function main(): Promise<void> {
   lightMidiKeys.addEventListener("change", () => {
     practice.lightMidiKeys = lightMidiKeys.checked;
   });
+  const soundMidiKeys = element<HTMLFormElement>("settings").elements.namedItem("soundMidiKeys") as HTMLInputElement;
+  practice.soundMidiKeys = soundMidiKeys.checked;
+  soundMidiKeys.addEventListener("change", () => {
+    practice.soundMidiKeys = soundMidiKeys.checked;
+  });
   const staffLetters = element<HTMLFormElement>("settings").elements.namedItem("staffLetters") as HTMLInputElement;
   notationView.setStaffLetters(staffLetters.checked);
   staffLetters.addEventListener("change", () => notationView.setStaffLetters(staffLetters.checked));
