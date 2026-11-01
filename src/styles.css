@@ -854,6 +854,11 @@ dialog.midi-debug::backdrop {
   touch-action: none;
 }
 
+/* A third of the full height, for players reading from the score rather than the keys. */
+:root[data-keyboard-height="small"] .keyboard {
+  height: clamp(43px, 10dvh, 84px);
+}
+
 .key {
   box-sizing: border-box;
   cursor: pointer;
@@ -1321,6 +1326,82 @@ dialog.midi-debug::backdrop {
   align-items: center;
   gap: 8px 14px;
   margin-top: 4px;
+}
+
+/* Intros on wider screens: the explanation packs into two columns, and score and Start
+   sit as chips in the notation panel's top corners, so the music keeps most of the height. */
+@media (min-width: 761px) {
+  .app[data-intro] .stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .app[data-intro] .intro-panel {
+    display: grid;
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 4px 28px;
+    padding: 12px 18px;
+  }
+
+  .app[data-intro] .intro-head {
+    grid-column: 1 / -1;
+  }
+
+  .app[data-intro] .intro-title,
+  .app[data-intro] .intro-text {
+    grid-column: 1;
+  }
+
+  .app[data-intro] .intro-count {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+  }
+
+  .app[data-intro] .intro-foot {
+    grid-column: 2;
+    grid-row: 3;
+    margin-top: 0;
+  }
+
+  .app[data-intro] .notation-panel,
+  .app[data-intro] .status-row {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  .app[data-intro] .status-row {
+    z-index: 2;
+    display: flex;
+    align-self: start;
+    justify-content: space-between;
+    padding: 10px 12px;
+    pointer-events: none;
+  }
+
+  .app[data-intro] .phrase-score,
+  .app[data-intro] .transport {
+    min-height: 0;
+    padding: 6px 14px;
+    box-shadow: none;
+    pointer-events: auto;
+  }
+
+  .app[data-intro] .phrase-score {
+    gap: 18px;
+  }
+
+  /* Below the chips rather than under them. */
+  .app[data-intro] .hot-state {
+    top: 60px;
+  }
+
+  .app[data-intro] .keyboard-area {
+    grid-row: 3;
+  }
 }
 
 .intro-row .stage-title {
