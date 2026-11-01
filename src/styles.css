@@ -17,6 +17,7 @@
   --accent-soft: color-mix(in srgb, #0f6e6a 14%, transparent);
   --on-accent: #f4fbfa;
   --note-current: #c07828;
+  --played: #e0a400;
   --correct: #2d8a68;
   --late: #c07828;
   --wrong: #c45c5c;
@@ -68,6 +69,7 @@
     --accent-soft: color-mix(in srgb, #3aa8a0 18%, transparent);
     --on-accent: #06201e;
     --note-current: #e6a55a;
+    --played: #f2c94c;
     --correct: #5cc49a;
     --late: #e6a55a;
     --wrong: #e57b7b;
@@ -111,6 +113,7 @@
   --accent-soft: color-mix(in srgb, #3aa8a0 18%, transparent);
   --on-accent: #06201e;
   --note-current: #e6a55a;
+  --played: #f2c94c;
   --correct: #5cc49a;
   --late: #e6a55a;
   --wrong: #e57b7b;
@@ -934,8 +937,13 @@ dialog.midi-debug::backdrop {
 }
 
 .staff-letter.lit {
-  color: var(--accent);
+  color: var(--played);
   font-weight: 800;
+}
+
+/* The key-signature sign a played note takes; OSMD draws each sign as one path. */
+.vf-keysignature path.lit {
+  fill: var(--played);
 }
 
 /* Played notes in free play; drawn behind the music by NotationView (#notation isolates the stack). */
@@ -959,35 +967,35 @@ dialog.midi-debug::backdrop {
 }
 
 .played-line {
-  stroke: var(--accent);
+  stroke: var(--played);
   stroke-width: 4.5px;
   stroke-linecap: round;
 }
 
 .played-space {
-  fill: var(--accent);
-  opacity: 0.22;
+  fill: var(--played);
+  opacity: 0.32;
 }
 
 .played-ledger {
-  stroke: var(--accent);
+  stroke: var(--played);
   stroke-width: 1px;
   stroke-dasharray: 4 4;
   opacity: 0.5;
 }
 
 .ghost-ledger {
-  stroke: var(--accent);
+  stroke: var(--played);
   stroke-width: 1.5px;
 }
 
 .ghost-head {
-  fill: var(--accent);
+  fill: var(--played);
 }
 
 .ghost-accidental {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--played);
 }
 
 .played-note.fading {

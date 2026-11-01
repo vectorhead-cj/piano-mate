@@ -1,6 +1,6 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
 import { spellInKey, type AccidentalSymbol } from "../music/accidentals";
-import { keyById } from "../music/keys";
+import { keyById, signatureLetters } from "../music/keys";
 import { exerciseToMusicXml } from "../music/musicXml";
 import { staffStep } from "../music/pitch";
 import type { Clef, Exercise } from "../music/types";
@@ -391,7 +391,7 @@ export class NotationView {
   private drawPlayed(): void {
     const layer = this.playedLayer;
     layer.replaceChildren();
-    for (const label of this.lettersLayer.querySelectorAll(".staff-letter.lit")) label.classList.remove("lit");
+    for (const lit of this.root.querySelectorAll(".staff-letter.lit, .vf-keysignature .lit")) lit.classList.remove("lit");
     const exercise = this.exercise;
     if (!this.highlightPlayed || !this.freePlay || !this.ready || !exercise) {
       layer.remove();
@@ -403,7 +403,7 @@ export class NotationView {
     for (const pitch of this.columns.keys()) if (!pitches.includes(pitch)) this.columns.delete(pitch);
     const notes = pitches.map((pitch) => {
       const { spelling, accidental } = spellInKey(pitch, key);
-      return { pitch, position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch) };
+      return { pitch, spelling, position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch) };
     });
     // A newly pressed key takes the first column free of close neighbours: seconds sit side by
     // side, and accidentals close together step left, as engravers do.
@@ -429,6 +429,15 @@ export class NotationView {
     }
     for (const label of this.lettersLayer.querySelectorAll<HTMLElement>(".staff-letter")) {
       if (notes.some((note) => String(note.position) === label.dataset.step)) label.classList.add("lit");
+    }
+    // A note the key signature sharpens or flattens lights that sign, in every key signature drawn.
+    const signLetters = signatureLetters(key);
+    for (const signature of this.root.querySelectorAll(".vf-keysignature")) {
+      const signs = signature.querySelectorAll("path");
+      for (const note of notes) {
+        if (note.accidental || note.spelling.alter === 0) continue;
+        signs[signLetters.indexOf(note.spelling.letter)]?.classList.add("lit");
+      }
     }
 
     const unit = 10 * this.osmd.Zoom;
