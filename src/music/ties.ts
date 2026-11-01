@@ -18,6 +18,11 @@ export function tiedOn(notes: readonly Note[], index: number): number[] {
   return held;
 }
 
+/** Indices of the notes that are pressed: every note but tie continuations. */
+export function pressedIndices(notes: readonly Note[]): number[] {
+  return notes.map((_, i) => i).filter((i) => !isTieContinuation(notes, i));
+}
+
 /** How many notes are pressed, counting a tied note once. */
 export function pressedCount(notes: readonly Note[]): number {
   return notes.filter((_, i) => !isTieContinuation(notes, i)).length;

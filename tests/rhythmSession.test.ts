@@ -55,7 +55,7 @@ describe("RhythmSession", () => {
     const session = sessionAt(0);
     const { result } = session.play(60, COUNT_IN);
     expect(result).toMatchObject({ kind: "correct", index: 0, timing: "on-time", completed: false });
-    expect(session.score()).toEqual({ notesCorrect: 1, rhythmOnTime: 1, total: 3 });
+    expect(session.marks()).toEqual({ notes: ["correct", "pending", "pending"], rhythm: ["correct", "pending", "pending"] });
   });
 
   it("marks early and late correct pitches", () => {
@@ -69,7 +69,7 @@ describe("RhythmSession", () => {
       kind: "correct",
       timing: "late",
     });
-    expect(session.score()).toEqual({ notesCorrect: 2, rhythmOnTime: 0, total: 3 });
+    expect(session.marks()).toEqual({ notes: ["correct", "correct", "pending"], rhythm: ["wrong", "wrong", "pending"] });
   });
 
   it("rejects wrong pitch without advancing", () => {
@@ -82,8 +82,10 @@ describe("RhythmSession", () => {
   it("allows correct pitch after a wrong one in the same window", () => {
     const session = sessionAt(0);
     session.play(61, COUNT_IN);
+    expect(session.marks().notes[0]).toBe("wrong");
     const { result } = session.play(60, COUNT_IN + 50);
     expect(result).toMatchObject({ kind: "correct", index: 0, timing: "on-time" });
+    expect(session.marks()).toEqual({ notes: ["wrong", "pending", "pending"], rhythm: ["correct", "pending", "pending"] });
   });
 
   it("misses a note when the accept window closes", () => {
@@ -92,7 +94,7 @@ describe("RhythmSession", () => {
     const tick = session.tick(COUNT_IN + 501);
     expect(tick.missed).toEqual([0]);
     expect(tick.currentIndex).toBe(1);
-    expect(session.score()).toEqual({ notesCorrect: 0, rhythmOnTime: 0, total: 3 });
+    expect(session.marks()).toEqual({ notes: ["wrong", "pending", "pending"], rhythm: ["wrong", "pending", "pending"] });
   });
 
   it("completes with a full score after the last note", () => {
@@ -101,7 +103,7 @@ describe("RhythmSession", () => {
     session.play(62, COUNT_IN + 1000);
     const { result } = session.play(64, COUNT_IN + 2000);
     expect(result).toMatchObject({ kind: "correct", index: 2, completed: true });
-    expect(session.score()).toEqual({ notesCorrect: 3, rhythmOnTime: 3, total: 3 });
+    expect(session.marks()).toEqual({ notes: ["correct", "correct", "correct"], rhythm: ["correct", "correct", "correct"] });
   });
 
   it("counts in a bar plus the beats before a pickup, and runs to the barline after the last note", () => {
@@ -148,7 +150,7 @@ describe("RhythmSession", () => {
     // The tied E lasts two more beats, so G is due at beat 6.
     expect(session.currentIndex).toBe(3);
     expect(session.play(67, COUNT_IN + 6000).result).toMatchObject({ kind: "correct", index: 3, timing: "on-time", completed: true });
-    expect(session.score()).toEqual({ notesCorrect: 3, rhythmOnTime: 3, total: 3 });
+    expect(session.marks()).toEqual({ notes: ["correct", "correct", "correct"], rhythm: ["correct", "correct", "correct"] });
   });
 
   it("misses a tied note together with the note it is held from", () => {

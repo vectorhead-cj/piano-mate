@@ -112,7 +112,7 @@ describe("PracticeController (wait mode)", () => {
 
     press(pitches[0] + 1);
     pitches.forEach(press);
-    expect(score.show).toHaveBeenLastCalledWith(pitches.length - 1, pitches.length, undefined);
+    expect(score.show).toHaveBeenLastCalledWith({ notes: ["wrong", ...pitches.slice(1).map(() => "correct")] });
     expect(score.setIncludeRhythm).toHaveBeenCalledWith(false);
     expect(notation.setState).not.toHaveBeenCalledWith(0, "correct");
     expect(controller.isHot).toBe(false);
@@ -136,7 +136,7 @@ describe("PracticeController (wait mode)", () => {
     expect(controller.exercise).toBe(firstExercise);
     expect(notation.show).toHaveBeenCalledTimes(2);
     expect(notation.setState).toHaveBeenLastCalledWith(0, "current");
-    expect(score.show).toHaveBeenLastCalledWith(0, pitches.length, undefined);
+    expect(score.show).toHaveBeenLastCalledWith({ notes: pitches.map(() => "pending") });
   });
 
   it("counts going cold mid-phrase as a failure, but not before the first note", () => {
@@ -381,7 +381,8 @@ describe("PracticeController (rhythm mode)", () => {
     expect(onHotChange).toHaveBeenLastCalledWith(true);
     expect(controller.exercise).toBe(first);
     expect(notation.show).toHaveBeenCalledWith(first, { showNames: false });
-    expect(score.show).toHaveBeenCalledWith(0, total, 0);
+    const pending = Array(total).fill("pending");
+    expect(score.show).toHaveBeenCalledWith({ notes: pending, rhythm: pending });
 
     vi.advanceTimersByTime(999);
     expect(sound.click).not.toHaveBeenCalled();
@@ -425,7 +426,8 @@ describe("PracticeController (rhythm mode)", () => {
       onset += BEATS[note.duration] * 1000;
     }
 
-    expect(score.show).toHaveBeenLastCalledWith(notes.length, notes.length, notes.length);
+    const correct = notes.map(() => "correct");
+    expect(score.show).toHaveBeenLastCalledWith({ notes: correct, rhythm: correct });
     expect(score.setIncludeRhythm).toHaveBeenCalledWith(true);
 
     const first = controller.exercise;
@@ -434,7 +436,7 @@ describe("PracticeController (rhythm mode)", () => {
     vi.advanceTimersByTime(phraseMs);
     expect(controller.exercise).not.toBe(first);
     expect(controller.isHot).toBe(true);
-    expect(score.show).toHaveBeenCalledWith(0, expect.any(Number), 0);
+    expect(score.show).toHaveBeenLastCalledWith({ notes: expect.arrayContaining(["pending"]), rhythm: expect.arrayContaining(["pending"]) });
   });
 });
 

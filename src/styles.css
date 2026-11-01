@@ -753,9 +753,47 @@ dialog.midi-debug::backdrop {
 .score-stat {
   display: flex;
   flex-direction: row;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+/* Notes and Rhythm stack, so each note's two dots sit in one column. */
+.score-marks {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.score-dots {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.score-dot {
+  flex: 0 1 auto;
+  width: 10px;
+  min-width: 5px;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 55%, transparent);
+  border-radius: 50%;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.score-dot[data-mark="correct"] {
+  border-color: var(--correct);
+  background: var(--correct);
+}
+
+.score-dot[data-mark="wrong"] {
+  border-color: var(--wrong);
+  background: var(--wrong);
 }
 
 .score-label {
@@ -766,11 +804,11 @@ dialog.midi-debug::backdrop {
   text-transform: uppercase;
 }
 
-.score-value {
+.score-count {
   color: var(--ink);
   font-family: Fraunces, "Times New Roman", serif;
   font-optical-sizing: auto;
-  font-size: 1.35rem;
+  font-size: 1.05rem;
   font-weight: 650;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -1889,8 +1927,8 @@ dialog.account-dialog::backdrop {
     gap: 6px;
   }
 
-  .score-value {
-    font-size: 1.15rem;
+  .score-count {
+    font-size: 0.95rem;
   }
 }
 

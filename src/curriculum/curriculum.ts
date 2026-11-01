@@ -11,10 +11,13 @@ export const TIERS: readonly Tier[] = ["read", "play", "fluent"];
 
 export const TIER_LABELS: Record<Tier, string> = { read: "Read", play: "Play", fluent: "Fluent" };
 
-/** Perfect phrases in a row that earn a tier's star (★★ also opens the next stage). */
+/** A streak forgives one miss in any this many phrases in a row; a second one breaks it. */
+export const MISS_WINDOW = 10;
+
+/** A streak this long earns a tier's star (★★ also opens the next stage). */
 export const STAR_STREAK = 10;
 
-/** Perfect phrases in a row, at Play or Fluent, that mark a stage complete. */
+/** A streak this long, at Play or Fluent, marks a stage complete. */
 export const COMPLETE_STREAK = 50;
 
 /**

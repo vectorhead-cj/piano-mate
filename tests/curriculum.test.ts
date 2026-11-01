@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPLETE_STREAK,
+  MISS_WINDOW,
   PLACED_STAGES,
   placedStage,
   STAR_STREAK,
@@ -138,13 +139,34 @@ describe("projectProgress", () => {
     expect(progress.bass.stages[first].unlocked).toBe(false);
   });
 
-  it("earns ★ for a streak of perfect phrases and resets on a miss", () => {
-    const almost = [...repeat(STAR_STREAK - 1, () => phrase(first, "read", true)), phrase(first, "read", false)];
-    expect(projectProgress(almost).treble.stages[first].stars).toBe(0);
-    const done = [introDone(first), ...almost, ...repeat(STAR_STREAK, () => phrase(first, "read", true))];
-    const stage = projectProgress(done).treble.stages[first];
+  it("earns ★ for a streak that has at most one miss in a window", () => {
+    const oneMiss = [phrase(first, "read", false), ...repeat(STAR_STREAK - 1, () => phrase(first, "read", true))];
+    const stage = projectProgress([introDone(first), ...oneMiss]).treble.stages[first];
     expect(stage.stars).toBe(1);
     expect(stage.tierOpen.play).toBe(true);
+  });
+
+  it("breaks a streak on a second miss in a window, back to the phrases since the first", () => {
+    const twoMisses = [
+      ...repeat(4, () => phrase(first, "read", true)),
+      phrase(first, "read", false),
+      ...repeat(3, () => phrase(first, "read", true)),
+      phrase(first, "read", false),
+      ...repeat(4, () => phrase(first, "read", true)),
+    ];
+    const tier = projectProgress(twoMisses).treble.stages[first].tiers.read;
+    expect(tier.streak).toBe(8);
+    expect(tier.best).toBe(8);
+    expect(projectProgress(twoMisses).treble.stages[first].stars).toBe(0);
+  });
+
+  it("forgives a miss again once the last one is a window behind", () => {
+    const spaced = [
+      phrase(first, "read", false),
+      ...repeat(MISS_WINDOW - 1, () => phrase(first, "read", true)),
+      phrase(first, "read", false),
+    ];
+    expect(projectProgress(spaced).treble.stages[first].tiers.read.streak).toBe(MISS_WINDOW + 1);
   });
 
   it("opens the next stage's intro at ★★, then the stage once it's done", () => {

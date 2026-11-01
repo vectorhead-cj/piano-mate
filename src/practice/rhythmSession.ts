@@ -1,9 +1,9 @@
 import { midiOf } from "../music/pitch";
 import { barBeats, BEATS } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
-import { isTieContinuation, nextPressed, tiedOn } from "../music/ties";
+import { isTieContinuation, nextPressed, pressedIndices, tiedOn } from "../music/ties";
 import type { PitchMatcher } from "./matcher";
-import type { NoteResult } from "./waitSession";
+import type { Mark, NoteResult } from "./waitSession";
 import {
   acceptWindowMs,
   beatMs,
@@ -17,10 +17,10 @@ export type RhythmPlayResult =
   | { kind: "wrong"; index: number; expectedPitch: number }
   | { kind: "ignored" };
 
-export interface PhraseScore {
-  notesCorrect: number;
-  rhythmOnTime: number;
-  total: number;
+/** A mark per pressed note for its pitch and its timing, side by side. */
+export interface PhraseMarks {
+  notes: Mark[];
+  rhythm: Mark[];
 }
 
 export interface RhythmTickResult {
@@ -109,13 +109,12 @@ export class RhythmSession {
     return this.wrongs[index];
   }
 
-  /** Counts pressed notes only: a tied note is one press. */
-  score(): PhraseScore {
-    const pressed = this.notes.map((_, i) => i).filter((i) => !isTieContinuation(this.notes, i));
+  /** Pressed notes only: a tied note is one press. A note is settled once the clock moves past it. */
+  marks(): PhraseMarks {
+    const pressed = pressedIndices(this.notes);
     return {
-      notesCorrect: pressed.filter((i) => this.pitchOk[i]).length,
-      rhythmOnTime: pressed.filter((i) => this.timingOk[i]).length,
-      total: pressed.length,
+      notes: pressed.map((i) => (this.wrongs[i] > 0 ? "wrong" : i < this.index ? (this.pitchOk[i] ? "correct" : "wrong") : "pending")),
+      rhythm: pressed.map((i) => (i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending")),
     };
   }
 

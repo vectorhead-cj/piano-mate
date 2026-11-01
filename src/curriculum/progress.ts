@@ -3,6 +3,7 @@ import {
   CLEF_TRACKS,
   COMPLETE_STREAK,
   hasIntro,
+  MISS_WINDOW,
   PLACED_STAGES,
   placedStage,
   STAR_STREAK,
@@ -11,9 +12,21 @@ import {
 } from "./curriculum";
 import { countsForProgress, isPerfect, type PracticeEvent } from "./events";
 
-export interface TierProgress {
-  /** Perfect MIDI phrases in a row, up to now. */
+/** MIDI phrases in a row up to now, with at most one miss in any MISS_WINDOW of them. */
+export interface Streak {
   streak: number;
+  /** Phrases played since the streak's latest miss; null while it has none. */
+  sinceMiss: number | null;
+}
+
+/** One more phrase on a streak. A second miss inside a window restarts it just after the first. */
+export function extendStreak({ streak, sinceMiss }: Streak, perfect: boolean): Streak {
+  if (perfect) return { streak: streak + 1, sinceMiss: sinceMiss === null ? null : sinceMiss + 1 };
+  if (sinceMiss !== null && sinceMiss < MISS_WINDOW - 1) return { streak: sinceMiss + 1, sinceMiss: 0 };
+  return { streak: streak + 1, sinceMiss: 0 };
+}
+
+export interface TierProgress extends Streak {
   best: number;
   attempts: number;
   perfects: number;
@@ -55,7 +68,7 @@ export interface TrackProgress {
 export type Progress = Record<Clef, TrackProgress>;
 
 function emptyTier(): TierProgress {
-  return { streak: 0, best: 0, attempts: 0, perfects: 0 };
+  return { streak: 0, sinceMiss: null, best: 0, attempts: 0, perfects: 0 };
 }
 
 /**
@@ -89,13 +102,10 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
     const tier = tiersFor(event.context.clef, event.context.stageId)[event.context.tier];
     if (!tier) continue;
     tier.attempts++;
-    if (isPerfect(event)) {
-      tier.perfects++;
-      tier.streak++;
-      tier.best = Math.max(tier.best, tier.streak);
-    } else {
-      tier.streak = 0;
-    }
+    const perfect = isPerfect(event);
+    if (perfect) tier.perfects++;
+    Object.assign(tier, extendStreak(tier, perfect));
+    tier.best = Math.max(tier.best, tier.streak);
   }
 
   return Object.fromEntries(

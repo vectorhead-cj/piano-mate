@@ -182,23 +182,17 @@
         <section id="intro-panel" class="intro-panel" aria-label="Intro" aria-live="polite" hidden></section>
         <div class="status-row">
           <section id="phrase-score" class="phrase-score" data-mode="wait" aria-live="polite" aria-label="Score">
-            <div class="score-stat">
+            <div class="score-marks">
               <span class="score-label">Notes</span>
-              <span class="score-value"
-                ><span data-score="notes">0</span><span class="score-of">/<span data-score="notes-total">0</span></span></span
-              >
-            </div>
-            <div class="score-divider" data-rhythm-only aria-hidden="true"></div>
-            <div class="score-stat" data-rhythm-only>
-              <span class="score-label">Rhythm</span>
-              <span class="score-value"
-                ><span data-score="rhythm">0</span><span class="score-of">/<span data-score="rhythm-total">0</span></span></span
-              >
+              <span class="score-dots" data-dots="notes"></span>
+              <span class="score-label" data-rhythm-only>Rhythm</span>
+              <span class="score-dots" data-dots="rhythm" data-rhythm-only></span>
             </div>
             <div class="score-divider" data-streak aria-hidden="true"></div>
             <div class="score-stat" data-streak>
               <span class="score-label">Streak</span>
-              <span class="score-value"
+              <span class="score-dots" data-dots="streak"></span>
+              <span class="score-count"
                 ><span data-score="streak">0</span><span class="score-of" data-score="streak-goal"></span></span
               >
             </div>

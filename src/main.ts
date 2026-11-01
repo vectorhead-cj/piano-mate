@@ -6,6 +6,7 @@ import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
 import {
   COMPLETE_STREAK,
+  MISS_WINDOW,
   STAR_STREAK,
   placedStage,
   tierMode,
@@ -26,7 +27,7 @@ import {
   type PracticeContext,
 } from "./curriculum/events";
 import { INTRO_TEMPO, introMidiRange, introSteps, type IntroStep } from "./curriculum/intros";
-import { milestoneBetween } from "./curriculum/progress";
+import { extendStreak, milestoneBetween, type Streak } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
 import { loadCorpus } from "./music/corpus";
@@ -41,6 +42,7 @@ import { bindAccountDialog } from "./ui/accountDialog";
 import { bindMidiDebug, type MidiDebug } from "./ui/midiDebug";
 import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindRetryKey } from "./ui/retryKey";
+import { StreakDots, renderDots } from "./ui/scoreDots";
 import {
   PhraseResultBanner,
   renderHome,
@@ -191,7 +193,8 @@ async function main(): Promise<void> {
   /** What the settings bar shows; curriculum stages override most of it while they run. */
   let customSettings: Settings = DEFAULT_SETTINGS;
   let settings: Settings = DEFAULT_SETTINGS;
-  let customStreak = 0;
+  let customStreak: Streak = { streak: 0, sinceMiss: null };
+  const streakDots = new StreakDots();
   /** A stage's intro, while it runs; its phrases are echoed, not recorded. */
   let intro: { clef: Clef; stageId: string; steps: IntroStep[]; index: number; replay: boolean } | null = null;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
@@ -225,6 +228,10 @@ async function main(): Promise<void> {
     if (node) node.textContent = String(value);
   }
 
+  function dotsOf(key: string): HTMLElement {
+    return scoreElement.querySelector<HTMLElement>(`[data-dots="${key}"]`)!;
+  }
+
   const practice = new PracticeController({
     stream,
     notation,
@@ -235,13 +242,9 @@ async function main(): Promise<void> {
       setIncludeRhythm(include) {
         scoreElement.dataset.mode = include ? "rhythm" : "wait";
       },
-      show(notesCorrect, total, rhythmOnTime) {
-        setScoreText("notes", notesCorrect);
-        setScoreText("notes-total", total);
-        if (rhythmOnTime !== undefined) {
-          setScoreText("rhythm", rhythmOnTime);
-          setScoreText("rhythm-total", total);
-        }
+      show({ notes, rhythm }) {
+        renderDots(dotsOf("notes"), notes, "Notes");
+        if (rhythm) renderDots(dotsOf("rhythm"), rhythm, "Rhythm");
       },
     },
     onHotChange(hot) {
@@ -351,8 +354,13 @@ async function main(): Promise<void> {
     const again = perfect && result.passesNeeded > 0 ? " · once more" : "";
 
     if (context.kind === "custom") {
-      customStreak = perfect ? customStreak + 1 : 0;
-      banner.show(perfect ? `Perfect · streak ${customStreak}${again}` : `${faultText} · streak back to 0${again}`, perfect ? "perfect" : "fault");
+      const previous = customStreak.streak;
+      customStreak = extendStreak(customStreak, perfect);
+      streakDots.push(perfect);
+      banner.show(
+        perfect ? `Perfect · streak ${customStreak.streak}${again}` : `${missText(faultText, previous, customStreak.streak)}${again}`,
+        perfect ? "perfect" : "fault",
+      );
       renderStreak();
       return;
     }
@@ -364,26 +372,35 @@ async function main(): Promise<void> {
       text = `${perfect ? "Perfect" : faultText} · screen keys don't count towards progress${again}`;
       tone = "info";
     } else {
+      streakDots.push(perfect);
       const milestone = milestoneBetween(before, store.progress, clef, stageId);
+      const previous = before[clef].stages[stageId].tiers[tier].streak;
       const streak = store.progress[clef].stages[stageId].tiers[tier].streak;
       if (milestone?.kind === "star") {
         const opened = milestone.openedStageId ? placedStage(milestone.openedStageId) : undefined;
         const openedText = opened ? ` · ${milestone.openedIntro ? `the intro to ${opened.number}` : `stage ${opened.number}`} is open` : "";
-        text = `${"★".repeat(milestone.stars)} earned · ${STAR_STREAK} in a row${openedText}`;
+        text = `${"★".repeat(milestone.stars)} earned · streak of ${STAR_STREAK}${openedText}`;
         tone = "milestone";
       } else if (milestone?.kind === "complete") {
-        text = `Stage complete · ${COMPLETE_STREAK} in a row`;
+        text = `Stage complete · streak of ${COMPLETE_STREAK}`;
         tone = "milestone";
       } else if (perfect) {
         text = `Perfect · streak ${streak}${again}`;
         tone = "perfect";
       } else {
-        text = `${faultText} · streak back to 0${again}`;
+        text = `${missText(faultText, previous, streak)}${again}`;
         tone = "fault";
       }
     }
     banner.show(text, tone, tone === "milestone" ? 4000 : 2400);
     renderView();
+  }
+
+  /** A miss either rides on the streak (one per window) or breaks it back to the phrases since the last. */
+  function missText(faultText: string, before: number, after: number): string {
+    return after > before
+      ? `${faultText} · one miss in ${MISS_WINDOW} allowed · streak ${after}`
+      : `${faultText} · second miss in ${MISS_WINDOW} · streak back to ${after}`;
   }
 
   /** Where a failed attempt first went wrong, for the result banner. */
@@ -396,8 +413,9 @@ async function main(): Promise<void> {
 
   /** Streak in the score row: the curriculum goal for this tier, or a plain count in custom. */
   function renderStreak(): void {
+    renderDots(dotsOf("streak"), streakDots.marks(), "Last phrases");
     if (context.kind === "custom") {
-      setScoreText("streak", customStreak);
+      setScoreText("streak", customStreak.streak);
       setScoreText("streak-goal", "");
       return;
     }
@@ -504,6 +522,7 @@ async function main(): Promise<void> {
     const { stage } = placed;
     stopIntro();
     context = { kind: "curriculum", clef, stageId, tier };
+    streakDots.reset(store.progress[clef].stages[stageId].tiers[tier]);
     settings = {
       ...customSettings,
       mode: tierMode(tier),
@@ -523,7 +542,8 @@ async function main(): Promise<void> {
   function openCustom(): void {
     stopIntro();
     context = { kind: "custom" };
-    customStreak = 0;
+    customStreak = { streak: 0, sinceMiss: null };
+    streakDots.reset();
     settings = customSettings;
     keyboardSpan = levelMidiRange(levelById(settings.range));
     practice.exerciseSource = customSource(corpus, () => settings);
@@ -639,7 +659,10 @@ async function main(): Promise<void> {
       keyboardSpan = levelMidiRange(levelById(next.range));
       updateKeyboardRange();
     }
-    if (changed !== "namesOnNotes") customStreak = 0;
+    if (changed !== "namesOnNotes") {
+      customStreak = { streak: 0, sinceMiss: null };
+      streakDots.reset();
+    }
     renderStreak();
     practice.updateSettings(next, changed);
   });

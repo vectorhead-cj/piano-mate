@@ -3,7 +3,7 @@ import type { NoteStream } from "../input/noteStream";
 import { generateExercise, type Random } from "../music/generator";
 import { levelById } from "../music/levels";
 import { midiOf } from "../music/pitch";
-import { pressedCount, tiedOn } from "../music/ties";
+import { pressedIndices, tiedOn } from "../music/ties";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { NotationOptions, NoteState } from "../render/notationView";
@@ -11,7 +11,7 @@ import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
 import type { Settings } from "./settings";
 import { beatMs } from "./timing";
-import { WaitSession, type NoteResult } from "./waitSession";
+import { WaitSession, type Mark, type NoteResult } from "./waitSession";
 
 export const PHRASE_SCORE_DELAY_MS = 2500;
 /** Failed attempts at full tempo before the player is offered a slower retry. */
@@ -41,9 +41,14 @@ export interface SoundOutput {
   click?(accent?: boolean): void;
 }
 
+/** A mark per pressed note; `rhythm` lines up with `notes` and is left out in Wait mode. */
+export interface ScoreMarks {
+  notes: Mark[];
+  rhythm?: Mark[];
+}
+
 export interface ScoreDisplay {
-  /** When `rhythmOnTime` is omitted, only the notes score is shown. */
-  show(notesCorrect: number, total: number, rhythmOnTime?: number): void;
+  show(marks: ScoreMarks): void;
   setIncludeRhythm(include: boolean): void;
 }
 
@@ -317,14 +322,14 @@ export class PracticeController {
         this.startRhythmClock(countInAt);
       } else {
         this.rhythmSession = null;
-        const total = pressedCount(this.currentExercise.bars.flat());
-        this.publishScore(0, total, 0);
+        const pending = pressedIndices(this.currentExercise.bars.flat()).map((): Mark => "pending");
+        this.publishScore({ notes: pending, rhythm: pending });
         this.deps.notation.setState(0, "current");
       }
     } else {
       this.rhythmSession = null;
       this.waitSession = new WaitSession(this.currentExercise, exactPitch);
-      this.publishScore(0, this.waitSession.notes.length);
+      this.publishScore({ notes: this.waitSession.marks() });
       this.deps.notation.setState(0, "current");
     }
     this.setHot(hot);
@@ -346,19 +351,17 @@ export class PracticeController {
     this.scheduleTick();
   }
 
-  private publishScore(notesCorrect: number, total: number, rhythmOnTime?: number): void {
-    this.deps.score?.show(notesCorrect, total, rhythmOnTime);
+  private publishScore(marks: ScoreMarks): void {
+    this.deps.score?.show(marks);
   }
 
   private publishLiveScore(): void {
     if (this.rhythmSession) {
-      const score = this.rhythmSession.score();
-      this.publishScore(score.notesCorrect, score.total, score.rhythmOnTime);
+      this.publishScore(this.rhythmSession.marks());
       return;
     }
     if (this.waitSession) {
-      const score = this.waitSession.score();
-      this.publishScore(score.notesCorrect, score.total);
+      this.publishScore({ notes: this.waitSession.marks() });
     }
   }
 
@@ -417,6 +420,7 @@ export class PracticeController {
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
         keyboard.flash(result.expectedPitch, "hint");
+        this.publishLiveScore();
         break;
       case "ignored":
         break;
@@ -448,6 +452,7 @@ export class PracticeController {
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
         keyboard.flash(result.expectedPitch, "hint");
+        this.publishLiveScore();
         break;
       case "ignored":
         if (session.isComplete) this.finishRhythmPhrase();

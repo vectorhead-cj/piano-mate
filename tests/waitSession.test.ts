@@ -56,13 +56,14 @@ describe("WaitSession", () => {
     expect(session.play(54).kind).toBe("correct");
   });
 
-  it("scores notes correct only on the first try", () => {
+  it("marks notes correct only on the first try", () => {
     const session = new WaitSession(exercise, exactPitch);
     session.play(61);
+    expect(session.marks()).toEqual(["wrong", "pending", "pending"]);
     session.play(60);
     session.play(66);
     session.play(67);
-    expect(session.score()).toEqual({ notesCorrect: 2, total: 3 });
+    expect(session.marks()).toEqual(["wrong", "correct", "correct"]);
   });
 
   it("holds a tied note instead of waiting for it again", () => {
@@ -71,7 +72,7 @@ describe("WaitSession", () => {
     expect(session.play(64)).toEqual({ kind: "correct", index: 1, completed: false });
     expect(session.currentIndex).toBe(3);
     expect(session.play(67)).toEqual({ kind: "correct", index: 3, completed: true });
-    expect(session.score()).toEqual({ notesCorrect: 3, total: 3 });
+    expect(session.marks()).toEqual(["correct", "correct", "correct"]);
     expect(session.results()[2]).toEqual({ wrong: 0, hit: true, tied: true });
   });
 });

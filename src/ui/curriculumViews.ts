@@ -2,6 +2,7 @@ import {
   CHAPTERS,
   CLEF_TRACKS,
   COMPLETE_STREAK,
+  MISS_WINDOW,
   PLACED_STAGES,
   STAR_STREAK,
   TIER_LABELS,
@@ -338,7 +339,9 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
       h(
         "span",
         { class: "menu-muted" },
-        earned ? `Earned · best ${tierProgress.best} in a row` : `${tierProgress.streak} / ${STAR_STREAK} in a row`,
+        earned
+          ? `Earned · best streak ${tierProgress.best}`
+          : `Streak ${tierProgress.streak} / ${STAR_STREAK} · one miss in ${MISS_WINDOW} allowed`,
       ),
       button,
     );
@@ -357,7 +360,7 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         { class: "menu-muted" },
         progress.complete
           ? "Stage complete"
-          : `Complete: ${COMPLETE_STREAK} in a row at Play or Fluent · best ${best}`,
+          : `Complete: a streak of ${COMPLETE_STREAK} at Play or Fluent · best ${best}`,
       ),
       meter(best, COMPLETE_STREAK, `Best ${best} of ${COMPLETE_STREAK}`),
     ),

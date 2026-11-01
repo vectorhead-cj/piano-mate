@@ -1,6 +1,6 @@
 import { midiOf } from "../music/pitch";
 import type { Exercise, Note } from "../music/types";
-import { isTieContinuation, nextPressed, pressedCount } from "../music/ties";
+import { isTieContinuation, nextPressed, pressedIndices } from "../music/ties";
 import type { PitchMatcher } from "./matcher";
 
 export type PlayResult =
@@ -8,10 +8,8 @@ export type PlayResult =
   | { kind: "wrong"; index: number; expectedPitch: number }
   | { kind: "ignored" };
 
-export interface WaitScore {
-  notesCorrect: number;
-  total: number;
-}
+/** One pressed note on the score row: not played yet, played clean, or not. */
+export type Mark = "pending" | "correct" | "wrong";
 
 /** How one note went: wrong keys pressed before the right one, and (rhythm mode) its timing. */
 export interface NoteResult {
@@ -27,9 +25,6 @@ export interface NoteResult {
 export class WaitSession {
   readonly notes: Note[];
   private index = 0;
-  /** True if the current note already had a wrong attempt. */
-  private missedCurrent = false;
-  private firstTryCorrect = 0;
   private readonly wrongs: number[];
 
   constructor(
@@ -54,8 +49,9 @@ export class WaitSession {
     return this.wrongs[index];
   }
 
-  score(): WaitScore {
-    return { notesCorrect: this.firstTryCorrect, total: pressedCount(this.notes) };
+  /** A mark per pressed note; a wrong key marks the note at once, even before it's played. */
+  marks(): Mark[] {
+    return pressedIndices(this.notes).map((i) => (this.wrongs[i] > 0 ? "wrong" : i < this.index ? "correct" : "pending"));
   }
 
   /** Per-note results; every note counts as hit once the phrase is complete. */
@@ -71,13 +67,10 @@ export class WaitSession {
     const index = this.index;
     const expectedPitch = midiOf(this.notes[index]);
     if (!this.matches(expectedPitch, pitch)) {
-      this.missedCurrent = true;
       this.wrongs[index]++;
       return { kind: "wrong", index, expectedPitch };
     }
 
-    if (!this.missedCurrent) this.firstTryCorrect++;
-    this.missedCurrent = false;
     this.index = nextPressed(this.notes, index + 1);
     return { kind: "correct", index, completed: this.isComplete };
   }
