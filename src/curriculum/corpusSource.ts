@@ -2,7 +2,7 @@ import { generateExercise, type Random } from "../music/generator";
 import { phraseInKey, type CorpusPhrase } from "../music/corpus";
 import { keyAlter, keyById, MINOR_KEYS, type KeyMode } from "../music/keys";
 import { levelById } from "../music/levels";
-import { allowedDurations, usesOnly } from "../music/notation";
+import { allowedDurations, usesOnly, type Notation } from "../music/notation";
 import { midiOf, naturalFromStaffStep, staffStep } from "../music/pitch";
 import type { AccidentalFrequency, Clef, Exercise, RhythmFlavor } from "../music/types";
 import type { Settings } from "../practice/settings";
@@ -44,6 +44,12 @@ export function matchesAccidentals(chromatic: number, frequency: AccidentalFrequ
       return chromatic >= 3;
   }
 }
+
+/**
+ * At least this share of a stage's phrases use the notation it introduces, when its pool has
+ * fewer of them, so the new thing gets practised.
+ */
+export const FEATURED_SHARE = 0.5;
 
 function shuffled<T>(items: readonly T[], random: Random): T[] {
   const copy = [...items];
@@ -90,23 +96,55 @@ function stagePools(corpus: readonly CorpusPhrase[] | null, clef: Clef, stage: S
   return { major: pool("major"), minor: pool("minor") };
 }
 
+/** "Essen folk songs" from "Essen folk songs: Ich fahr dahin". */
+function collectionOf(phrase: CorpusPhrase): string {
+  return phrase.work.split(":")[0];
+}
+
 /**
- * Deals phrases from a shuffled deck, so none repeats until all have been played, in a key
- * from `keys` (not the same one twice in a row). `place` writes a phrase out in a key, or
- * returns null when it can't be.
+ * Draws from a deck, so no phrase repeats until all have been drawn, at random but after
+ * `last` from another collection when one is left, else from another work.
+ */
+function deck(pool: readonly CorpusPhrase[], random: Random): (last: CorpusPhrase | undefined) => CorpusPhrase {
+  let left: CorpusPhrase[] = [];
+  return (last) => {
+    if (left.length === 0) left = [...pool];
+    const unlike = (differs: (p: CorpusPhrase) => boolean) => {
+      const found = last ? left.filter(differs) : left;
+      return found.length > 0 ? found : null;
+    };
+    const choices =
+      unlike((p) => collectionOf(p) !== collectionOf(last!)) ?? unlike((p) => p.work !== last!.work) ?? left;
+    const phrase = choices[Math.floor(random() * choices.length)];
+    left.splice(left.indexOf(phrase), 1);
+    return phrase;
+  };
+}
+
+/**
+ * Deals phrases from a deck (see `deck`) in a key from `keys` (not the same one twice in a
+ * row). Phrases using `featured` notation get their own deck when they'd otherwise make up
+ * less than FEATURED_SHARE of the deals. `place` writes a phrase out in a key, or returns null
+ * when it can't be.
  */
 function dealer(
   pool: readonly CorpusPhrase[],
   keys: readonly string[],
   place: (phrase: CorpusPhrase, key: string) => Exercise | null,
   random: Random,
+  featured: readonly Notation[] = [],
 ): () => Exercise | null {
-  let deck: CorpusPhrase[] = [];
+  const uses = (p: CorpusPhrase) => featured.some((n) => p.notations.has(n));
+  const special = pool.filter(uses);
+  const split = special.length > 0 && special.length < pool.length * FEATURED_SHARE;
+  const featuredDeck = split ? deck(special, random) : null;
+  const mainDeck = deck(split ? pool.filter((p) => !uses(p)) : pool, random);
+  let last: CorpusPhrase | undefined;
   let previousKey: string | undefined;
   return () => {
     for (let attempt = 0; attempt < pool.length; attempt++) {
-      if (deck.length === 0) deck = shuffled(pool, random);
-      const phrase = deck.pop()!;
+      const phrase = (featuredDeck && random() < FEATURED_SHARE ? featuredDeck : mainDeck)(last);
+      last = phrase;
       const choices = keys.length > 1 ? keys.filter((k) => k !== previousKey) : keys;
       const first = Math.floor(random() * choices.length);
       for (let i = 0; i < choices.length; i++) {
@@ -138,7 +176,10 @@ export function stageSource(corpus: readonly CorpusPhrase[] | null, clef: Clef, 
   const real = (key: string) => {
     const pool = pools[keyById(key).mode];
     if (pool.length === 0) return null;
-    if (!deals.has(key)) deals.set(key, dealer(pool, [key], (phrase) => phraseInKey(phrase, key, stageTonicStep(clef, stage, key)), random));
+    if (!deals.has(key)) {
+      const place = (phrase: CorpusPhrase) => phraseInKey(phrase, key, stageTonicStep(clef, stage, key));
+      deals.set(key, dealer(pool, [key], place, random, stage.introduces));
+    }
     return deals.get(key)!();
   };
   const generated = (key: string) =>

@@ -34,7 +34,7 @@ import { spanLevel } from "./curriculum/spans";
 import { loadCorpus } from "./music/corpus";
 import { levelById } from "./music/levels";
 import { midiNoteName, midiOf } from "./music/pitch";
-import type { Clef, Level, NoteSource } from "./music/types";
+import type { Clef, Exercise, Level, NoteSource } from "./music/types";
 import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
 import type { Mark } from "./practice/waitSession";
@@ -234,6 +234,8 @@ async function main(): Promise<void> {
     finished: boolean;
   } | null = null;
   let keyboardSpan = levelMidiRange(levelById(DEFAULT_SETTINGS.range));
+  /** Each stage's phrases by "clef stage", kept for the page so its tiers deal from one deck. */
+  const stageSources = new Map<string, () => Exercise>();
 
   function levelMidiRange(level: Level): { lowest: number; highest: number } {
     return { lowest: midiOf(level.lowest), highest: midiOf(level.highest) };
@@ -709,7 +711,9 @@ async function main(): Promise<void> {
       bars: stage.bars,
     };
     keyboardSpan = stageMidiRange(corpus, clef, stage);
-    practice.exerciseSource = stageSource(corpus, clef, stage);
+    const sourceKey = `${clef} ${stageId}`;
+    if (!stageSources.has(sourceKey)) stageSources.set(sourceKey, stageSource(corpus, clef, stage));
+    practice.exerciseSource = stageSources.get(sourceKey)!;
     showView({ name: "practice" });
     practice.updateSettings(settings, "mode");
   }

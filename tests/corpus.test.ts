@@ -10,13 +10,13 @@ import { seeded } from "./helpers";
 
 type Row = Parameters<typeof parseBank>[0]["phrases"][number];
 
-function bank(rows: Row[]) {
+function bank(rows: Row[], sources = ["Bach (chorales and more): bwv1", "Essen folk songs: Ich fahr dahin"]) {
   return parseBank({
     v: 1,
     windows: ["five", "sixth", "authentic", "plagal", "dominant-octave", "tonic-twelfth", "dominant-twelfth", "two-octaves"],
     times: ["4/4", "3/4", "2/2"],
     rhythms: ["basic", "eighths", "busy"],
-    sources: ["Bach (chorales and more): bwv1", "Essen folk songs: Ich fahr dahin"],
+    sources,
     phrases: rows,
   });
 }
@@ -138,6 +138,44 @@ describe("stageSource", () => {
     expect(new Set(ids).size).toBe(MIN_STAGE_POOL);
     const exercise = next();
     expect(exercise.bars[0][0]).toMatchObject(spanLevel("treble", "C", "five").lowest);
+  });
+
+  it("deals phrases using the stage's new notation at least half the time", () => {
+    const dotted = "0q 1q 2h.|4h 0h|2q 1q 2q 3q|4h 0h";
+    const corpus = [
+      ...copies(FIVE, MIN_STAGE_POOL, (r, i) => ((r[0] = `plain${i}`), r)),
+      ...copies(FIVE, 10, (r, i) => ((r[0] = `dotted${i}`), (r[10] = dotted), r)),
+    ];
+    const next = stageSource(corpus, "treble", placedStage("five-g")!.stage, seeded(3));
+    const ids = Array.from({ length: 400 }, () => next().source!.id);
+    const share = ids.filter((id) => id.startsWith("dotted")).length / ids.length;
+    expect(share).toBeGreaterThan(0.4);
+    expect(share).toBeLessThan(0.6);
+    // Each deck still deals all of its phrases before any repeats.
+    const plain = ids.filter((id) => id.startsWith("plain"));
+    expect(new Set(plain.slice(0, MIN_STAGE_POOL)).size).toBe(MIN_STAGE_POOL);
+  });
+
+  it("follows a phrase with one from another collection, else another work, while one is left", () => {
+    const corpus = bank(
+      Array.from({ length: MIN_STAGE_POOL }, (_, i): Row => {
+        const row = [...FIVE] as Row;
+        row[0] = `p${i}`;
+        row[1] = i < 20 ? 0 : 1 + (i % 3); // 20 Bach phrases; 30 Essen across three songs
+        return row;
+      }),
+      ["Bach (chorales and more): bwv1", "Essen folk songs: A", "Essen folk songs: B", "Essen folk songs: C"],
+    );
+    const next = stageSource(corpus, "treble", fiveStage, seeded(4));
+    const byId = new Map(corpus.map((p) => [p.id, p]));
+    const dealt = Array.from({ length: MIN_STAGE_POOL }, () => byId.get(next().source!.id)!);
+    expect(new Set(dealt.map((p) => p.id)).size).toBe(MIN_STAGE_POOL);
+    for (let i = 1; i < dealt.length; i++) expect(dealt[i].work).not.toBe(dealt[i - 1].work);
+    // Two in a row from one collection only once the other has run out.
+    const collections = dealt.map((p) => p.work.split(":")[0]);
+    for (let i = 1; i < collections.length; i++) {
+      if (collections[i] === collections[i - 1]) expect(collections.slice(i).every((c) => c === collections[i])).toBe(true);
+    }
   });
 
   it("deals minor phrases in minor keys and major ones in major keys", () => {

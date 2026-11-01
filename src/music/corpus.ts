@@ -21,6 +21,8 @@ export interface CorpusPhrase {
   id: string;
   /** "Essen folk songs: Ich fahr dahin", with the part when the score has several. */
   source: string;
+  /** The work it comes from, without the part: "Essen folk songs: Ich fahr dahin". */
+  work: string;
   clef: Clef;
   time: TimeSignature;
   pickup: number;
@@ -84,6 +86,7 @@ export function parseBank(file: BankFile): CorpusPhrase[] {
     return {
       id,
       source: /^part \d+$/.test(voice) ? name : `${name} (${voice})`,
+      work: name,
       clef: clef === 0 ? "treble" : "bass",
       time: timeSignature,
       pickup,
