@@ -13,6 +13,7 @@ import {
   type Tier,
 } from "./curriculum/curriculum";
 import { customSource, stageMidiRange, stageSource } from "./curriculum/corpusSource";
+import { currentUser, signOut } from "./account";
 import { openEventLog } from "./curriculum/eventLog";
 import {
   countsForProgress,
@@ -36,6 +37,7 @@ import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/p
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
+import { bindAccountDialog } from "./ui/accountDialog";
 import { bindMidiDebug, type MidiDebug } from "./ui/midiDebug";
 import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindRetryKey } from "./ui/retryKey";
@@ -173,6 +175,14 @@ async function main(): Promise<void> {
   element("dev-notice").hidden = !import.meta.env.DEV;
   const banner = new PhraseResultBanner(element("phrase-result"));
   const store = new ProgressStore(openEventLog());
+  const accountDialog = bindAccountDialog(element<HTMLDialogElement>("account-dialog"));
+  let account: string | null = null;
+  void currentUser()
+    .then((user) => {
+      account = user ? (user.email ?? "signed in") : null;
+      if (viewsReady && view.name === "home") renderView();
+    })
+    .catch((error) => console.warn("Could not read the signed-in account", error));
   const session = newId();
 
   type View = { name: "home" } | { name: "track"; clef: Clef; selected: string } | { name: "practice" };
@@ -552,9 +562,15 @@ async function main(): Promise<void> {
     app.dataset.view = view.name;
 
     if (view.name === "home") {
-      renderHome(menu, { progress: store.progress, status: store.status, storage: store.storage }, {
+      renderHome(menu, { progress: store.progress, status: store.status, storage: store.storage, account }, {
         openTrack: (clef) => showView({ name: "track", clef, selected: store.progress[clef].currentStageId }),
         openCustom,
+        signIn: () => accountDialog.open(),
+        signOut: () => {
+          signOut()
+            .then(() => location.reload())
+            .catch((error) => console.warn("Could not sign out", error));
+        },
       });
     } else if (view.name === "track") {
       const { clef } = view;

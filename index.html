@@ -245,6 +245,27 @@
       </div>
     </dialog>
 
+    <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
+      <form class="account-form" data-account-form>
+        <h2 id="account-title" class="account-title">Sign in</h2>
+        <p class="menu-muted">Your progress then follows you to every device you sign in on.</p>
+        <label class="account-field">
+          Email
+          <input type="email" name="email" autocomplete="email" required />
+        </label>
+        <label class="account-field">
+          Password
+          <input type="password" name="password" autocomplete="current-password" minlength="6" required />
+        </label>
+        <p class="account-message" data-account-message role="status"></p>
+        <div class="account-actions">
+          <button type="button" class="btn-secondary" data-account-cancel>Cancel</button>
+          <button type="submit" class="btn-secondary" value="sign-up">Create account</button>
+          <button type="submit" class="btn-primary" value="sign-in">Sign in</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

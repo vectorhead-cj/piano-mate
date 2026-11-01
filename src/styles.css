@@ -1052,6 +1052,79 @@ dialog.midi-debug::backdrop {
   font-size: 0.88rem;
 }
 
+/* A button that reads as a link inside running text. */
+.btn-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+dialog.account-dialog {
+  width: min(400px, calc(100vw - 32px));
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--surface-top);
+  box-shadow: var(--shadow-soft);
+}
+
+dialog.account-dialog::backdrop {
+  background: color-mix(in srgb, #0e141b 45%, transparent);
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.account-field input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 450;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.account-message {
+  margin: 0;
+  min-height: 1.2em;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .meter {
   display: block;
   height: 6px;

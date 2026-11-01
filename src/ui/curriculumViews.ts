@@ -59,11 +59,15 @@ export interface HomeModel {
   progress: Progress;
   status: StoreStatus;
   storage: "account" | "browser" | "none" | null;
+  /** The signed-in player's email, or null when signed out. */
+  account: string | null;
 }
 
 export interface HomeActions {
   openTrack(clef: Clef): void;
   openCustom(): void;
+  signIn(): void;
+  signOut(): void;
 }
 
 export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeActions): void {
@@ -112,12 +116,22 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
         : model.storage === "none"
           ? "Progress isn't stored on the dev server. Only phrases played on a MIDI keyboard would count."
           : model.storage === "account"
-          ? "Progress is saved to your Claude account. Only phrases played on a MIDI keyboard count."
+          ? `Progress is saved to your account (${model.account}). Only phrases played on a MIDI keyboard count.`
           : "Progress is saved in this browser. Only phrases played on a MIDI keyboard count.";
+
+  const accountButton = h(
+    "button",
+    { class: "btn-link", type: "button" },
+    model.account ? "Sign out" : model.storage === "browser" ? "Sign in to keep it on all your devices" : "Sign in",
+  );
+  accountButton.addEventListener("click", model.account ? actions.signOut : actions.signIn);
+  // The dev server only uses the account with ?account in the URL.
+  const devAccount =
+    model.storage === "none" && model.account ? ` Signed in as ${model.account}; add ?account to the URL to use it.` : "";
 
   root.replaceChildren(
     h("div", { class: "menu-grid" }, ...tracks, custom),
-    h("p", { class: "menu-note", role: "status" }, note),
+    h("p", { class: "menu-note", role: "status" }, note + devAccount, " ", model.status === "loading" ? null : accountButton),
   );
 }
 

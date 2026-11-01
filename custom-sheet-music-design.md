@@ -88,12 +88,14 @@ Import feedback:
 - More than two staves: ask which two to use.
 - Things we skip, such as unresolvable jumps: list them once after import.
 
-**Storage:** follows the practice-event log (`src/curriculum/eventLog.ts`): saved to the artifact when running as one, falling back to the browser otherwise. The piece library and its history follow the user across devices.
+**Storage:** follows the practice-event log (`src/curriculum/eventLog.ts`): saved to the player's Supabase account when signed in, falling back to the browser otherwise. The piece library and its history follow the user across devices.
 
-- MusicXML files can be several MB, more than the artifact database is meant for. Likely the file goes in the artifact's file storage, with only the piece record and history in the database. Check the actual limits first.
-- **Compression:** gzip plain `.musicxml`/`.xml` with the browser's built-in `CompressionStream`, with base64 if the storage only takes text. Store `.mxl` exactly as uploaded, since it's already zipped.
+- **Files:** in a private Supabase Storage bucket, at `<user id>/<hash>.mxl` (or `.musicxml.gz`), with storage policies that let each user reach only their own folder, like the row-level security on `practice_events`. The free plan allows 50 MB per file, far more than any score. Storage takes raw bytes, so no base64.
+- **Piece records:** a `pieces` table keyed by user and hash, holding the title, the file path and when it was added. A migration in `supabase/migrations/`, with row-level security and explicit grants like `practice_events`.
+- **Compression:** gzip plain `.musicxml`/`.xml` with the browser's built-in `CompressionStream`. Store `.mxl` exactly as uploaded, since it's already zipped.
 - **Identity:** a piece is identified by a hash of its decompressed MusicXML, so re-uploading or re-exporting it reconnects to its history.
-- **History:** one event per pass: piece, bar range, hand, mode, tempo, and the notes missed. The same shape as the curriculum events, and enough for trouble spots later without a migration.
+- **History:** one event per pass in the same `practice_events` table: piece, bar range, hand, mode, tempo, and the notes missed. A new event `type` alongside the curriculum ones. Each event is a row with its `type` and time copied into columns, so a piece's passes can be queried for trouble spots later without a migration.
+- **Signed out:** files would have to stay in the browser (IndexedDB, since localStorage is too small) and move to the account on sign-in, as practice events do. Or import could simply require signing in, which is simpler. To be decided.
 
 ## Open questions
 

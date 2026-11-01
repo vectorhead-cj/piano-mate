@@ -1,137 +1,101 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { currentUser, supabase } from "../account";
 import type { PracticeEvent } from "./events";
 
 /** Append-only storage for practice events. */
 export interface EventLog {
-  /** Where events end up: the Claude artifact's database, this browser, or nowhere (dev server). */
+  /** Where events end up: the player's account, this browser, or nowhere (dev server). */
   readonly storage: "account" | "browser" | "none";
   load(): Promise<PracticeEvent[]>;
   append(event: PracticeEvent): Promise<void>;
 }
 
-// The slice of the artifact runtime's db and user capabilities this file uses.
-interface DbDoc {
-  set(data: Record<string, unknown>): Promise<void>;
-}
-interface DbSnapshot {
-  data(): Record<string, unknown> | undefined;
-}
-interface DbQuery {
-  where(field: string, op: string, value: unknown): DbQuery;
-  orderBy(field: string, dir?: "asc" | "desc"): DbQuery;
-  limit(n: number): DbQuery;
-  get(): Promise<{ docs: DbSnapshot[] }>;
-}
-interface DbCollection extends DbQuery {
-  doc(id?: string): DbDoc;
-}
-interface Db {
-  collection(path: string): DbCollection;
-}
-interface ArtifactRuntime {
-  use(name: "db"): Promise<Db | null>;
-  use(name: "user"): Promise<{ id(): Promise<string | null> } | null>;
-}
+const TABLE = "practice_events";
+/** The Data API returns at most this many rows per request (max_rows in supabase/config.toml). */
+const PAGE_SIZE = 1000;
+const UPLOAD_BATCH = 500;
 
-const CHUNK_KIND = "practice-events";
-/** Documents hold at most 256 KiB; start a new chunk well before that. */
-const CHUNK_MAX_CHARS = 150_000;
-const PAGE_SIZE = 500;
-
-interface Chunk {
-  id: string;
-  startedAt: number;
-  events: PracticeEvent[];
+function row(userId: string, event: PracticeEvent) {
+  return { user_id: userId, id: event.id, type: event.type, at: new Date(event.at).toISOString(), event };
 }
 
 /**
- * Events in the artifact's database, under the viewer's private `data/users/<id>` collection.
- * The database allows 25,000 documents per artifact, so events are packed into chunk
- * documents. Each page load writes only chunks it created, so two open tabs never overwrite
- * each other's events.
+ * Events in the player's Supabase account, one row per event (see supabase/migrations). Inserts
+ * skip ids already stored, so a retried write never adds an event twice.
  */
-export class DbEventLog implements EventLog {
+export class AccountEventLog implements EventLog {
   readonly storage = "account";
-  private readonly collection: DbCollection;
-  private current: Chunk | null = null;
-  private readonly dirty = new Set<Chunk>();
-  private flushing: Promise<void> | null = null;
 
-  constructor(db: Db, userId: string) {
-    this.collection = db.collection(`data/users/${userId}`);
-  }
+  constructor(
+    private readonly client: SupabaseClient,
+    private readonly userId: string,
+  ) {}
 
   async load(): Promise<PracticeEvent[]> {
+    await this.adoptBrowserEvents();
     const events: PracticeEvent[] = [];
-    let after = -1;
-    for (;;) {
-      const page = await this.collection
-        .where("kind", "==", CHUNK_KIND)
-        .where("startedAt", ">", after)
-        .orderBy("startedAt")
-        .limit(PAGE_SIZE)
-        .get();
-      for (const doc of page.docs) {
-        const data = doc.data();
-        if (Array.isArray(data?.events)) events.push(...(data.events as PracticeEvent[]));
-        if (typeof data?.startedAt === "number") after = data.startedAt;
-      }
-      if (page.docs.length < PAGE_SIZE) break;
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await this.client
+        .from(TABLE)
+        .select("event")
+        .order("at")
+        .order("id")
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      for (const { event } of data) events.push(event as PracticeEvent);
+      if (data.length < PAGE_SIZE) break;
     }
-    return events.sort((a, b) => a.at - b.at);
+    return events;
   }
 
-  append(event: PracticeEvent): Promise<void> {
-    if (!this.current || JSON.stringify(this.current.events).length > CHUNK_MAX_CHARS) {
-      const startedAt = Date.now();
-      this.current = { id: `events-${startedAt}-${Math.random().toString(36).slice(2, 8)}`, startedAt, events: [] };
+  async append(event: PracticeEvent): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.insert([event]);
+        return;
+      } catch (error) {
+        if (attempt >= 3) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 2000));
+      }
     }
-    this.current.events.push(event);
-    this.dirty.add(this.current);
-    return this.flush();
   }
 
-  /** Writes changed chunks one at a time; appends during a write are picked up by the next pass. */
-  private flush(): Promise<void> {
-    if (this.flushing) return this.flushing;
-    this.flushing = (async () => {
-      let failures = 0;
-      while (this.dirty.size > 0) {
-        const [chunk] = this.dirty;
-        this.dirty.delete(chunk);
-        try {
-          await this.collection.doc(chunk.id).set({
-            kind: CHUNK_KIND,
-            startedAt: chunk.startedAt,
-            events: [...chunk.events],
-          });
-          failures = 0;
-        } catch (error) {
-          this.dirty.add(chunk);
-          if (++failures >= 3) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 2000));
-        }
-      }
-    })().finally(() => {
-      this.flushing = null;
-    });
-    return this.flushing;
+  /** Practice from before signing in in this browser moves into the account. */
+  private async adoptBrowserEvents(): Promise<void> {
+    const events = readBrowserEvents();
+    for (let i = 0; i < events.length; i += UPLOAD_BATCH) await this.insert(events.slice(i, i + UPLOAD_BATCH));
+    if (events.length > 0) localStorage.removeItem(STORAGE_KEY);
+  }
+
+  private async insert(events: PracticeEvent[]): Promise<void> {
+    const { error } = await this.client
+      .from(TABLE)
+      .upsert(
+        events.map((event) => row(this.userId, event)),
+        { onConflict: "user_id,id", ignoreDuplicates: true },
+      );
+    if (error) throw error;
   }
 }
 
 const STORAGE_KEY = "piano-mate.events.v1";
 
-/** Events in localStorage, for running outside the Claude artifact viewer. */
+function readBrowserEvents(): PracticeEvent[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Events in localStorage, while signed out. */
 export class LocalEventLog implements EventLog {
   readonly storage = "browser";
   private events: PracticeEvent[] = [];
 
   async load(): Promise<PracticeEvent[]> {
-    try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-      this.events = Array.isArray(stored) ? stored : [];
-    } catch {
-      this.events = [];
-    }
+    this.events = readBrowserEvents();
     return [...this.events];
   }
 
@@ -153,20 +117,17 @@ export class MemoryEventLog implements EventLog {
 }
 
 /**
- * Nothing is stored on the dev server. Otherwise the artifact database when this page runs in
- * the Claude viewer and the viewer is signed in, else this browser.
+ * The signed-in player's account, else this browser. Nothing is stored on the dev server
+ * unless the URL has ?account, which uses the account there too.
  */
 export async function openEventLog(): Promise<EventLog> {
-  if (import.meta.env.DEV) return new MemoryEventLog();
-  const runtime = (window as unknown as { claude?: ArtifactRuntime }).claude;
-  if (runtime?.use) {
-    try {
-      const [db, user] = await Promise.all([runtime.use("db"), runtime.use("user")]);
-      const userId = await user?.id();
-      if (db && userId) return new DbEventLog(db, userId);
-    } catch (error) {
-      console.warn("Artifact storage unavailable; keeping progress in this browser.", error);
-    }
+  const dev = import.meta.env.DEV;
+  if (dev && !new URLSearchParams(location.search).has("account")) return new MemoryEventLog();
+  try {
+    const user = await currentUser();
+    if (user) return new AccountEventLog(await supabase(), user.id);
+  } catch (error) {
+    console.warn("Account unavailable; keeping progress in this browser.", error);
   }
-  return new LocalEventLog();
+  return dev ? new MemoryEventLog() : new LocalEventLog();
 }
