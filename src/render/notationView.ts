@@ -354,8 +354,6 @@ export class NotationView {
           const last = measures[measures.length - 1].PositionAndShape;
           const left = staffLine.PositionAndShape.AbsolutePosition.x * unit;
           const right = (last.AbsolutePosition.x + last.BorderRight) * unit;
-          // The right-hand letters go after the scratch bar, when there is one.
-          const scratchRight = right + (this.highlightPlayed ? GHOST_GUTTER_UNITS * unit : 0);
           // StaffLine's y is its top line; lines are one staff space apart.
           const bottom = (first.AbsolutePosition.y + 4) * unit;
 
@@ -372,7 +370,7 @@ export class NotationView {
               label.style.fontSize = fontSize;
               label.style.width = `${column}px`;
               label.style.textAlign = "center";
-              label.style.left = `${side === "left" ? left - inset - column : scratchRight + inset}px`;
+              label.style.left = `${side === "left" ? left - inset - column : right + inset}px`;
               this.lettersLayer.append(label);
             }
           });
@@ -462,7 +460,8 @@ export class NotationView {
           if (right <= left) continue;
           const bottom = (first.AbsolutePosition.y + 4) * unit;
           const y = (position: number) => bottom - (position * unit) / 2;
-          const scratchLeft = right + SCRATCH_GAP_UNITS * unit;
+          // After the right-hand letters, when they're shown.
+          const scratchLeft = right + ((this.staffLetters ? LETTER_GUTTER_UNITS : 0) + SCRATCH_GAP_UNITS) * unit;
           const scratchRight = scratchLeft + SCRATCH_BAR_UNITS * unit;
           const ghostX = scratchLeft + GHOST_X_UNITS * unit;
           const lowest = -2 * MAX_LEDGERS;
