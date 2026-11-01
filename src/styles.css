@@ -990,12 +990,6 @@ dialog.midi-debug::backdrop {
   letter-spacing: -0.02em;
 }
 
-.menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 12px;
-}
-
 .menu-card,
 .chapter,
 .practice-bar,
@@ -1019,12 +1013,6 @@ dialog.midi-debug::backdrop {
   font-size: 1.15rem;
   font-weight: 650;
   letter-spacing: -0.01em;
-}
-
-.menu-card-sub {
-  margin: 0;
-  color: var(--ink);
-  font-size: 0.92rem;
 }
 
 .menu-card-foot {
@@ -1052,16 +1040,192 @@ dialog.midi-debug::backdrop {
   font-size: 0.88rem;
 }
 
-/* A button that reads as a link inside running text. */
-.btn-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
+/* Home: a short intro, the two tracks side by side, custom practice as a slimmer row, then
+   where progress is saved. Narrower than the app so the cards don't stretch thin. */
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: clamp(8px, 4vh, 40px) 0 24px;
+  box-sizing: border-box;
+}
+
+.home-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+
+.home-title {
+  margin: 0;
+  font-family: Fraunces, "Times New Roman", serif;
+  font-optical-sizing: auto;
+  font-size: clamp(1.6rem, 3.4vw, 2.2rem);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.home-lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.home-tracks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.home .menu-card {
+  padding: 22px 24px;
+}
+
+.home-track {
+  gap: 16px;
+}
+
+.home-track .menu-card-title {
+  font-size: 1.4rem;
+}
+
+.home-track-next {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.home-eyebrow {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.home-custom {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.home-custom-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.home-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.home-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
+.home-status-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.home-status-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.home-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.home-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home-status .home-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--control-bg);
+}
+
+.home-status-good .home-icon {
+  color: var(--correct);
+  background: color-mix(in srgb, var(--correct) 14%, transparent);
+}
+
+.home-status-warn .home-icon {
+  color: var(--late);
+  background: color-mix(in srgb, var(--late) 14%, transparent);
+}
+
+.home-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.home-hint .home-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 520px) {
+  .home {
+    gap: 16px;
+    padding-top: 4px;
+  }
+
+  .home .menu-card {
+    padding: 18px;
+  }
+
+  .home-status {
+    flex-wrap: wrap;
+  }
+
+  /* Text takes the row beside the icon; the button drops below it. */
+  .home-status-text {
+    flex-basis: calc(100% - 52px);
+  }
+
+  .home-status .btn-secondary {
+    margin-left: 52px;
+  }
 }
 
 dialog.account-dialog {

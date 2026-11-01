@@ -42,6 +42,20 @@
       ],
       "port": 5180,
       "url": "http://localhost:5180"
+    },
+    {
+      "name": "preview-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "port": 5175,
+      "url": "http://localhost:5175"
     }
   ]
 }

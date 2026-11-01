@@ -33,18 +33,6 @@ export async function signIn(email: string, password: string): Promise<void> {
   if (error) throw error;
 }
 
-/** "confirm-email" when the account exists but its address must be confirmed through the emailed link first. */
-export async function signUp(email: string, password: string): Promise<"signed-in" | "confirm-email"> {
-  const { data, error } = await (await supabase()).auth.signUp({
-    email,
-    password,
-    // The link in the confirmation email comes back to this page, which picks up the session.
-    options: { emailRedirectTo: location.origin + location.pathname },
-  });
-  if (error) throw error;
-  return data.session ? "signed-in" : "confirm-email";
-}
-
 export async function signOut(): Promise<void> {
   const { error } = await (await supabase()).auth.signOut();
   if (error) throw error;

@@ -70,6 +70,58 @@ export interface HomeActions {
   signOut(): void;
 }
 
+/** A stroked 24×24 icon; `body` is fixed SVG markup from this file. */
+function icon(body: string): HTMLElement {
+  const wrap = h("span", { class: "home-icon", "aria-hidden": "true" });
+  wrap.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20">${body}</svg>`;
+  return wrap;
+}
+
+const ICONS = {
+  cloud: '<path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.2 4.5 4.5 0 0 0 7 18z" />',
+  device: '<rect x="4" y="5" width="16" height="11" rx="2" /><path d="M9 20h6M12 16v4" />',
+  flask: '<path d="M9 4h6M10 4v6l-5 8.5A1.5 1.5 0 0 0 6.3 21h11.4a1.5 1.5 0 0 0 1.3-2.5L14 10V4" />',
+  alert: '<path d="M12 4 2.8 19.5h18.4z" /><path d="M12 10v4.5M12 17.2v.1" />',
+  keys: '<rect x="3" y="6" width="18" height="12" rx="1.5" /><path d="M8 6v7M12 6v7M16 6v7" />',
+};
+
+/** What the save panel says: where progress lives, and the sign-in action that goes with it. */
+function storageStatus(model: HomeModel): { icon: string; tone: string; title: string; detail: string; action?: "signIn" | "signOut" } {
+  if (model.status === "loading") return { icon: ICONS.cloud, tone: "quiet", title: "Loading your progress…", detail: "" };
+  if (model.status === "save-failed") {
+    return {
+      icon: ICONS.alert,
+      tone: "warn",
+      title: "Some practice couldn't be saved",
+      detail: "It's kept until you close this page.",
+    };
+  }
+  const signAction = model.account ? "signOut" : "signIn";
+  if (model.storage === "account") {
+    return { icon: ICONS.cloud, tone: "good", title: "Saved to your account", detail: model.account ?? "", action: "signOut" };
+  }
+  if (model.storage === "none") {
+    return {
+      icon: ICONS.flask,
+      tone: "warn",
+      title: "Not saved on the dev server",
+      // The dev server only uses the account with ?account in the URL.
+      detail: model.account
+        ? `Signed in as ${model.account}. Add ?account to the URL to save to it.`
+        : "Add ?account to the URL and sign in to save to your account.",
+      action: signAction,
+    };
+  }
+  return {
+    icon: ICONS.device,
+    tone: "quiet",
+    title: "Saved in this browser",
+    // Sign-ups are off (supabase/config.toml), so only existing accounts can sign in.
+    detail: "Piano Mate is in alpha, so new accounts aren't available yet. Already have one? Sign in to keep your progress on all your devices.",
+    action: "signIn",
+  };
+}
+
 export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeActions): void {
   const total = PLACED_STAGES.length;
   const tracks = CLEF_TRACKS.map((clef) => {
@@ -84,9 +136,9 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
     button.addEventListener("click", () => actions.openTrack(clef));
     return h(
       "article",
-      { class: "menu-card" },
+      { class: "menu-card home-track" },
       h("h2", { class: "menu-card-title" }, `${TRACK_LABELS[clef]} track`),
-      h("p", { class: "menu-card-sub" }, subtitle),
+      h("p", { class: "home-track-next" }, h("span", { class: "home-eyebrow" }, track.passed === 0 ? "First up" : "Up next"), subtitle),
       meter(track.passed, total, `${track.passed} of ${total} stages passed`),
       h(
         "div",
@@ -101,37 +153,54 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
   customButton.addEventListener("click", actions.openCustom);
   const custom = h(
     "article",
-    { class: "menu-card" },
-    h("h2", { class: "menu-card-title" }, "Custom"),
-    h("p", { class: "menu-card-sub" }, "Free practice with any settings"),
-    h("p", { class: "menu-muted" }, "Logged, not scored"),
-    h("div", { class: "menu-card-foot menu-card-foot-end" }, customButton),
+    { class: "menu-card home-custom" },
+    h(
+      "div",
+      { class: "home-custom-text" },
+      h("h2", { class: "menu-card-title" }, "Custom practice"),
+      h("p", { class: "menu-muted" }, "Any key, range and rhythm. Logged, not scored."),
+    ),
+    customButton,
   );
 
-  const note =
-    model.status === "loading"
-      ? "Loading your progress…"
-      : model.status === "save-failed"
-        ? "Some practice couldn't be saved. It's kept until you close this page."
-        : model.storage === "none"
-          ? "Progress isn't stored on the dev server. Only phrases played on a MIDI keyboard would count."
-          : model.storage === "account"
-          ? `Progress is saved to your account (${model.account}). Only phrases played on a MIDI keyboard count.`
-          : "Progress is saved in this browser. Only phrases played on a MIDI keyboard count.";
-
-  const accountButton = h(
-    "button",
-    { class: "btn-link", type: "button" },
-    model.account ? "Sign out" : model.storage === "browser" ? "Sign in to keep it on all your devices" : "Sign in",
+  const status = storageStatus(model);
+  let accountButton: HTMLButtonElement | null = null;
+  if (status.action) {
+    accountButton = h("button", { class: "btn-secondary", type: "button" }, status.action === "signOut" ? "Sign out" : "Sign in");
+    accountButton.addEventListener("click", status.action === "signOut" ? actions.signOut : actions.signIn);
+  }
+  const statusPanel = h(
+    "section",
+    { class: `home-status home-status-${status.tone}`, role: "status", "aria-label": "Progress storage" },
+    icon(status.icon),
+    h(
+      "div",
+      { class: "home-status-text" },
+      h("p", { class: "home-status-title" }, status.title),
+      status.detail && h("p", { class: "menu-muted" }, status.detail),
+    ),
+    accountButton,
   );
-  accountButton.addEventListener("click", model.account ? actions.signOut : actions.signIn);
-  // The dev server only uses the account with ?account in the URL.
-  const devAccount =
-    model.storage === "none" && model.account ? ` Signed in as ${model.account}; add ?account to the URL to use it.` : "";
 
   root.replaceChildren(
-    h("div", { class: "menu-grid" }, ...tracks, custom),
-    h("p", { class: "menu-note", role: "status" }, note + devAccount, " ", model.status === "loading" ? null : accountButton),
+    h(
+      "div",
+      { class: "home" },
+      h(
+        "header",
+        { class: "home-intro" },
+        h("h1", { class: "home-title" }, "Read it, then play it"),
+        h("p", { class: "home-lede" }, "Short phrases of real notation, one stage at a time."),
+      ),
+      h("div", { class: "home-tracks" }, ...tracks),
+      custom,
+      h(
+        "footer",
+        { class: "home-foot" },
+        statusPanel,
+        h("p", { class: "home-hint" }, icon(ICONS.keys), "Only phrases played on a MIDI keyboard count toward progress."),
+      ),
+    ),
   );
 }
 
