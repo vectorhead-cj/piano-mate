@@ -258,7 +258,8 @@ async function main(): Promise<void> {
     notationPanel.dataset.hot = String(hot);
     const midi = midiDevices !== null && midiDevices.length > 0;
     const key = midiNoteName(late.practice?.retryPitch ?? RETRY_PITCH);
-    notationView.setFreePlay(!hot);
+    // Cold also covers a star being cheered and the cards after it; only real free play shows played notes.
+    notationView.setFreePlay(!hot && !celebrating && !milestone && !intro?.finished);
     hotState.textContent = hot ? "● Live" : `Free play · ${midi ? `${key} or Space` : "Space"} to start`;
   }
 
