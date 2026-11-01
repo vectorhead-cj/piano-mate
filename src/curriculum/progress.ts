@@ -1,11 +1,12 @@
 import type { Clef } from "../music/types";
 import {
   CLEF_TRACKS,
-  COMPLETE_STREAK,
   hasIntro,
+  MASTERY_ROUNDS,
   MISS_WINDOW,
   PLACED_STAGES,
   placedStage,
+  STAR_HITS,
   STAR_STREAK,
   TIERS,
   type Tier,
@@ -19,6 +20,11 @@ export interface Streak {
   sinceMiss: number | null;
 }
 
+/** Clean phrases out of the last MISS_WINDOW: the plain count the player sees. */
+export function recentHits(recent: readonly boolean[]): number {
+  return recent.filter(Boolean).length;
+}
+
 /** One more phrase on a streak. A second miss inside a window restarts it just after the first. */
 export function extendStreak({ streak, sinceMiss }: Streak, perfect: boolean): Streak {
   if (perfect) return { streak: streak + 1, sinceMiss: sinceMiss === null ? null : sinceMiss + 1 };
@@ -27,6 +33,12 @@ export function extendStreak({ streak, sinceMiss }: Streak, perfect: boolean): S
 }
 
 export interface TierProgress extends Streak {
+  /** Whether each of the last MISS_WINDOW phrases was clean, oldest first. */
+  recent: boolean[];
+  /** Fluent only, once its star is earned: mastery rounds passed in a row, up to MASTERY_ROUNDS. */
+  rounds: number;
+  /** The mastery round under way: whether each phrase so far was clean. */
+  round: boolean[];
   best: number;
   attempts: number;
   perfects: number;
@@ -36,7 +48,8 @@ export interface StageProgress {
   tiers: Record<Tier, TierProgress>;
   /** 0–3: ★ Read, ★★ Play, ★★★ Fluent, each earned in order. */
   stars: number;
-  complete: boolean;
+  /** ★★★ and MASTERY_ROUNDS clean rounds at Fluent. */
+  mastered: boolean;
   /**
    * The stage has new notation, and its intro (a row of its own before the stage) can be
    * watched: the previous stage has ★★, or this is the first stage.
@@ -57,7 +70,7 @@ export interface TrackProgress {
   stages: Record<string, StageProgress>;
   /** Stages with ★★ (the ones that opened their successor). */
   passed: number;
-  completed: number;
+  mastered: number;
   /**
    * The furthest unlocked stage without ★★ (or the stage whose intro is next), or the last
    * stage once all are passed.
@@ -68,7 +81,7 @@ export interface TrackProgress {
 export type Progress = Record<Clef, TrackProgress>;
 
 function emptyTier(): TierProgress {
-  return { streak: 0, sinceMiss: null, best: 0, attempts: 0, perfects: 0 };
+  return { streak: 0, sinceMiss: null, recent: [], rounds: 0, round: [], best: 0, attempts: 0, perfects: 0 };
 }
 
 /**
@@ -104,7 +117,16 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
     tier.attempts++;
     const perfect = isPerfect(event);
     if (perfect) tier.perfects++;
+    // Mastery counts from the phrase after ★★★, and stops once it's reached.
+    if (event.context.tier === "fluent" && tier.best >= STAR_STREAK && tier.rounds < MASTERY_ROUNDS) {
+      tier.round = [...tier.round, perfect];
+      if (tier.round.length === MISS_WINDOW) {
+        tier.rounds = recentHits(tier.round) >= STAR_HITS ? tier.rounds + 1 : 0;
+        tier.round = [];
+      }
+    }
     Object.assign(tier, extendStreak(tier, perfect));
+    tier.recent = [...tier.recent, perfect].slice(-MISS_WINDOW);
     tier.best = Math.max(tier.best, tier.streak);
   }
 
@@ -123,7 +145,7 @@ function trackProgress(
   const stages: Record<string, StageProgress> = {};
   let previousPassed: boolean = true;
   let passed = 0;
-  let completed = 0;
+  let mastered = 0;
   let currentStageId = PLACED_STAGES[PLACED_STAGES.length - 1].stage.id;
   let currentFound = false;
 
@@ -141,12 +163,12 @@ function trackProgress(
       if (tiers[tier].best < STAR_STREAK) break;
       stars++;
     }
-    const complete = stars >= 2 && Math.max(tiers.play.best, tiers.fluent.best) >= COMPLETE_STREAK;
+    const isMastered = stars === 3 && tiers.fluent.rounds >= MASTERY_ROUNDS;
     const tierOpen = { read: unlocked, play: unlocked && stars >= 1, fluent: unlocked && stars >= 2 };
-    stages[stage.id] = { tiers, stars, complete, introOpen, introDone, unlocked, tierOpen };
+    stages[stage.id] = { tiers, stars, mastered: isMastered, introOpen, introDone, unlocked, tierOpen };
 
     if (stars >= 2) passed++;
-    if (complete) completed++;
+    if (isMastered) mastered++;
     // Stages skipped by starting further on aren't where the track continues.
     if ((unlocked || introOpen) && stars < 2 && order >= startOrder && !currentFound) {
       currentStageId = stage.id;
@@ -155,7 +177,7 @@ function trackProgress(
     previousPassed = unlocked && stars >= 2;
   }
 
-  return { stages, passed, completed, currentStageId };
+  return { stages, passed, mastered, currentStageId };
 }
 
 /** Debug: every stage, intro and tier open, with stars and streaks as earned. */
@@ -188,7 +210,7 @@ export function introsSeen(events: readonly PracticeEvent[]): Set<string> {
 
 /** What a newly recorded phrase changed, for the after-phrase message. */
 export interface Milestone {
-  kind: "star" | "complete";
+  kind: "star" | "mastered";
   stars: number;
   /** The stage this star opened, or whose intro it opened, if any. */
   openedStageId?: string;
@@ -210,6 +232,6 @@ export function milestoneBetween(before: Progress, after: Progress, clef: Clef, 
     }
     return { kind: "star", stars: now.stars };
   }
-  if (now.complete && !was.complete) return { kind: "complete", stars: now.stars };
+  if (now.mastered && !was.mastered) return { kind: "mastered", stars: now.stars };
   return undefined;
 }

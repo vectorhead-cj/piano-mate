@@ -19,13 +19,10 @@ describe("StreakDots", () => {
     expect(dots.marks()).toEqual(Array(STREAK_DOTS).fill("correct"));
   });
 
-  it("starts from a running streak with as many of its phrases as fit, its miss in red", () => {
+  it("starts from the phrases already played and counts their hits", () => {
     const dots = new StreakDots();
-    dots.reset({ streak: 3, sinceMiss: null });
-    expect(dots.marks().slice(0, 4)).toEqual(["correct", "correct", "correct", "pending"]);
-    dots.reset({ streak: 3, sinceMiss: 1 });
+    dots.reset([true, false, true]);
     expect(dots.marks().slice(0, 4)).toEqual(["correct", "wrong", "correct", "pending"]);
-    dots.reset({ streak: 25, sinceMiss: STREAK_DOTS + 4 });
-    expect(dots.marks()).toEqual(Array(STREAK_DOTS).fill("correct"));
+    expect(dots.hits()).toBe(2);
   });
 });

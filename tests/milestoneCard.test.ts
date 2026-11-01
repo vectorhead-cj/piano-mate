@@ -6,7 +6,7 @@ import { nextStepAfter, renderMilestone } from "../src/ui/curriculumViews";
 
 const [first, second] = PLACED_STAGES.map((p) => p.stage.id);
 
-function card(stars: number, kind: "star" | "complete" = "star") {
+function card(stars: number, kind: "star" | "mastered" = "star") {
   const root = document.createElement("div");
   const choose = vi.fn();
   renderMilestone(root, { clef: "treble", stageId: first, milestone: { kind, stars }, progress: projectProgress([]) }, choose);
@@ -28,6 +28,12 @@ describe("milestone card", () => {
     expect(keys).toEqual(["C3", "C4", "C5"]);
     buttons[2].click();
     expect(choose).toHaveBeenCalledWith("fluent");
+  });
+
+  it("asks to stay and master the stage after ★★★", () => {
+    const { root, buttons } = card(3);
+    expect(buttons[0].textContent).toContain("Master 1.1");
+    expect(root.querySelector(".mastery-mark")?.classList.contains("on")).toBe(false);
   });
 
   it("leads to the next stage's intro while it hasn't been watched", () => {

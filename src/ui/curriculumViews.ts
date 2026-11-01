@@ -1,10 +1,10 @@
 import {
+  ADVANCE_TEXT,
   CHAPTERS,
   CLEF_TRACKS,
-  COMPLETE_STREAK,
+  MASTERY_ROUNDS,
   MISS_WINDOW,
   PLACED_STAGES,
-  STAR_STREAK,
   TIER_LABELS,
   TIERS,
   TRACK_LABELS,
@@ -18,7 +18,7 @@ import {
   type Tier,
 } from "../curriculum/curriculum";
 import type { IntroStep } from "../curriculum/intros";
-import type { Milestone, Progress, StageProgress } from "../curriculum/progress";
+import { recentHits, type Milestone, type Progress, type StageProgress } from "../curriculum/progress";
 import { NOTATION_LABELS } from "../music/notation";
 import { midiNoteName } from "../music/pitch";
 import type { StoreStatus } from "../curriculum/progressStore";
@@ -43,13 +43,34 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function stars(count: number, of = 3): HTMLElement {
+/** Mastery's mark, after the third star. */
+export const MASTERY_SYMBOL = "♛";
+
+/**
+ * A stage's stars; with `mastered` given, mastery's mark follows them, lit once earned, so
+ * every row has it in the same place.
+ */
+function stars(count: number, of = 3, mastered?: boolean): HTMLElement {
+  const label = `${count} of ${of} stars${mastered ? ", mastered" : ""}`;
   return h(
     "span",
-    { class: "stars", "aria-label": `${count} of ${of} stars` },
+    { class: "stars", "aria-label": label },
     ...Array.from({ length: of }, (_, i) => h("span", { class: i < count ? "star on" : "star" }, "★")),
+    mastered === undefined ? null : h("span", { class: mastered ? "mastery-mark on" : "mastery-mark" }, MASTERY_SYMBOL),
   );
 }
+
+/** One pip per mastery round, filled as rounds are passed in a row. */
+export function masteryPips(rounds: number): HTMLElement {
+  return h(
+    "span",
+    { class: "mastery-pips", role: "img", "aria-label": `${rounds} of ${MASTERY_ROUNDS} mastery rounds` },
+    ...Array.from({ length: MASTERY_ROUNDS }, (_, i) => h("span", { class: i < rounds ? "pip on" : "pip" })),
+  );
+}
+
+/** What mastery takes, in a line. */
+export const MASTERY_TEXT = `${MASTERY_ROUNDS} rounds of ${ADVANCE_TEXT.replace(" to advance", "")} in a row at Fluent`;
 
 function meter(value: number, max: number, label: string): HTMLElement {
   const fill = h("span", { class: "meter-fill" });
@@ -216,10 +237,10 @@ export interface TrackActions {
 
 function stageStatus(progress: StageProgress): { text: string; tone: string } {
   if (!progress.unlocked) return { text: "Locked", tone: "locked" };
-  if (progress.complete) return { text: "Complete", tone: "done" };
+  if (progress.mastered) return { text: "Mastered", tone: "done" };
   if (progress.stars >= 2) return { text: "Passed", tone: "passed" };
   const tier: Tier = progress.stars === 0 ? "read" : "play";
-  return { text: `${progress.tiers[tier].streak} / ${STAR_STREAK}`, tone: "current" };
+  return { text: `${recentHits(progress.tiers[tier].recent)} / ${MISS_WINDOW}`, tone: "current" };
 }
 
 export function renderTrack(
@@ -247,7 +268,9 @@ export function renderTrack(
         },
         h("span", { class: "stage-number" }, p.number),
         h("span", { class: "stage-title" }, stageTitle(p.stage)),
-        stars(stageProgress.stars),
+        // Pips only once mastery is in play; the empty cell keeps the columns lined up.
+        stageProgress.stars === 3 ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
+        stars(stageProgress.stars, 3, stageProgress.mastered),
         h("span", { class: "stage-status" }, status.text),
       );
       row.addEventListener("click", () => actions.select(p.stage.id));
@@ -272,7 +295,7 @@ export function renderTrack(
   });
   root.replaceChildren(
     h("h1", { class: "menu-heading" }, `${TRACK_LABELS[clef]} track`),
-    h("p", { class: "menu-note" }, `${track.passed} of ${PLACED_STAGES.length} stages passed · ${track.completed} complete`),
+    h("p", { class: "menu-note" }, `${track.passed} of ${PLACED_STAGES.length} stages passed · ${track.mastered} mastered`),
     ...chapters,
   );
   root.querySelector('[aria-expanded="true"]')?.scrollIntoView({ block: "nearest" });
@@ -305,7 +328,8 @@ function introRow(stageId: string, number: string, progress: StageProgress, acti
     { class: "stage-row intro-row", type: "button", "data-tone": status.tone, disabled: !progress.introOpen },
     h("span", { class: "stage-number" }, "\u266A"),
     h("span", { class: "stage-title" }, h("span", { class: "intro-row-label" }, `Intro to ${number}`), introTitle(stageId)),
-    // Intros earn no stars; keep the status in its column.
+    // Intros earn no stars or mastery; keep the status in its column.
+    h("span", { "aria-hidden": "true" }),
     h("span", { "aria-hidden": "true" }),
     h("span", { class: "stage-status" }, status.text),
   );
@@ -341,13 +365,13 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         "span",
         { class: "menu-muted" },
         earned
-          ? `Earned · best streak ${tierProgress.best}`
-          : `Streak ${tierProgress.streak} / ${STAR_STREAK} · one miss in ${MISS_WINDOW} allowed`,
+          ? "Earned"
+          : `${recentHits(tierProgress.recent)}/${MISS_WINDOW} of the last ${MISS_WINDOW} · ${ADVANCE_TEXT}`,
       ),
       button,
     );
   });
-  const best = Math.max(progress.tiers.play.best, progress.tiers.fluent.best);
+  const { rounds } = progress.tiers.fluent;
   return h(
     "div",
     { class: "stage-detail" },
@@ -355,15 +379,18 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
     h("div", { class: "tier-grid" }, ...tiers),
     h(
       "div",
-      { class: "complete-row" },
+      { class: "mastery-row", "data-mastered": progress.mastered ? "true" : "false" },
+      h("span", { class: progress.mastered ? "mastery-mark on" : "mastery-mark" }, MASTERY_SYMBOL),
       h(
         "span",
         { class: "menu-muted" },
-        progress.complete
-          ? "Stage complete"
-          : `Complete: a streak of ${COMPLETE_STREAK} at Play or Fluent · best ${best}`,
+        progress.mastered
+          ? "Mastered"
+          : progress.stars === 3
+            ? `Master: ${MASTERY_TEXT} · ${rounds} of ${MASTERY_ROUNDS}`
+            : `Master: after ★★★, ${MASTERY_TEXT}`,
       ),
-      meter(best, COMPLETE_STREAK, `Best ${best} of ${COMPLETE_STREAK}`),
+      masteryPips(rounds),
     ),
   );
 }
@@ -419,7 +446,7 @@ export function renderPracticeBar(root: HTMLElement, model: PracticeBarModel, on
       { class: "practice-bar-title" },
       h("span", { class: "practice-bar-number" }, `${TRACK_LABELS[model.clef]} ${placed.number}`),
       h("span", { class: "practice-bar-name" }, stageTitle(placed.stage)),
-      stars(model.progress.stars),
+      stars(model.progress.stars, 3, model.progress.mastered),
     ),
     h("div", { class: "tier-tabs", role: "group", "aria-label": "Tier" }, ...tiers),
     h(
@@ -550,9 +577,9 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
   let headline: string;
   let line: string;
   let labels: Record<MilestoneChoice, string>;
-  if (milestone.kind === "complete") {
-    headline = `Stage ${number} complete.`;
-    line = `${COMPLETE_STREAK} phrases, with no more than one miss in any ${MISS_WINDOW}.`;
+  if (milestone.kind === "mastered") {
+    headline = `Stage ${number} mastered.`;
+    line = nextLine;
     labels = { stay: "Keep going", advance: goNext, fluent: "" };
   } else if (milestone.stars === 1) {
     headline = `Nice. You can read stage ${number}.`;
@@ -564,10 +591,8 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
     labels = { stay: `Stay on ${number}`, advance: goNext, fluent: "Try Fluent" };
   } else {
     headline = `Fluent at ${stage.fluentTempo} bpm. That's all three stars.`;
-    line = progress[clef].stages[stageId].complete
-      ? nextLine
-      : `A streak of ${COMPLETE_STREAK} at Play or Fluent completes the stage.`;
-    labels = { stay: "Keep going", advance: goNext, fluent: "" };
+    line = `Stay to master it: ${MASTERY_TEXT}. ${nextLine}`;
+    labels = { stay: `Master ${number}`, advance: goNext, fluent: "" };
   }
 
   const choices = milestoneChoices(milestone);
@@ -575,7 +600,7 @@ export function renderMilestone(root: HTMLElement, model: MilestoneModel, choose
     h(
       "div",
       { class: "milestone-card" },
-      stars(milestone.stars),
+      stars(milestone.stars, 3, milestone.kind === "mastered" ? true : milestone.stars === 3 ? false : undefined),
       h("p", { class: "milestone-headline" }, headline),
       h("p", { class: "milestone-line" }, line),
       h(

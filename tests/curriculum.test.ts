@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  COMPLETE_STREAK,
+  MASTERY_ROUNDS,
   MISS_WINDOW,
   PLACED_STAGES,
   placedStage,
@@ -14,7 +14,7 @@ import { generateExercise } from "../src/music/generator";
 import { keyById, MINOR_KEYS } from "../src/music/keys";
 import { exerciseToMusicXml } from "../src/music/musicXml";
 import { firstFault, type IntroCompleted, type InputKind, type PhraseCompleted } from "../src/curriculum/events";
-import { milestoneBetween, projectProgress, unlockAll } from "../src/curriculum/progress";
+import { milestoneBetween, projectProgress, recentHits, unlockAll } from "../src/curriculum/progress";
 import { spanLevel } from "../src/curriculum/spans";
 import { midiOf, staffStep } from "../src/music/pitch";
 import type { Clef } from "../src/music/types";
@@ -157,6 +157,9 @@ describe("projectProgress", () => {
     const tier = projectProgress(twoMisses).treble.stages[first].tiers.read;
     expect(tier.streak).toBe(8);
     expect(tier.best).toBe(8);
+    // The count the player sees is plain: clean phrases out of the last ten.
+    expect(recentHits(tier.recent)).toBe(8);
+    expect(tier.recent).toHaveLength(MISS_WINDOW);
     expect(projectProgress(twoMisses).treble.stages[first].stars).toBe(0);
   });
 
@@ -199,12 +202,34 @@ describe("projectProgress", () => {
     expect(tier.attempts).toBe(10);
   });
 
-  it("marks a stage complete after a long streak at Play", () => {
+  it("masters a stage with rounds of 9/10 at Fluent after ★★★, starting over on a weak round", () => {
+    const threeStars = [
+      ...repeat(STAR_STREAK, () => phrase(first, "read", true)),
+      ...repeat(STAR_STREAK, () => phrase(first, "play", true)),
+      ...repeat(STAR_STREAK, () => phrase(first, "fluent", true)),
+    ];
+    const round = (misses: number) => [
+      ...repeat(misses, () => phrase(first, "fluent", false)),
+      ...repeat(MISS_WINDOW - misses, () => phrase(first, "fluent", true)),
+    ];
+    const almost = [...threeStars, ...round(1), ...round(0), ...round(2), ...round(0)];
+    const stage = projectProgress(almost).treble.stages[first];
+    expect(stage.tiers.fluent.rounds).toBe(1);
+    expect(stage.mastered).toBe(false);
+
+    const done = [...almost, ...Array.from({ length: MASTERY_ROUNDS - 1 }, () => round(1)).flat()];
+    const mastered = projectProgress(done);
+    expect(mastered.treble.stages[first].mastered).toBe(true);
+    expect(mastered.treble.mastered).toBe(1);
+    expect(milestoneBetween(projectProgress(done.slice(0, -1)), mastered, "treble", first)).toEqual({ kind: "mastered", stars: 3 });
+  });
+
+  it("counts no mastery rounds at Play", () => {
     const events = [
       ...repeat(STAR_STREAK, () => phrase(first, "read", true)),
-      ...repeat(COMPLETE_STREAK, () => phrase(first, "play", true)),
+      ...repeat(STAR_STREAK * 10, () => phrase(first, "play", true)),
     ];
-    expect(projectProgress(events).treble.stages[first].complete).toBe(true);
+    expect(projectProgress(events).treble.stages[first].tiers.fluent.rounds).toBe(0);
   });
 
   it("ignores custom practice and unknown stages", () => {

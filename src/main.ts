@@ -5,7 +5,8 @@ import { NoteStream } from "./input/noteStream";
 import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
 import {
-  COMPLETE_STREAK,
+  ADVANCE_TEXT,
+  MASTERY_ROUNDS,
   MISS_WINDOW,
   STAR_STREAK,
   placedStage,
@@ -27,7 +28,7 @@ import {
   type PracticeContext,
 } from "./curriculum/events";
 import { INTRO_TEMPO, introMidiRange, introSteps, type IntroStep } from "./curriculum/intros";
-import { extendStreak, milestoneBetween, type Milestone, type Streak } from "./curriculum/progress";
+import { milestoneBetween, recentHits, type Milestone, type TierProgress } from "./curriculum/progress";
 import { ProgressStore } from "./curriculum/progressStore";
 import { spanLevel } from "./curriculum/spans";
 import { loadCorpus } from "./music/corpus";
@@ -36,6 +37,7 @@ import { midiNoteName, midiOf } from "./music/pitch";
 import type { Clef, Level, NoteSource } from "./music/types";
 import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
+import type { Mark } from "./practice/waitSession";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
 import { bindAccountDialog } from "./ui/accountDialog";
@@ -44,8 +46,10 @@ import { bindPhraseDebug } from "./ui/phraseDebug";
 import { bindRetryKey } from "./ui/retryKey";
 import { StreakDots, renderDots } from "./ui/scoreDots";
 import {
+  MASTERY_SYMBOL,
   MILESTONE_KEYS,
   PhraseResultBanner,
+  masteryPips,
   milestoneChoices,
   nextStepAfter,
   renderHome,
@@ -199,7 +203,6 @@ async function main(): Promise<void> {
   /** What the settings bar shows; curriculum stages override most of it while they run. */
   let customSettings: Settings = DEFAULT_SETTINGS;
   let settings: Settings = DEFAULT_SETTINGS;
-  let customStreak: Streak = { streak: 0, sinceMiss: null };
   /** A star or completed stage just earned: its card stands in for the staff until a choice is made. */
   let milestone: Milestone | null = null;
   const streakDots = new StreakDots();
@@ -365,18 +368,13 @@ async function main(): Promise<void> {
     const again = perfect && result.passesNeeded > 0 ? " · once more" : "";
 
     if (context.kind === "custom") {
-      const previous = customStreak.streak;
-      customStreak = extendStreak(customStreak, perfect);
       streakDots.push(perfect);
-      banner.show(
-        perfect ? `Perfect · streak ${customStreak.streak}${again}` : `${missText(faultText, previous, customStreak.streak)}${again}`,
-        perfect ? "perfect" : "fault",
-      );
+      banner.show(`${perfect ? "Perfect" : faultText} · ${hitsText()}${again}`, perfect ? "perfect" : "fault");
       renderStreak();
       return;
     }
 
-    const { clef, stageId, tier } = context;
+    const { clef, stageId } = context;
     let text: string;
     let tone: ResultTone;
     if (!countsForProgress(event)) {
@@ -385,8 +383,6 @@ async function main(): Promise<void> {
     } else {
       streakDots.push(perfect);
       const earned = milestoneBetween(before, store.progress, clef, stageId);
-      const previous = before[clef].stages[stageId].tiers[tier].streak;
-      const streak = store.progress[clef].stages[stageId].tiers[tier].streak;
       if (earned) {
         // The card says it all; the next phrase waits until a choice is made.
         milestone = earned;
@@ -394,13 +390,9 @@ async function main(): Promise<void> {
         banner.hide();
         renderView();
         return;
-      } else if (perfect) {
-        text = `Perfect · streak ${streak}${again}`;
-        tone = "perfect";
-      } else {
-        text = `${missText(faultText, previous, streak)}${again}`;
-        tone = "fault";
       }
+      text = `${perfect ? "Perfect" : faultText} · ${roundText(before[clef].stages[stageId].tiers.fluent, perfect) ?? hitsText()}${again}`;
+      tone = perfect ? "perfect" : "fault";
     }
     banner.show(text, tone);
     renderView();
@@ -435,11 +427,27 @@ async function main(): Promise<void> {
     renderView();
   }
 
-  /** A miss either rides on the streak (one per window) or breaks it back to the phrases since the last. */
-  function missText(faultText: string, before: number, after: number): string {
-    return after > before
-      ? `${faultText} · one miss in ${MISS_WINDOW} allowed · streak ${after}`
-      : `${faultText} · second miss in ${MISS_WINDOW} · streak back to ${after}`;
+  /** The Fluent tier while a mastery round is under way: ★★★ earned, not yet mastered. */
+  function masteryUnderWay(): TierProgress | null {
+    if (context.kind !== "curriculum" || context.tier !== "fluent") return null;
+    const stage = store.progress[context.clef].stages[context.stageId];
+    return stage.stars === 3 && !stage.mastered ? stage.tiers.fluent : null;
+  }
+
+  /** How the mastery round went with this phrase, when one is under way; `was` is before it. */
+  function roundText(was: TierProgress, perfect: boolean): string | null {
+    const now = masteryUnderWay();
+    if (!now || was.best < STAR_STREAK) return null;
+    if (now.round.length > 0) return `round ${recentHits(now.round)}/${MISS_WINDOW}`;
+    const hits = recentHits([...was.round, perfect]);
+    return now.rounds > was.rounds
+      ? `round passed ${hits}/${MISS_WINDOW} · ${now.rounds} of ${MASTERY_ROUNDS} to master`
+      : `round ${hits}/${MISS_WINDOW} · mastery starts over`;
+  }
+
+  /** Clean phrases out of the last few, as the streak dots show them. */
+  function hitsText(): string {
+    return `${streakDots.hits()}/${MISS_WINDOW}`;
   }
 
   /** Where a failed attempt first went wrong, for the result banner. */
@@ -450,20 +458,37 @@ async function main(): Promise<void> {
     return fault.kind === "wrong" ? `Wrong note in bar ${fault.bar}` : `Missed a note in bar ${fault.bar}`;
   }
 
-  /** Streak in the score row: the curriculum goal for this tier, or a plain count in custom. */
+  /**
+   * The score row's streak: clean phrases out of the last few and what they're working
+   * towards, or, while mastering, the round under way and the rounds passed.
+   */
   function renderStreak(): void {
-    renderDots(dotsOf("streak"), streakDots.marks(), "Last phrases");
-    if (context.kind === "custom") {
-      setScoreText("streak", customStreak.streak);
-      setScoreText("streak-goal", "");
-      return;
+    const pips = scoreElement.querySelector<HTMLElement>("[data-mastery-pips]")!;
+    const mastering = masteryUnderWay();
+    let caption = "";
+    if (mastering) {
+      const marks = Array.from({ length: MISS_WINDOW }, (_, i): Mark =>
+        i >= mastering.round.length ? "pending" : mastering.round[i] ? "correct" : "wrong",
+      );
+      renderDots(dotsOf("streak"), marks, "Mastery round");
+      setScoreText("streak-label", `Round ${mastering.rounds + 1}`);
+      setScoreText("streak", recentHits(mastering.round));
+      pips.replaceChildren(masteryPips(mastering.rounds));
+      caption = `${mastering.rounds} of ${MASTERY_ROUNDS} to master`;
+    } else {
+      renderDots(dotsOf("streak"), streakDots.marks(), "Last phrases");
+      setScoreText("streak-label", "Streak");
+      setScoreText("streak", streakDots.hits());
+      pips.replaceChildren();
+      if (context.kind === "curriculum") {
+        const stageProgress = store.progress[context.clef].stages[context.stageId];
+        if (stageProgress.tiers[context.tier].best < STAR_STREAK) caption = ADVANCE_TEXT;
+        else if (stageProgress.mastered) caption = `${MASTERY_SYMBOL} Mastered`;
+      }
     }
-    const stageProgress = store.progress[context.clef].stages[context.stageId];
-    const tierProgress = stageProgress.tiers[context.tier];
-    const starEarned = tierProgress.best >= STAR_STREAK;
-    const goal = !starEarned ? STAR_STREAK : context.tier !== "read" && !stageProgress.complete ? COMPLETE_STREAK : null;
-    setScoreText("streak", tierProgress.streak);
-    setScoreText("streak-goal", goal ? `/${goal}` : "");
+    setScoreText("streak-goal", `/${MISS_WINDOW}`);
+    setScoreText("streak-caption", caption);
+    scoreElement.querySelector<HTMLElement>("[data-streak-caption]")!.hidden = caption === "";
   }
 
   /** Moves through an intro: each example passed clean leads to the next, the last to the stage. */
@@ -563,7 +588,7 @@ async function main(): Promise<void> {
     stopIntro();
     milestone = null;
     context = { kind: "curriculum", clef, stageId, tier };
-    streakDots.reset(store.progress[clef].stages[stageId].tiers[tier]);
+    streakDots.reset(store.progress[clef].stages[stageId].tiers[tier].recent);
     settings = {
       ...customSettings,
       mode: tierMode(tier),
@@ -584,7 +609,6 @@ async function main(): Promise<void> {
     stopIntro();
     milestone = null;
     context = { kind: "custom" };
-    customStreak = { streak: 0, sinceMiss: null };
     streakDots.reset();
     settings = customSettings;
     keyboardSpan = levelMidiRange(levelById(settings.range));
@@ -710,10 +734,7 @@ async function main(): Promise<void> {
       keyboardSpan = levelMidiRange(levelById(next.range));
       updateKeyboardRange();
     }
-    if (changed !== "namesOnNotes") {
-      customStreak = { streak: 0, sinceMiss: null };
-      streakDots.reset();
-    }
+    if (changed !== "namesOnNotes") streakDots.reset();
     renderStreak();
     practice.updateSettings(next, changed);
   });

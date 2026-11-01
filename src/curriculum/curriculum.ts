@@ -14,11 +14,20 @@ export const TIER_LABELS: Record<Tier, string> = { read: "Read", play: "Play", f
 /** A streak forgives one miss in any this many phrases in a row; a second one breaks it. */
 export const MISS_WINDOW = 10;
 
+/** Clean phrases out of the last MISS_WINDOW that earn a star: one miss allowed. */
+export const STAR_HITS = MISS_WINDOW - 1;
+
+/** The star rule as the player reads it: "9/10 to advance". */
+export const ADVANCE_TEXT = `${STAR_HITS}/${MISS_WINDOW} to advance`;
+
 /** A streak this long earns a tier's star (★★ also opens the next stage). */
 export const STAR_STREAK = 10;
 
-/** A streak this long, at Play or Fluent, marks a stage complete. */
-export const COMPLETE_STREAK = 50;
+/**
+ * Rounds of MISS_WINDOW phrases at Fluent, each STAR_HITS clean or better, in a row, that
+ * master a stage once it has ★★★. A round below that starts the count over.
+ */
+export const MASTERY_ROUNDS = 5;
 
 /**
  * One fixed configuration to practise. The id is what the event log stores, so it must

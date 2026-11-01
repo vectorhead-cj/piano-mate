@@ -654,8 +654,8 @@ body::before {
   padding: 10px 12px;
 }
 
-/* Intros aren't scored towards a streak. */
-.app[data-intro] .phrase-score [data-streak] {
+/* Intros aren't scored: no dots, no streak, just the phrase controls. */
+.app[data-intro] .phrase-score {
   display: none;
 }
 
@@ -820,6 +820,55 @@ dialog.midi-debug::backdrop {
   color: var(--muted);
   font-size: 0.85em;
   font-weight: 560;
+}
+
+/* Dots and count on one row, what they're working towards under them. */
+.score-streak {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) auto;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.score-caption {
+  display: flex;
+  grid-column: 2 / -1;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.score-caption[hidden] {
+  display: none;
+}
+
+/* Mastery: a crown after the stars, and a pip per round of 9/10 at Fluent. */
+.mastery-mark {
+  margin-left: 3px;
+  color: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+.mastery-mark.on {
+  color: var(--note-current);
+}
+
+.mastery-pips {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.pip {
+  width: 14px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+.pip.on {
+  background: var(--note-current);
 }
 
 .score-divider {
@@ -1394,7 +1443,8 @@ dialog.account-dialog::backdrop {
 
 .stage-row {
   display: grid;
-  grid-template-columns: 2.6rem minmax(0, 1fr) auto 5.5rem;
+  /* Fixed widths, so pips, stars and status line up from stage to stage. */
+  grid-template-columns: 2.6rem minmax(0, 1fr) 5.5rem 4.2rem 5.5rem;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -1534,10 +1584,19 @@ dialog.account-dialog::backdrop {
   font-weight: 600;
 }
 
-.complete-row {
+.mastery-row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
+}
+
+.mastery-row .mastery-mark {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.mastery-row .menu-muted {
+  flex: 1;
 }
 
 .btn-primary:disabled,
@@ -1671,21 +1730,12 @@ dialog.account-dialog::backdrop {
     pointer-events: none;
   }
 
-  .app[data-intro] .phrase-score,
   .app[data-intro] .transport {
     min-height: 0;
+    margin-left: auto;
     padding: 6px 14px;
     box-shadow: none;
     pointer-events: auto;
-  }
-
-  .app[data-intro] .phrase-score {
-    gap: 18px;
-  }
-
-  /* Below the chips rather than under them. */
-  .app[data-intro] .hot-state {
-    top: 60px;
   }
 
   .app[data-intro] .keyboard-area {
@@ -1998,10 +2048,12 @@ dialog.account-dialog::backdrop {
   }
 
   .stage-row {
-    grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+    grid-template-columns: 2.2rem minmax(0, 1fr) 4.2rem;
   }
 
-  .stage-row .stage-status {
+  .stage-row .stage-status,
+  .stage-row .mastery-pips,
+  .stage-row > [aria-hidden="true"] {
     display: none;
   }
 
@@ -2021,6 +2073,15 @@ dialog.account-dialog::backdrop {
 
 /* Narrow phones: the MIDI button keeps its icon and colour; the status moves to its tooltip. */
 @media (max-width: 480px) {
+  /* No room beside the name between the header buttons: tuck the version under it. */
+  .brand-version {
+    top: calc(100% + 1px);
+    bottom: auto;
+    left: 50%;
+    font-size: 0.6rem;
+    transform: translateX(-50%);
+  }
+
   /* Three choices still fit a phone's width side by side. */
   .milestone-actions {
     gap: 6px;

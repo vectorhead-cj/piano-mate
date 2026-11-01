@@ -1,5 +1,5 @@
 import { MISS_WINDOW } from "../curriculum/curriculum";
-import type { Streak } from "../curriculum/progress";
+import { recentHits } from "../curriculum/progress";
 import type { Mark } from "../practice/waitSession";
 
 /** Phrases the streak row shows, one window's worth: the newest pushes the oldest out once it's full. */
@@ -23,10 +23,14 @@ export function renderDots(container: HTMLElement, marks: readonly Mark[], label
 export class StreakDots {
   private results: boolean[] = [];
 
-  /** Starts over from a streak already running: as many of its phrases as fit, its miss in red. */
-  reset({ streak, sinceMiss }: Streak = { streak: 0, sinceMiss: null }): void {
-    const shown = Math.min(streak, STREAK_DOTS);
-    this.results = Array.from({ length: shown }, (_, i) => shown - 1 - i !== sinceMiss);
+  /** Starts over from the phrases already played, oldest first. */
+  reset(recent: readonly boolean[] = []): void {
+    this.results = recent.slice(-STREAK_DOTS);
+  }
+
+  /** Green dots: clean phrases out of the last STREAK_DOTS. */
+  hits(): number {
+    return recentHits(this.results);
   }
 
   push(perfect: boolean): void {
