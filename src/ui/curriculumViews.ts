@@ -90,7 +90,7 @@ export interface HomeModel {
 }
 
 export interface HomeActions {
-  openTrack(clef: Clef): void;
+  openCurriculum(): void;
   openCustom(): void;
   signIn(): void;
   signOut(): void;
@@ -150,43 +150,43 @@ function storageStatus(model: HomeModel): { icon: string; tone: string; title: s
 
 export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeActions): void {
   const total = PLACED_STAGES.length;
-  const tracks = CLEF_TRACKS.map((clef) => {
+  const hands = CLEF_TRACKS.map((clef) => {
     const track = model.progress[clef];
     const current = placedStage(track.currentStageId)!;
     const currentProgress = track.stages[current.stage.id];
-    const subtitle =
+    const next =
       currentProgress.introOpen && !currentProgress.introDone
         ? `Intro to ${current.number} · ${introTitle(current.stage.id)}`
         : `Stage ${current.number} · ${stageTitle(current.stage)}`;
-    const button = h("button", { class: "btn-primary", type: "button" }, track.passed === 0 ? "Start" : "Continue");
-    button.addEventListener("click", () => actions.openTrack(clef));
     return h(
-      "article",
-      { class: "menu-card home-track" },
-      h("h2", { class: "menu-card-title" }, `${TRACK_LABELS[clef]} track`),
-      h("p", { class: "home-track-next" }, h("span", { class: "home-eyebrow" }, track.passed === 0 ? "First up" : "Up next"), subtitle),
-      meter(track.passed, total, `${track.passed} of ${total} stages passed`),
-      h(
-        "div",
-        { class: "menu-card-foot" },
-        h("span", { class: "menu-muted" }, `${track.passed} of ${total} stages passed`),
-        button,
-      ),
+      "div",
+      { class: "home-hand" },
+      h("span", { class: "home-eyebrow" }, TRACK_LABELS[clef]),
+      h("span", { class: "home-hand-next" }, next),
+      meter(track.passed, total, `${TRACK_LABELS[clef]}: ${track.passed} of ${total} stages passed`),
+      h("span", { class: "menu-muted" }, `${track.passed} of ${total} stages passed`),
     );
   });
+  const started = CLEF_TRACKS.some((clef) => model.progress[clef].passed > 0);
+  const curriculumButton = h("button", { class: "btn-primary", type: "button" }, started ? "Continue" : "Start");
+  curriculumButton.addEventListener("click", actions.openCurriculum);
+  const curriculum = h(
+    "article",
+    { class: "menu-card home-choice" },
+    h("h2", { class: "menu-card-title" }, "Curriculum"),
+    h("p", { class: "menu-muted" }, `${CHAPTERS.length} chapters for each hand, from five notes to every key. Earn stars to move on.`),
+    ...hands,
+    h("div", { class: "menu-card-foot menu-card-foot-end" }, curriculumButton),
+  );
 
   const customButton = h("button", { class: "btn-secondary", type: "button" }, "Open");
   customButton.addEventListener("click", actions.openCustom);
   const custom = h(
     "article",
-    { class: "menu-card home-custom" },
-    h(
-      "div",
-      { class: "home-custom-text" },
-      h("h2", { class: "menu-card-title" }, "Custom practice"),
-      h("p", { class: "menu-muted" }, "Any key, range and rhythm. Logged, not scored."),
-    ),
-    customButton,
+    { class: "menu-card home-choice" },
+    h("h2", { class: "menu-card-title" }, "Custom practice"),
+    h("p", { class: "menu-muted" }, "Pick any key, range and rhythm, in either clef. Logged, not scored."),
+    h("div", { class: "menu-card-foot menu-card-foot-end" }, customButton),
   );
 
   const status = storageStatus(model);
@@ -215,11 +215,10 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
       h(
         "header",
         { class: "home-intro" },
-        h("h1", { class: "home-title" }, "Read it, then play it"),
-        h("p", { class: "home-lede" }, "Short phrases of real notation, one stage at a time."),
+        h("h1", { class: "home-title" }, "Read and play!"),
+        h("p", { class: "home-lede" }, "Practice using real phrases from a large corpus of classical and folk music"),
       ),
-      h("div", { class: "home-tracks" }, ...tracks),
-      custom,
+      h("div", { class: "home-choices" }, curriculum, custom),
       h(
         "footer",
         { class: "home-foot" },

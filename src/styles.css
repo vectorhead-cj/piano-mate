@@ -1334,7 +1334,7 @@ dialog.midi-debug::backdrop {
   font-size: 1rem;
 }
 
-.home-tracks {
+.home-choices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 16px;
@@ -1344,19 +1344,22 @@ dialog.midi-debug::backdrop {
   padding: 22px 24px;
 }
 
-.home-track {
-  gap: 16px;
+.home-choice {
+  gap: 14px;
 }
 
-.home-track .menu-card-title {
+.home-choice .menu-card-title {
   font-size: 1.4rem;
 }
 
-.home-track-next {
+/* One hand's place in the curriculum: where it's up to, and how far along. */
+.home-hand {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
+  gap: 6px;
+}
+
+.home-hand-next {
   font-size: 0.95rem;
   line-height: 1.4;
 }
@@ -1367,20 +1370,6 @@ dialog.midi-debug::backdrop {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.home-custom {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.home-custom-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
 }
 
 .home-foot {
