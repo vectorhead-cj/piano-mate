@@ -1255,7 +1255,7 @@ dialog.midi-debug::backdrop {
 }
 
 .menu-card,
-.chapter,
+.curriculum-detail,
 .practice-bar,
 .intro-panel {
   border: 1px solid var(--surface-edge);
@@ -1296,12 +1296,6 @@ dialog.midi-debug::backdrop {
   margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
-}
-
-.menu-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.88rem;
 }
 
 /* Home: a short intro, the two tracks side by side, custom practice as a slimmer row, then
@@ -1584,63 +1578,246 @@ dialog.account-dialog::backdrop {
   color: var(--note-current);
 }
 
-.chapter {
+/* Curriculum: one trunk of chapters, the treble's stages to its left and the bass's to its
+   right, a marker each. The selected stage opens as a card under its chapter. */
+.curriculum-page {
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 8px;
+  gap: 14px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
 }
 
-.chapter-head {
+.curriculum {
+  position: relative;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 8px 6px;
+  flex-direction: column;
 }
 
-.chapter-title {
+/* The trunk, behind the chapter nodes. */
+.curriculum::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  bottom: 24px;
+  left: calc(50% - 1px);
+  width: 2px;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+}
+
+.chapter-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9.5rem minmax(0, 1fr);
+  align-items: start;
+}
+
+.chapter-trunk {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 18px;
+  text-align: center;
+}
+
+.chapter-node {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 50%;
+  background: var(--bg-bottom);
+  font-family: Fraunces, "Times New Roman", serif;
+  font-size: 1.05rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.chapter-node[data-tone="current"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+.chapter-node[data-tone="locked"] {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.chapter-name {
   margin: 0;
-  font-size: 0.98rem;
+  font-family: Fraunces, "Times New Roman", serif;
+  font-size: 0.95rem;
+  font-weight: 560;
+  line-height: 1.2;
+}
+
+.chapter-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 10px;
+  font-size: 0.82rem;
+}
+
+.chapter-side[data-clef="treble"] {
+  align-items: flex-end;
+  padding-right: 8px;
+  text-align: right;
+}
+
+.chapter-side[data-clef="bass"] {
+  align-items: flex-start;
+  padding-left: 8px;
+}
+
+.chapter-side-clef {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chapter-side-line {
+  color: var(--muted);
+}
+
+.chapter-side[data-tone="current"] .chapter-side-clef,
+.chapter-side[data-tone="current"] .chapter-side-line {
+  color: var(--accent);
   font-weight: 600;
 }
 
-.stage-row {
+.stage-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.chapter-side[data-clef="treble"] .stage-markers {
+  justify-content: flex-end;
+}
+
+.stage-marker {
   display: grid;
-  /* Fixed widths, so pips, stars and status line up from stage to stage. */
-  grid-template-columns: 2.6rem minmax(0, 1fr) 5.5rem 5.2rem 5.5rem;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 8px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
-  border-top: 1px solid var(--surface-edge);
-  border-radius: 0;
+  border-radius: 7px;
   background: none;
-  color: var(--ink);
+  color: color-mix(in srgb, var(--muted) 45%, transparent);
   font: inherit;
-  font-size: 0.92rem;
-  text-align: left;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 
-.stage-row:hover:not(:disabled),
-.stage-row[aria-expanded="true"] {
+.stage-marker:hover {
   background: var(--accent-soft);
 }
 
-.stage-row:focus-visible {
+.stage-marker:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-.stage-row:disabled {
-  color: var(--muted);
-  cursor: default;
+.stage-marker[data-state="passed"],
+.stage-marker[data-state="mastered"] {
+  color: var(--note-current);
 }
 
-/* Locked stages stay selectable, to offer starting there. */
-.stage-row[data-tone="locked"]:not(.intro-row) {
-  color: var(--muted);
+.stage-marker[data-state="open"] {
+  color: var(--ink);
+}
+
+.stage-marker[data-state="current"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  color: var(--accent);
+}
+
+.stage-marker[aria-expanded="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* Above the trunk, which it would otherwise cross. */
+.curriculum-detail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 14px 10px 4px;
+}
+
+.curriculum-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 0 8px 6px;
+}
+
+.curriculum-detail-kicker {
+  flex-basis: 100%;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.curriculum-detail-title {
+  margin: 0;
+  font-family: Fraunces, "Times New Roman", serif;
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.intro-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 8px;
+}
+
+.intro-line-mark {
+  color: var(--accent);
+}
+
+.intro-line-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 0.92rem;
+}
+
+.intro-line-label {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 520px) {
+  .chapter-row {
+    grid-template-columns: minmax(0, 1fr) 6.5rem minmax(0, 1fr);
+  }
+
+  .chapter-name {
+    font-size: 0.85rem;
+  }
 }
 
 .start-here {
@@ -1652,37 +1829,6 @@ dialog.account-dialog::backdrop {
 
 .start-here .btn-secondary {
   flex: none;
-}
-
-.stage-number {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.stage-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stage-status {
-  justify-self: end;
-  padding: 2px 8px;
-  border: 1px solid var(--surface-edge);
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.stage-row[data-tone="current"] .stage-status {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--surface-edge));
-  color: var(--accent);
-}
-
-.stage-row[data-tone="done"] .stage-status {
-  border-color: color-mix(in srgb, var(--correct) 45%, var(--surface-edge));
-  color: var(--correct);
 }
 
 .stage-detail {
@@ -1901,21 +2047,6 @@ dialog.account-dialog::backdrop {
   .app[data-intro] .keyboard-area {
     grid-row: 3;
   }
-}
-
-.intro-row .stage-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-}
-
-.intro-row-label {
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .practice-bar {
@@ -2324,16 +2455,6 @@ dialog.account-dialog::backdrop {
   .transport .btn-primary,
   .transport .btn-secondary {
     flex: 1;
-  }
-
-  .stage-row {
-    grid-template-columns: 2.2rem minmax(0, 1fr) 5.2rem;
-  }
-
-  .stage-row .stage-status,
-  .stage-row .mastery-pips,
-  .stage-row > [aria-hidden="true"] {
-    display: none;
   }
 
   .phrase-score {

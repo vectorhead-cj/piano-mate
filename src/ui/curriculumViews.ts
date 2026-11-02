@@ -238,70 +238,145 @@ export interface TrackActions {
   startHere(stageId: string): void;
 }
 
-function stageStatus(stage: Stage, progress: StageProgress): { text: string; tone: string } {
-  if (!progress.unlocked) return { text: "Locked", tone: "locked" };
-  if (progress.mastered) return { text: "Mastered", tone: "done" };
-  if (progress.stars >= advanceStars(stage)) return { text: "Passed", tone: "passed" };
-  const tier = stageTiers(stage)[progress.stars];
-  return { text: `${recentHits(progress.tiers[tier].recent)} / ${MISS_WINDOW}`, tone: "current" };
+/** A stage in one clef's track: which marker in the curriculum is open. */
+export interface StageRef {
+  clef: Clef;
+  stageId: string;
 }
 
-export function renderTrack(
-  root: HTMLElement,
+/** The track actions, for whichever clef they're taken in. */
+export type CurriculumActions = (clef: Clef) => TrackActions;
+
+/** A stage's marker: ♛ mastered, ★ passed, the stage being worked on, its intro, or locked. */
+function markerState(stageId: string, progress: StageProgress, currentStageId: string): string {
+  if (progress.mastered) return "mastered";
+  if (progress.unlocked && progress.stars >= advanceStars(placedStage(stageId)!.stage)) return "passed";
+  if (stageId === currentStageId && (progress.unlocked || progress.introOpen)) return "current";
+  if (progress.unlocked) return "open";
+  return "locked";
+}
+
+const MARKER_STATE_TEXT: Record<string, string> = {
+  mastered: "mastered",
+  passed: "passed",
+  current: "up next",
+  open: "open",
+  locked: "locked",
+};
+
+/** One clef's side of a chapter: a marker per stage, and a line on where that clef stands. */
+function chapterSide(
   clef: Clef,
+  chapterIndex: number,
   progress: Progress,
-  selectedStageId: string,
-  actions: TrackActions,
-): void {
+  selected: StageRef | null,
+  select: (ref: StageRef) => void,
+): HTMLElement {
   const track = progress[clef];
+  const placed = PLACED_STAGES.filter((p) => p.chapterIndex === chapterIndex);
+  const markers = placed.map((p) => {
+    const stageProgress = track.stages[p.stage.id];
+    const state = markerState(p.stage.id, stageProgress, track.currentStageId);
+    const introNext = state === "current" && stageProgress.introOpen && !stageProgress.introDone;
+    const marker = h(
+      "button",
+      {
+        class: "stage-marker",
+        type: "button",
+        "data-state": state,
+        "aria-expanded": selected?.clef === clef && selected.stageId === p.stage.id ? "true" : "false",
+        "aria-label": `${TRACK_LABELS[clef]} ${p.number}, ${stageTitle(p.stage)}, ${stageProgress.stars} of ${maxStars(p.stage)} stars, ${MARKER_STATE_TEXT[state]}`,
+        title: `${p.number} · ${stageTitle(p.stage)}`,
+      },
+      state === "mastered" ? MASTERY_SYMBOL : introNext ? "\u266A" : "★",
+    );
+    marker.addEventListener("click", () => select({ clef, stageId: p.stage.id }));
+    return marker;
+  });
+  const passed = placed.filter((p) => track.stages[p.stage.id].stars >= advanceStars(p.stage)).length;
+  const current = placed.find((p) => p.stage.id === track.currentStageId && markerState(p.stage.id, track.stages[p.stage.id], p.stage.id) === "current");
+  let line = "";
+  let tone = "";
+  if (current) {
+    const stageProgress = track.stages[current.stage.id];
+    tone = "current";
+    line =
+      stageProgress.introOpen && !stageProgress.introDone
+        ? `${current.number} · Intro next`
+        : `${current.number} · ${TIER_LABELS[stageTiers(current.stage)[stageProgress.stars]]} next`;
+  } else if (passed === placed.length) {
+    line = `All ${placed.length} passed`;
+  } else if (passed > 0) {
+    line = `${passed} of ${placed.length} passed`;
+  }
+  return h(
+    "div",
+    { class: "chapter-side", "data-clef": clef, "data-tone": tone },
+    h("span", { class: "chapter-side-clef" }, TRACK_LABELS[clef]),
+    h("span", { class: "stage-markers" }, ...markers),
+    line && h("span", { class: "chapter-side-line" }, line),
+  );
+}
+
+/** The open stage under its chapter: its intro, then its tiers, or the choice to start there. */
+function selectedDetail(ref: StageRef, progress: Progress, actions: TrackActions): HTMLElement {
+  const placed = placedStage(ref.stageId)!;
+  const stageProgress = progress[ref.clef].stages[ref.stageId];
+  const intro = hasIntro(placed.stage) ? introLine(ref.stageId, stageProgress, actions) : null;
+  const body =
+    stageProgress.unlocked || stageProgress.introOpen
+      ? stageDetail(ref.stageId, stageProgress, actions)
+      : lockedDetail(ref.stageId, placed.number, actions);
+  return h(
+    "section",
+    { class: "curriculum-detail", "data-clef": ref.clef, "aria-label": `${TRACK_LABELS[ref.clef]} ${placed.number}` },
+    h(
+      "header",
+      { class: "curriculum-detail-head" },
+      h("span", { class: "curriculum-detail-kicker" }, `${TRACK_LABELS[ref.clef]} · ${placed.number}`),
+      h("h2", { class: "curriculum-detail-title" }, stageTitle(placed.stage)),
+      stars(stageProgress.stars, maxStars(placed.stage), stageProgress.mastered),
+    ),
+    intro,
+    body,
+  );
+}
+
+/**
+ * Both clefs' tracks on one trunk: a chapter per row, the treble's stages on its left and the
+ * bass's on its right, one marker each. The selected stage opens under its chapter.
+ */
+export function renderCurriculum(root: HTMLElement, progress: Progress, selected: StageRef | null, actions: CurriculumActions): void {
+  const select = (ref: StageRef) => actions(ref.clef).select(ref.stageId);
   const chapters = CHAPTERS.map((chapter, chapterIndex) => {
     const placed = PLACED_STAGES.filter((p) => p.chapterIndex === chapterIndex);
-    const passed = placed.filter((p) => track.stages[p.stage.id].stars >= advanceStars(p.stage)).length;
-    const rows = placed.flatMap((p) => {
-      const stageProgress = track.stages[p.stage.id];
-      const status = stageStatus(p.stage, stageProgress);
-      const selected = p.stage.id === selectedStageId;
-      const row = h(
-        "button",
-        {
-          class: "stage-row",
-          type: "button",
-          "aria-expanded": selected ? "true" : "false",
-          "data-tone": status.tone,
-        },
-        h("span", { class: "stage-number" }, p.number),
-        h("span", { class: "stage-title" }, stageTitle(p.stage)),
-        // Pips only once mastery is in play; the empty cell keeps the columns lined up.
-        stageProgress.stars === maxStars(p.stage) ? masteryPips(stageProgress.tiers.fluent.rounds) : h("span", { "aria-hidden": "true" }),
-        stars(stageProgress.stars, maxStars(p.stage), stageProgress.mastered),
-        h("span", { class: "stage-status" }, status.text),
-      );
-      row.addEventListener("click", () => actions.select(p.stage.id));
-      const intro = hasIntro(p.stage) ? [introRow(p.stage.id, p.number, stageProgress, actions)] : [];
-      if (!selected) return [...intro, row];
-      const detail = stageProgress.unlocked || stageProgress.introOpen
-        ? stageDetail(p.stage.id, stageProgress, actions)
-        : lockedDetail(p.stage.id, p.number, actions);
-      return [...intro, row, detail];
-    });
-    return h(
-      "section",
-      { class: "chapter" },
+    const open = (clef: Clef) => placed.some((p) => progress[clef].stages[p.stage.id].unlocked || progress[clef].stages[p.stage.id].introOpen);
+    const [treble, bass] = CLEF_TRACKS.map((clef) => chapterSide(clef, chapterIndex, progress, selected, select));
+    const tone = [treble, bass].some((side) => side.dataset.tone === "current") ? "current" : CLEF_TRACKS.some(open) ? "open" : "locked";
+    const row = h(
+      "div",
+      { class: "chapter-row" },
+      treble,
       h(
-        "header",
-        { class: "chapter-head" },
-        h("h2", { class: "chapter-title" }, `Chapter ${chapterIndex + 1} · ${chapter.title}`),
-        h("span", { class: "menu-muted" }, `${passed} of ${placed.length} passed`),
+        "div",
+        { class: "chapter-trunk" },
+        h("span", { class: "chapter-node", "data-tone": tone, "aria-hidden": "true" }, String(chapterIndex + 1)),
+        h("h2", { class: "chapter-name" }, chapter.title),
       ),
-      ...rows,
+      bass,
     );
+    const inChapter = selected && placedStage(selected.stageId)?.chapterIndex === chapterIndex;
+    return inChapter ? [row, selectedDetail(selected, progress, actions(selected.clef))] : [row];
   });
   root.replaceChildren(
-    h("h1", { class: "menu-heading" }, `${TRACK_LABELS[clef]} track`),
-    h("p", { class: "menu-note" }, `${track.passed} of ${PLACED_STAGES.length} stages passed · ${track.mastered} mastered`),
-    ...chapters,
+    h(
+      "div",
+      { class: "curriculum-page" },
+      h("h1", { class: "menu-heading" }, "Curriculum"),
+      h("div", { class: "curriculum" }, ...chapters.flat()),
+    ),
   );
-  root.querySelector('[aria-expanded="true"]')?.scrollIntoView({ block: "nearest" });
+  root.querySelector(".curriculum-detail")?.scrollIntoView({ block: "nearest" });
 }
 
 function listText(items: readonly string[]): string {
@@ -319,25 +394,21 @@ export function introTitle(stageId: string): string {
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
-/** The intro before a stage with new notation; the stage opens once it's done, and it can be replayed. */
-function introRow(stageId: string, number: string, progress: StageProgress, actions: TrackActions): HTMLElement {
-  const status = !progress.introOpen
-    ? { text: "Locked", tone: "locked" }
-    : progress.introDone
-      ? { text: "Replay", tone: "passed" }
-      : { text: "Start", tone: "current" };
-  const row = h(
+/** The intro before a stage with new notation or keys; the stage opens once it's done, and it can be replayed. */
+function introLine(stageId: string, progress: StageProgress, actions: TrackActions): HTMLElement {
+  const button = h(
     "button",
-    { class: "stage-row intro-row", type: "button", "data-tone": status.tone, disabled: !progress.introOpen },
-    h("span", { class: "stage-number" }, "\u266A"),
-    h("span", { class: "stage-title" }, h("span", { class: "intro-row-label" }, `Intro to ${number}`), introTitle(stageId)),
-    // Intros earn no stars or mastery; keep the status in its column.
-    h("span", { "aria-hidden": "true" }),
-    h("span", { "aria-hidden": "true" }),
-    h("span", { class: "stage-status" }, status.text),
+    { class: progress.introOpen && !progress.introDone ? "btn-primary" : "btn-secondary", type: "button", disabled: !progress.introOpen },
+    !progress.introOpen ? "Locked" : progress.introDone ? "Replay" : "Start",
   );
-  row.addEventListener("click", () => actions.intro(stageId));
-  return row;
+  button.addEventListener("click", () => actions.intro(stageId));
+  return h(
+    "div",
+    { class: "intro-line" },
+    h("span", { class: "intro-line-mark", "aria-hidden": "true" }, "\u266A"),
+    h("span", { class: "intro-line-text" }, h("span", { class: "intro-line-label" }, "Intro"), introTitle(stageId)),
+    button,
+  );
 }
 
 const TIER_HINTS: Record<Tier, string> = {

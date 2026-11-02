@@ -68,7 +68,7 @@ describe("milestone card", () => {
 
 describe("stage detail", () => {
   it("says Continue on a tier that has been played, Start on one that hasn't", async () => {
-    const { renderTrack } = await import("../src/ui/curriculumViews");
+    const { renderCurriculum } = await import("../src/ui/curriculumViews");
     const played = {
       type: "phrase-completed" as const,
       v: 1 as const,
@@ -84,7 +84,7 @@ describe("stage detail", () => {
     };
     const root = document.createElement("div");
     const actions = { select() {}, start() {}, intro() {}, startHere() {} };
-    renderTrack(root, "treble", projectProgress([played]), first, actions);
+    renderCurriculum(root, projectProgress([played]), { clef: "treble", stageId: first }, () => actions);
     const labels = [...root.querySelectorAll(".tier-card button")].map((b) => b.textContent);
     // 1.1 has nothing earlier to mix, so no Mix.
     expect(labels).toEqual(["Continue Read", "Locked", "Locked"]);

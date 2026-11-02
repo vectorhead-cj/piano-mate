@@ -63,7 +63,7 @@ import {
   renderIntroDone,
   renderMilestone,
   renderPracticeBar,
-  renderTrack,
+  renderCurriculum,
   type MilestoneChoice,
   type ResultMessage,
   type ResultTone,
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
     .catch((error) => console.warn("Could not read the signed-in account", error));
   const session = newId();
 
-  type View = { name: "home" } | { name: "track"; clef: Clef; selected: string } | { name: "practice" };
+  type View = { name: "home" } | { name: "curriculum"; clef: Clef; selected: string } | { name: "practice" };
   let view: View = { name: "home" };
   let context: PracticeContext = { kind: "custom" };
   /** What the settings bar shows; curriculum stages override most of it while they run. */
@@ -463,7 +463,7 @@ async function main(): Promise<void> {
       const next = nextStepAfter(store.progress, clef, stageId);
       if (next.kind === "stage") startStage(clef, next.stageId, next.tier);
       else if (next.kind === "intro") startIntro(clef, next.stageId);
-      else showView({ name: "track", clef, selected: stageId });
+      else showView({ name: "curriculum", clef, selected: stageId });
     } else {
       renderView();
       // Wait mode carries straight on; rhythm waits for Start so the metronome never starts unasked.
@@ -698,7 +698,7 @@ async function main(): Promise<void> {
     if (!intro) return;
     const { clef, stageId, replay } = intro;
     if (replay) {
-      showView({ name: "track", clef, selected: stageId });
+      showView({ name: "curriculum", clef, selected: stageId });
       return;
     }
     store.record({ type: "intro-completed", v: 1, id: newId(), at: Date.now(), session, clef, stageId, skipped });
@@ -836,7 +836,7 @@ async function main(): Promise<void> {
 
     if (view.name === "home") {
       renderHome(menu, { progress: store.progress, status: store.status, storage: store.storage, account }, {
-        openTrack: (clef) => showView({ name: "track", clef, selected: store.progress[clef].currentStageId }),
+        openTrack: (clef) => showView({ name: "curriculum", clef, selected: store.progress[clef].currentStageId }),
         openCustom,
         signIn: () => accountDialog.open(),
         signOut: () => {
@@ -845,17 +845,16 @@ async function main(): Promise<void> {
             .catch((error) => console.warn("Could not sign out", error));
         },
       });
-    } else if (view.name === "track") {
-      const { clef } = view;
-      renderTrack(menu, clef, store.progress, view.selected, {
-        select: (stageId) => showView({ name: "track", clef, selected: stageId }),
+    } else if (view.name === "curriculum") {
+      renderCurriculum(menu, store.progress, { clef: view.clef, stageId: view.selected }, (clef) => ({
+        select: (stageId) => showView({ name: "curriculum", clef, selected: stageId }),
         start: (stageId, tier) => startStage(clef, stageId, tier),
         intro: (stageId) => startIntro(clef, stageId),
         startHere: (stageId) => {
           store.record({ type: "track-started", v: 1, id: newId(), at: Date.now(), session, clef, stageId });
-          showView({ name: "track", clef, selected: stageId });
+          showView({ name: "curriculum", clef, selected: stageId });
         },
-      });
+      }));
     } else if (intro) {
       renderIntro(introPanel, intro, { listen, skip: () => finishIntro(true) });
     } else if (context.kind === "curriculum") {
@@ -871,7 +870,7 @@ async function main(): Promise<void> {
 
   navBack.addEventListener("click", () => {
     if (view.name === "practice" && context.kind === "curriculum") {
-      showView({ name: "track", clef: context.clef, selected: context.stageId });
+      showView({ name: "curriculum", clef: context.clef, selected: context.stageId });
     } else {
       showView({ name: "home" });
     }
