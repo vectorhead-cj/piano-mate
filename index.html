@@ -13,7 +13,7 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Source+Sans+3:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Source+Sans+3:wght@400;500;600&family=Petit+Formal+Script&display=swap"
       rel="stylesheet"
     />
     <title>Piano Mate</title>
@@ -30,7 +30,16 @@
                 </svg>
               </button>
             </div>
-            <h1 class="brand-name">Piano Mate<span class="brand-version" title="Version">v%VITE_APP_VERSION%</span></h1>
+            <h1 class="brand-name">
+              <svg class="brand-mark" viewBox="0 0 96 64" aria-hidden="true">
+                <rect class="brand-key-lit" x="0.5" y="0.5" width="31" height="63" rx="3" />
+                <rect class="brand-key-white" x="32.5" y="0.5" width="31" height="63" rx="3" />
+                <rect class="brand-key-white" x="64.5" y="0.5" width="31" height="63" rx="3" />
+                <rect class="brand-key-black" x="22" y="0" width="20" height="38" rx="2" />
+                <rect class="brand-key-black" x="54" y="0" width="20" height="38" rx="2" />
+              </svg>
+              <span class="brand-rule" aria-hidden="true"></span>
+              <span class="brand-word">Scarlatti</span><span class="brand-version" title="Version">v%VITE_APP_VERSION%</span></h1>
             <div class="topbar-end">
               <button id="midi-toggle" class="midi-chip" type="button" data-state="idle" hidden>
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

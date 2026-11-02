@@ -238,16 +238,49 @@ body::before {
   gap: 12px;
 }
 
+/* Logo lockup: three keys (the first lit), a hairline, then the script name. */
 .brand-name {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
   margin: 0;
-  font-family: Fraunces, "Times New Roman", serif;
-  font-optical-sizing: auto;
-  font-weight: 650;
-  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
+  font-family: "Petit Formal Script", "Times New Roman", serif;
+  font-weight: 400;
+  font-size: clamp(1.5rem, 2.8vw, 1.95rem);
   line-height: 1;
-  letter-spacing: -0.02em;
   color: var(--ink);
+}
+
+.brand-mark {
+  width: 1.2em;
+  height: 0.8em;
+  flex: none;
+}
+
+.brand-key-lit {
+  fill: var(--accent);
+}
+
+.brand-key-white {
+  fill: var(--key-white);
+  stroke: var(--key-white-edge);
+}
+
+.brand-key-black {
+  fill: var(--key-black);
+}
+
+.brand-rule {
+  width: 1px;
+  height: 1.05em;
+  background: var(--muted);
+  opacity: 0.6;
+}
+
+/* The script's capital swings above the cap height; nudge it to sit level with the keys. */
+.brand-word {
+  padding-top: 0.12em;
 }
 
 .topbar-end {
@@ -2252,7 +2285,7 @@ dialog.account-dialog::backdrop {
   }
 
   .brand-name {
-    font-size: 1.25rem;
+    font-size: 1.4rem;
   }
 
   /* Groups stack; the music group becomes an even grid so captions line up. */
