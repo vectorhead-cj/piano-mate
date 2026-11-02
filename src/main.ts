@@ -121,7 +121,7 @@ function bindMidi(
         break;
       case "ready":
         if (status.devices.length === 0) show("waiting", "No MIDI device", "MIDI is on; plug in or wake a device. Click to rescan.");
-        else show("ready", status.devices.join(", "), `Listening to ${status.devices.join(", ")}`);
+        else show("ready", "MIDI ON", `Listening to ${status.devices.join(", ")}`);
         break;
     }
     onDevices(status.state === "ready" ? status.devices : null);
