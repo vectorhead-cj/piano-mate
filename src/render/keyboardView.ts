@@ -71,6 +71,11 @@ export class KeyboardView {
     this.keys.get(midi)?.classList.toggle("pressed", pressed);
   }
 
+  /** The hold guide: a key stays lit for as long as its note should be held. */
+  setGuide(midi: number, on: boolean): void {
+    this.keys.get(midi)?.classList.toggle("hold-guide", on);
+  }
+
   flash(midi: number, kind: KeyFlash): void {
     const key = this.keys.get(midi);
     if (!key) return;

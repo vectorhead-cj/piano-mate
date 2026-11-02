@@ -1,3 +1,4 @@
+import { cleanNote, type HoldStrictness } from "../practice/holds";
 import { onTimeWindowMs } from "../practice/timing";
 import type { NoteResult } from "../practice/waitSession";
 import type { AccidentalFrequency, Alter, Clef, Duration, Letter, RhythmFlavor, Spelling, TimeSignature } from "../music/types";
@@ -23,6 +24,10 @@ export interface NoteOutcome {
   offsetMs?: number;
   /** Rhythm mode only: of the `wrong` presses, how many were the right key before its window. */
   early?: number;
+  /** Rhythm mode only: ms from the note's written end to the key's release (negative = let go early). */
+  releaseMs?: number;
+  /** Rhythm mode only: let go too soon or held too long, by the phrase's hold policy. */
+  hold?: "short" | "long";
 }
 
 export type PracticeContext =
@@ -45,6 +50,8 @@ export interface PhraseCompleted {
   mode: "wait" | "rhythm";
   /** Rhythm mode only. */
   tempo?: number;
+  /** Rhythm mode only: how strictly holds were graded; left out before holds were graded. */
+  holds?: HoldStrictness;
   input: InputKind;
   /** Connected MIDI device names at the time, if any. */
   devices?: string[];
@@ -110,9 +117,9 @@ export function parseSpelling(text: string): Spelling {
   return { letter: match[1] as Letter, alter, octave: Number(match[3]) };
 }
 
-/** Every note right first time (and, in rhythm mode, inside its timing window). */
+/** Every note right first time (and, in rhythm mode, inside its timing window and held right when holds count). */
 export function isPerfect(event: PhraseCompleted): boolean {
-  return event.notes.every((n) => n.hit && n.wrong === 0);
+  return event.notes.every((n) => cleanNote(n, event.holds));
 }
 
 /** Whether a phrase can earn or break curriculum progress: MIDI input only. */
@@ -129,11 +136,13 @@ export function timingBonus(event: PhraseCompleted): number | undefined {
   return onTime.length / pressed.length;
 }
 
-export type PhraseFault = { kind: "wrong" | "early" | "missed"; bar: number; index: number };
+export type PhraseFault = { kind: "wrong" | "early" | "missed" | "short" | "long"; bar: number; index: number };
 
 /** The first note that kept a phrase from being perfect, if any. */
-export function firstFault(event: Pick<PhraseCompleted, "barSizes"> & { notes: readonly NoteResult[] }): PhraseFault | undefined {
-  const index = event.notes.findIndex((n) => !n.hit || n.wrong > 0);
+export function firstFault(
+  event: Pick<PhraseCompleted, "barSizes" | "holds"> & { notes: readonly NoteResult[] },
+): PhraseFault | undefined {
+  const index = event.notes.findIndex((n) => !cleanNote(n, event.holds));
   if (index < 0) return undefined;
   const note = event.notes[index];
   let bar = 0;
@@ -142,7 +151,8 @@ export function firstFault(event: Pick<PhraseCompleted, "barSizes"> & { notes: r
     notesBefore += event.barSizes[bar];
     bar++;
   }
-  const kind = note.wrong === 0 ? "missed" : note.wrong === note.early ? "early" : "wrong";
+  const kind =
+    note.hit && note.wrong === 0 ? note.hold! : note.wrong === 0 ? "missed" : note.wrong === note.early ? "early" : "wrong";
   return { kind, bar: bar + 1, index };
 }
 

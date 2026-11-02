@@ -13,10 +13,13 @@ import { DEFAULT_SETTINGS, type Settings } from "../src/practice/settings";
 import type { Exercise } from "../src/music/types";
 import { seeded } from "./helpers";
 
+/** Rhythm mode checks the clock this often; an attempt ends on the first check past its barline. */
+const TICK_MS = 30;
+
 function setup(settings: Settings = DEFAULT_SETTINGS) {
   const stream = new NoteStream();
-  const notation = { show: vi.fn(), setOptions: vi.fn(), setState: vi.fn(), flashWrong: vi.fn() };
-  const keyboard = { setPressed: vi.fn(), flash: vi.fn() };
+  const notation = { show: vi.fn(), setOptions: vi.fn(), setState: vi.fn(), flashWrong: vi.fn(), setHold: vi.fn() };
+  const keyboard = { setPressed: vi.fn(), flash: vi.fn(), setGuide: vi.fn() };
   const sound = { play: vi.fn(), click: vi.fn() };
   const score = { show: vi.fn(), setIncludeRhythm: vi.fn() };
   const onPhraseComplete = vi.fn();
@@ -433,8 +436,10 @@ describe("PracticeController (rhythm mode)", () => {
 
     const first = controller.exercise;
     const phraseMs = notes.reduce((sum, note) => sum + BEATS[note.duration] * 1000, 0);
-    // Next phrase begins with a 1-bar count-in when this phrase's duration ends.
+    // The attempt runs to the barline, where the next phrase's 1-bar count-in begins.
     vi.advanceTimersByTime(phraseMs);
+    expect(controller.exercise).toBe(first);
+    vi.advanceTimersByTime(TICK_MS);
     expect(controller.exercise).not.toBe(first);
     expect(controller.isHot).toBe(true);
     expect(score.show).toHaveBeenLastCalledWith({ notes: expect.arrayContaining(["pending"]), rhythm: expect.arrayContaining(["pending"]) });
@@ -462,8 +467,8 @@ describe("PracticeController rhythm retries", () => {
       if (clean) ctx.press(midiOf(note), start + onset);
       onset += BEATS[note.duration] * beat;
     }
-    // Through the end of the phrase's last bar.
-    vi.advanceTimersByTime(Math.max(0, start + Math.ceil(onset / (4 * beat)) * 4 * beat - performance.now()));
+    // Through the end of the phrase's last bar, where the attempt ends on the next tick.
+    vi.advanceTimersByTime(Math.max(0, start + Math.ceil(onset / (4 * beat)) * 4 * beat - performance.now()) + TICK_MS);
   }
 
   it("goes cold after a failure, with the metronome stopped", () => {
@@ -580,6 +585,100 @@ describe("PracticeController rhythm retries", () => {
     vi.advanceTimersByTime(5000);
     expect(ctx.sound.click).not.toHaveBeenCalled();
   });
+
+  /** Presses a key now and lets it go `holdMs` later. */
+  function hold(ctx: ReturnType<typeof setup>, pitch: number, holdMs: number): void {
+    ctx.stream.emit({ kind: "on", pitch, time: performance.now(), source: "screen" });
+    vi.advanceTimersByTime(holdMs);
+    ctx.stream.emit({ kind: "off", pitch, time: performance.now(), source: "screen" });
+    vi.advanceTimersByTime(0);
+  }
+
+  /** C and D quarters, then an E half that ends the bar. */
+  function halfEndSetup() {
+    const ctx = setup(settings);
+    const phrase: Exercise = {
+      clef: "treble",
+      key: "C",
+      time: "4/4",
+      pickup: 0,
+      bars: [
+        [
+          { letter: "C", alter: 0, octave: 4, duration: "q" },
+          { letter: "D", alter: 0, octave: 4, duration: "q" },
+          { letter: "E", alter: 0, octave: 4, duration: "h" },
+        ],
+      ],
+    };
+    ctx.controller.exerciseSource = () => phrase;
+    ctx.controller.startNewExercise();
+    return ctx;
+  }
+
+  it("runs an attempt on to the barline with the metronome clicking, even when pausing after a pass", () => {
+    const ctx = halfEndSetup();
+    ctx.controller.pauseAfterPass = true;
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    hold(ctx, 60, 1000);
+    hold(ctx, 62, 1000);
+    hold(ctx, 64, 900);
+    ctx.sound.click.mockClear();
+    // Beat 4 still clicks after the last note; the attempt ends at the barline after it.
+    vi.advanceTimersByTime(firstAt + 4000 - TICK_MS - performance.now());
+    expect(ctx.sound.click).toHaveBeenCalledTimes(1);
+    expect(ctx.onPhraseComplete).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2 * TICK_MS);
+    expect(ctx.onPhraseComplete).toHaveBeenCalledWith(expect.objectContaining({ passed: true, holds: "coach" }));
+    expect(ctx.controller.isHot).toBe(false);
+  });
+
+  it("coaches a half note let go too soon: marked on the staff, still a pass", () => {
+    const ctx = halfEndSetup();
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    hold(ctx, 60, 1000);
+    hold(ctx, 62, 1000);
+    expect(ctx.keyboard.setGuide).toHaveBeenCalledWith(60, true);
+    expect(ctx.keyboard.setGuide).toHaveBeenCalledWith(60, false);
+    hold(ctx, 64, 500);
+    expect(ctx.notation.setHold).toHaveBeenLastCalledWith(2, expect.objectContaining({ state: "short", until: 4 }));
+    vi.advanceTimersByTime(firstAt + 4000 + TICK_MS - performance.now());
+    expect(ctx.onPhraseComplete).toHaveBeenCalledWith(expect.objectContaining({ passed: true }));
+    expect(ctx.onPhraseComplete.mock.lastCall![0].notes[2]).toMatchObject({ hold: "short" });
+  });
+
+  it("fails the attempt at once on a note let go too soon when holds are strict, with no guide", () => {
+    const ctx = quartersSetup();
+    ctx.controller.holdStrictness = "strict";
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    hold(ctx, 60, 500);
+    expectFailedAt(ctx, 0, { hit: true, wrong: 0, hold: "short" });
+    expect(ctx.onPhraseComplete.mock.lastCall![0].holds).toBe("strict");
+    expect(ctx.keyboard.setGuide).not.toHaveBeenCalledWith(60, true);
+  });
+
+  it("fails the attempt when a key is held too far into the next note under strict holds", () => {
+    const ctx = quartersSetup();
+    ctx.controller.holdStrictness = "strict";
+    const firstAt = playFirstHeld(ctx);
+    vi.advanceTimersByTime(firstAt + 1250 + TICK_MS - performance.now());
+    expectFailedAt(ctx, 0, { hold: "long" });
+  });
+
+  /** Goes hot and puts C down on time, leaving it held; returns when it was due. */
+  function playFirstHeld(ctx: ReturnType<typeof setup>): number {
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    ctx.stream.emit({ kind: "on", pitch: 60, time: firstAt, source: "screen" });
+    vi.advanceTimersByTime(0);
+    return firstAt;
+  }
 
   it("slowing down mid-attempt counts as bailing out", () => {
     const ctx = setup(settings);

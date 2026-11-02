@@ -19,6 +19,10 @@ export interface NoteResult {
   offsetMs?: number;
   /** Rhythm mode: of the `wrong` presses, how many were the right key before its window. */
   early?: number;
+  /** Rhythm mode: key release minus the note's written end, in ms; absent if still held at the end. */
+  releaseMs?: number;
+  /** Rhythm mode: let go too soon or held too long, by the attempt's hold policy. */
+  hold?: "short" | "long";
   /** Held on from the note before through a tie, so it shares that note's result. */
   tied?: true;
 }

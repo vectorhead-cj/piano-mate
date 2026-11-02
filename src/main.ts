@@ -167,6 +167,9 @@ async function main(): Promise<void> {
     setState(...args: Parameters<NotationView["setState"]>) {
       notationView.setState(...args);
     },
+    setHold(...args: Parameters<NotationView["setHold"]>) {
+      notationView.setHold(...args);
+    },
     flashWrong(...args: Parameters<NotationView["flashWrong"]>) {
       notationView.flashWrong(...args);
     },
@@ -332,6 +335,11 @@ async function main(): Promise<void> {
   const highlightPlayed = element<HTMLFormElement>("settings").elements.namedItem("highlightPlayed") as HTMLInputElement;
   notationView.setHighlightPlayed(highlightPlayed.checked);
   highlightPlayed.addEventListener("change", () => notationView.setHighlightPlayed(highlightPlayed.checked));
+  const holdGuide = element<HTMLFormElement>("settings").elements.namedItem("holdGuide") as HTMLInputElement;
+  practice.holdGuide = holdGuide.checked;
+  holdGuide.addEventListener("change", () => {
+    practice.holdGuide = holdGuide.checked;
+  });
   bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {
@@ -387,6 +395,7 @@ async function main(): Promise<void> {
       context,
       mode: result.mode,
       tempo: result.tempo,
+      holds: result.holds,
       input: inputKind(result.sources),
       devices: midiDevices && midiDevices.length > 0 ? midiDevices : undefined,
       config: {
@@ -414,7 +423,7 @@ async function main(): Promise<void> {
     const perfect = isPerfect(event);
     const again = perfect && result.passesNeeded > 0;
     const outcome = (detail: string): ResultMessage =>
-      perfect ? cleanMessage(detail, again) : faultMessage(result, detail);
+      perfect ? cleanMessage(withHoldTip(result, detail), again) : faultMessage(result, detail);
 
     if (context.kind === "custom") {
       streakDots.push(perfect);
@@ -529,7 +538,7 @@ async function main(): Promise<void> {
 
   /** Where a failed attempt first went wrong: what to say, and the bar to wash on the staff. */
   function faultOf(result: PhraseResult): { emoji: string; text: string; bar?: number } {
-    const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length) });
+    const fault = firstFault({ notes: result.notes, barSizes: result.exercise.bars.map((bar) => bar.length), holds: result.holds });
     // Stopping leaves the rest unplayed, so only a key pressed before it is the real fault.
     if (result.abandoned && fault?.kind !== "wrong" && fault?.kind !== "early") return { emoji: "✋", text: "Stopped mid-phrase" };
     if (!fault) return { emoji: "❌", text: "Not quite" };
@@ -540,7 +549,19 @@ async function main(): Promise<void> {
         return { emoji: "⏩", text: `Too early in bar ${fault.bar}`, bar: fault.bar };
       case "missed":
         return { emoji: "🙈", text: `Missed a note in bar ${fault.bar}`, bar: fault.bar };
+      case "short":
+        return { emoji: "⏱️", text: `Let go too soon in bar ${fault.bar}`, bar: fault.bar };
+      case "long":
+        return { emoji: "🐢", text: `Held too long in bar ${fault.bar}`, bar: fault.bar };
     }
+  }
+
+  /** While holds are coached, a clean phrase with holds that were off gets a tip about them. */
+  function withHoldTip(result: PhraseResult, detail: string): string {
+    const holds = result.notes.map((n) => n.hold);
+    if (holds.includes("short")) return `${detail} · hold long notes their full length`;
+    if (holds.includes("long")) return `${detail} · let go as the next note starts`;
+    return detail;
   }
 
   function faultMessage(result: PhraseResult, detail: string, tone: ResultTone = "fault"): ResultMessage {
@@ -654,6 +675,7 @@ async function main(): Promise<void> {
     celebrating = null;
     intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone, finished: false };
     context = { kind: "curriculum", clef, stageId, tier: "read" };
+    practice.holdStrictness = "coach";
     settings = {
       ...customSettings,
       mode: "rhythm",
@@ -716,6 +738,7 @@ async function main(): Promise<void> {
     milestone = null;
     celebrating = null;
     context = { kind: "curriculum", clef, stageId, tier };
+    practice.holdStrictness = tier === "fluent" ? "strict" : "coach";
     streakDots.reset(store.progress[clef].stages[stageId].tiers[tier].recent);
     settings = {
       ...customSettings,
@@ -760,6 +783,7 @@ async function main(): Promise<void> {
     milestone = null;
     celebrating = null;
     context = { kind: "custom" };
+    practice.holdStrictness = "coach";
     streakDots.reset();
     settings = customSettings;
     keyboardSpan = levelMidiRange(levelById(settings.range));

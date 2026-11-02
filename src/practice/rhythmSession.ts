@@ -2,6 +2,7 @@ import { midiOf } from "../music/pitch";
 import { barBeats, BEATS } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
 import { isTieContinuation, nextPressed, pressedIndices, tiedOn } from "../music/ties";
+import { HOLD_POLICIES, type HoldFault, type HoldPolicy } from "./holds";
 import type { PitchMatcher } from "./matcher";
 import type { Mark, NoteResult } from "./waitSession";
 import {
@@ -22,6 +23,19 @@ export type RhythmPlayResult =
 export interface PhraseMarks {
   notes: Mark[];
   rhythm: Mark[];
+}
+
+/** A key let go while it held a note: which note, and whether it was let go too soon. */
+export interface RhythmRelease {
+  index: number;
+  short: boolean;
+}
+
+/** A note whose key is down: when it went down, and when the note's written length ends. */
+export interface HeldNote {
+  index: number;
+  pressedAt: number;
+  endsAt: number;
 }
 
 export interface RhythmTickResult {
@@ -57,11 +71,18 @@ export class RhythmSession {
   private readonly wrongs: number[];
   private readonly earlies: number[];
   private readonly offsets: (number | undefined)[];
+  /** Where each pressed note's written length ends (the next press), ms from phrase start. */
+  private readonly ends: number[];
+  /** Keys down on a note they played right, by the key played. */
+  private readonly held = new Map<number, { index: number; pressedAt: number }>();
+  private readonly releases: (number | undefined)[];
+  private readonly holds: (HoldFault | undefined)[];
 
   constructor(
     exercise: Exercise,
     tempo: number,
     private readonly matches: PitchMatcher,
+    readonly holdPolicy: HoldPolicy = HOLD_POLICIES.coach,
   ) {
     this.notes = exercise.bars.flat();
     this.tempo = tempo;
@@ -77,6 +98,10 @@ export class RhythmSession {
     this.wrongs = this.notes.map(() => 0);
     this.earlies = this.notes.map(() => 0);
     this.offsets = this.notes.map(() => undefined);
+    this.releases = this.notes.map(() => undefined);
+    this.holds = this.notes.map(() => undefined);
+    const phraseMs = phraseBeats * beatMs(tempo);
+    this.ends = this.notes.map((_, i) => this.onsets[nextPressed(this.notes, i + 1)] ?? phraseMs);
   }
 
   /** Wall-clock time of the barline after the last note; undefined until armed. */
@@ -120,7 +145,7 @@ export class RhythmSession {
         this.wrongs[i] > this.earlies[i] ? "wrong" : i < this.index ? (this.pitchOk[i] ? "correct" : "wrong") : "pending",
       ),
       rhythm: pressed.map((i) =>
-        this.earlies[i] > 0 ? "wrong" : i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending",
+        this.earlies[i] > 0 || (this.holds[i] && this.holdPolicy.fails) ? "wrong" : i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending",
       ),
     };
   }
@@ -134,8 +159,60 @@ export class RhythmSession {
             hit: this.pitchOk[i],
             offsetMs: this.offsets[i],
             ...(this.earlies[i] > 0 && { early: this.earlies[i] }),
+            ...(this.releases[i] !== undefined && { releaseMs: this.releases[i] }),
+            ...(this.holds[i] && { hold: this.holds[i] }),
           },
     );
+  }
+
+  /** Notes whose keys are down, in the order they were pressed. */
+  holding(): HeldNote[] {
+    const start = this.phraseStartAt ?? 0;
+    return [...this.held.values()]
+      .sort((a, b) => a.index - b.index)
+      .map(({ index, pressedAt }) => ({ index, pressedAt, endsAt: start + this.ends[index] }));
+  }
+
+  /** When the pressed note at `index` is written to end: where the next press is due. */
+  noteEndAt(index: number): number {
+    return (this.phraseStartAt ?? 0) + this.ends[index];
+  }
+
+  /**
+   * A key let go. Graded against the beat, not the press: a note pressed late and let go on
+   * time was held right. Returns null for a key that wasn't holding a note.
+   */
+  release(pitch: number, time: number = performance.now()): RhythmRelease | null {
+    const key = this.held.get(pitch);
+    if (!key || this.phraseStartAt === null) return null;
+    this.held.delete(pitch);
+    const { index } = key;
+    const start = this.phraseStartAt + this.onsets[index];
+    const length = this.ends[index] - this.onsets[index];
+    this.releases[index] = Math.round(time - (start + length));
+    const beats = length / beatMs(this.tempo);
+    const share = beats >= 2 ? this.holdPolicy.minHoldLong : this.holdPolicy.minHold;
+    const short = beats >= this.holdPolicy.minBeats && time < start + share * length;
+    if (short) this.holds[index] = "short";
+    return { index, short };
+  }
+
+  /**
+   * Notes still held past how far into the next note the policy allows; they're marked as
+   * held too long and no longer followed. The last note's "next" is its own length again.
+   */
+  overheld(now: number = performance.now()): number[] {
+    if (this.phraseStartAt === null) return [];
+    const flagged: number[] = [];
+    for (const [pitch, { index }] of this.held) {
+      const next = nextPressed(this.notes, index + 1);
+      const nextLength = next < this.notes.length ? this.ends[next] - this.onsets[next] : this.ends[index] - this.onsets[index];
+      if (now <= this.phraseStartAt + this.ends[index] + this.holdPolicy.maxOverlap * nextLength) continue;
+      this.held.delete(pitch);
+      this.holds[index] = "long";
+      flagged.push(index);
+    }
+    return flagged;
   }
 
   /** Moves past the pressed note at `index` and any notes tied on from it. */
@@ -197,6 +274,9 @@ export class RhythmSession {
       return { missed, result: { kind: "early", index } };
     }
 
+    // A key still down from before (its release never came) is let go as it's played again.
+    this.release(pitch, time);
+    this.held.set(pitch, { index, pressedAt: time });
     const timing = timingGrade(time - expectedAt, this.tempo);
     this.offsets[index] = Math.round(time - expectedAt);
     for (const i of [index, ...tiedOn(this.notes, index)]) {

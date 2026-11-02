@@ -6,7 +6,8 @@ import { midiOf } from "../music/pitch";
 import { pressedIndices, tiedOn } from "../music/ties";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
-import type { NotationOptions, NoteState } from "../render/notationView";
+import type { HoldMark, NotationOptions, NoteState } from "../render/notationView";
+import { cleanNote, HOLD_POLICIES, type HoldStrictness } from "./holds";
 import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
 import type { Settings } from "./settings";
@@ -28,12 +29,16 @@ export interface NotationDisplay {
   setOptions(options: NotationOptions): void;
   setState(index: number, state: NoteState): void;
   flashWrong(index: number): void;
+  /** Draws how long a pressed note was held against its written length; null clears it. */
+  setHold?(index: number, hold: HoldMark | null): void;
 }
 
 /** The parts of KeyboardView the controller uses. */
 export interface KeyboardDisplay {
   setPressed(midi: number, pressed: boolean): void;
   flash(midi: number, kind: KeyFlash): void;
+  /** Lights a key for as long as its note should be held. */
+  setGuide?(midi: number, on: boolean): void;
 }
 
 export interface SoundOutput {
@@ -58,6 +63,8 @@ export interface PhraseResult {
   mode: "wait" | "rhythm";
   /** Rhythm mode only. */
   tempo?: number;
+  /** Rhythm mode only: how strictly holds were graded. */
+  holds?: HoldStrictness;
   notes: NoteResult[];
   /** Where the phrase's note-ons came from; empty when nothing was played. */
   sources: NoteSource[];
@@ -146,6 +153,12 @@ export class PracticeController {
    * phrases); returning null falls back to the generator.
    */
   exerciseSource: (() => Exercise | null) | null = null;
+  /** How strictly rhythm mode grades holds; each attempt takes it as it starts. */
+  holdStrictness: HoldStrictness = "coach";
+  /** Show, while coaching, how long to hold each note: a trail on the staff and a lit key. */
+  holdGuide = true;
+  /** Keys lit by the hold guide, with when each note's written length ends. */
+  private readonly guides = new Map<number, number>();
 
   constructor(private readonly deps: PracticeDependencies) {
     this.settings = deps.settings;
@@ -182,6 +195,9 @@ export class PracticeController {
         this.phraseSources.add(event.source);
         const { pitch, time } = event;
         setTimeout(() => this.handleNoteOn(pitch, time), 0);
+      } else if (event.kind === "off" && this.hot && this.settings.mode === "rhythm") {
+        const { pitch, time } = event;
+        setTimeout(() => this.handleRhythmNoteOff(pitch, time), 0);
       }
     });
     this.startNewExercise();
@@ -258,9 +274,10 @@ export class PracticeController {
       !session.isComplete &&
       (session.currentIndex > 0 || session.results().some((n) => n.wrong > 0));
     const tempo = this.rhythmSession?.tempo;
+    const holds = this.rhythmSession ? this.holdsOf(this.rhythmSession) : undefined;
     this.teardownRhythm(true);
     this.setHot(false);
-    if (begun) this.settleAttempt(this.settings.mode, session.results(), tempo, true);
+    if (begun) this.settleAttempt(this.settings.mode, session.results(), tempo, true, holds);
   }
 
   /**
@@ -339,7 +356,7 @@ export class PracticeController {
   }
 
   private startRhythmClock(countInAt?: number): void {
-    this.rhythmSession = new RhythmSession(this.currentExercise, this.tempo, exactPitch);
+    this.rhythmSession = new RhythmSession(this.currentExercise, this.tempo, exactPitch, HOLD_POLICIES[this.holdStrictness]);
     this.publishLiveScore();
     // Count-in is a bar (more before a pickup); align to countInAt when continuing from the previous phrase.
     const wallStart = countInAt ?? this.now();
@@ -448,10 +465,13 @@ export class PracticeController {
           session.wrongAt(result.index) > 0 ? "wrong" : result.timing === "on-time" ? "correct" : "late";
         this.setPressedState(session.notes, result.index, state);
         keyboard.flash(pitch, result.timing === "on-time" ? "correct" : "hint");
+        if (this.showsHoldGuide(session)) {
+          keyboard.setGuide?.(pitch, true);
+          this.guides.set(pitch, session.noteEndAt(result.index));
+        }
         this.publishLiveScore();
-        if (result.completed) {
-          this.finishRhythmPhrase();
-        } else if (!session.isCountingIn(this.now())) {
+        // The last note still has to be held, so the attempt runs on to the barline (see scheduleTick).
+        if (!result.completed && !session.isCountingIn(this.now())) {
           notation.setState(session.currentIndex, "current");
         }
         break;
@@ -468,9 +488,67 @@ export class PracticeController {
         this.finishRhythmPhrase();
         break;
       case "ignored":
-        if (session.isComplete) this.finishRhythmPhrase();
         break;
     }
+  }
+
+  /** A key let go: let go too soon marks its note, and fails the attempt when holds are strict. */
+  private handleRhythmNoteOff(pitch: number, time: number): void {
+    const session = this.rhythmSession;
+    if (!session || this.finishingRhythm || !this.hot) return;
+    const released = session.release(pitch, time);
+    if (!released) return;
+    if (!released.short) {
+      this.deps.notation.setHold?.(released.index, null);
+      return;
+    }
+    this.markHold(session, released.index, time, "short");
+    this.publishLiveScore();
+    if (session.holdPolicy.fails) this.finishRhythmPhrase();
+  }
+
+  /** The hold guide shows while holds are coached, never while they're graded strictly. */
+  private showsHoldGuide(session: RhythmSession): boolean {
+    return this.holdGuide && !session.holdPolicy.fails;
+  }
+
+  /** Quarter beats from the first note's onset to `time`. */
+  private beatAt(session: RhythmSession, time: number): number {
+    return (time - (session.phraseStart ?? 0)) / beatMs(session.tempo);
+  }
+
+  /** Leaves a note's hold on the staff: from its press to `until` (its release, or when it was flagged). */
+  private markHold(session: RhythmSession, index: number, until: number, state: HoldMark["state"]): void {
+    const pressed = session.results()[index].offsetMs ?? 0;
+    this.deps.notation.setHold?.(index, {
+      from: this.beatAt(session, (session.phraseStart ?? 0) + session.onsets[index] + pressed),
+      to: this.beatAt(session, until),
+      until: this.beatAt(session, session.noteEndAt(index)),
+      state,
+    });
+  }
+
+  /** Grows the trails of held notes and puts out guide keys whose note has run its length. */
+  private followHolds(session: RhythmSession, now: number): void {
+    for (const [pitch, endsAt] of this.guides) {
+      if (now < endsAt) continue;
+      this.deps.keyboard.setGuide?.(pitch, false);
+      this.guides.delete(pitch);
+    }
+    if (!this.showsHoldGuide(session)) return;
+    for (const { index, pressedAt, endsAt } of session.holding()) {
+      this.deps.notation.setHold?.(index, {
+        from: this.beatAt(session, pressedAt),
+        to: this.beatAt(session, now),
+        until: this.beatAt(session, endsAt),
+        state: "live",
+      });
+    }
+  }
+
+  private clearGuides(): void {
+    for (const pitch of this.guides.keys()) this.deps.keyboard.setGuide?.(pitch, false);
+    this.guides.clear();
   }
 
   /** Colours a pressed note and the notes tied on from it. */
@@ -481,13 +559,26 @@ export class PracticeController {
   private scheduleTick(): void {
     clearTimeout(this.tickTimer);
     const session = this.rhythmSession;
-    if (!session || session.isComplete) return;
+    if (!session) return;
 
     this.tickTimer = setTimeout(() => {
       const now = this.now();
       const { missed, currentIndex, completed } = session.tick(now);
       this.applyMisses(missed);
-      if (completed || missed.length > 0) {
+      if (missed.length > 0) {
+        this.finishRhythmPhrase();
+        return;
+      }
+      const overheld = session.overheld(now);
+      for (const index of overheld) this.markHold(session, index, now, "long");
+      if (overheld.length > 0) this.publishLiveScore();
+      if (overheld.length > 0 && session.holdPolicy.fails) {
+        this.finishRhythmPhrase();
+        return;
+      }
+      this.followHolds(session, now);
+      // Every note played: the attempt ends at the barline, with the last bar clicked through.
+      if (completed && now >= (session.endAt ?? now)) {
         this.finishRhythmPhrase();
         return;
       }
@@ -537,7 +628,10 @@ export class PracticeController {
 
     const session = this.rhythmSession;
     if (!session) return;
-    const { passed, next } = this.settleAttempt("rhythm", session.results(), session.tempo);
+    this.clearGuides();
+    // Notes still down at the end were held long enough; their live trails go.
+    for (const { index } of session.holding()) this.deps.notation.setHold?.(index, null);
+    const { passed, next } = this.settleAttempt("rhythm", session.results(), session.tempo, false, this.holdsOf(session));
     if (!passed || this.pauseAfterPass) {
       this.teardownRhythm(true);
       this.setHot(false);
@@ -563,8 +657,9 @@ export class PracticeController {
     notes: NoteResult[],
     tempo?: number,
     abandoned = false,
+    holds?: HoldStrictness,
   ): PhraseResult {
-    const passed = notes.every((n) => n.hit && n.wrong === 0);
+    const passed = notes.every((n) => cleanNote(n, holds));
     const slowed = this.slowTempo !== undefined;
     if (slowed) {
       if (passed) this.slowTempo = undefined;
@@ -583,6 +678,7 @@ export class PracticeController {
       exercise: this.currentExercise,
       mode,
       tempo,
+      holds,
       notes,
       sources: [...this.phraseSources],
       passed,
@@ -596,7 +692,12 @@ export class PracticeController {
     return result;
   }
 
+  private holdsOf(session: RhythmSession): HoldStrictness {
+    return session.holdPolicy.fails ? "strict" : "coach";
+  }
+
   private teardownRhythm(stopMetronome: boolean): void {
+    this.clearGuides();
     clearTimeout(this.tickTimer);
     this.tickTimer = undefined;
     if (stopMetronome) this.metronome?.stop();

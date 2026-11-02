@@ -3,9 +3,23 @@ import { spellInKey, type AccidentalSymbol } from "../music/accidentals";
 import { keyById, signatureLetters } from "../music/keys";
 import { exerciseToMusicXml } from "../music/musicXml";
 import { staffStep } from "../music/pitch";
+import { BEATS } from "../music/rhythms";
+import { pressedIndices } from "../music/ties";
 import type { Clef, Exercise } from "../music/types";
 
 export type NoteState = "pending" | "current" | "correct" | "late" | "wrong";
+
+/**
+ * How long a pressed note was held, in quarter beats from the first note's onset: the key
+ * went down at `from` and up (or is still down) at `to`; its written length ends at `until`.
+ * Live while it's held; short or long once it's let go too soon or held too long.
+ */
+export interface HoldMark {
+  from: number;
+  to: number;
+  until: number;
+  state: "live" | "short" | "long";
+}
 
 export interface NotationOptions {
   showNames: boolean;
@@ -67,6 +81,12 @@ const GHOST_X_UNITS = 3.6;
 /** Played notes further out than this many ledger lines get an arrow instead. */
 const MAX_LEDGERS = 4;
 const RELEASE_FADE_MS = 150;
+/** The hold lane sits this far below the staff's bottom line, or its lowest note, in staff spaces. */
+const HOLD_LANE_UNITS = 2;
+const HOLD_LANE_NOTE_GAP_UNITS = 1.4;
+const HOLD_BAR_UNITS = 0.45;
+/** Pressed notes take turns between two lanes this far apart, so a hold into the next note stays apart from it. */
+const HOLD_LANE_STEP_UNITS = 0.7;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /**
  * Accidentals as strokes in staff spaces, centred on the note's line or space (y down):
@@ -110,6 +130,8 @@ export class NotationView {
    */
   private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
+  private readonly holds = new Map<number, HoldMark>();
+  private readonly holdLayer = document.createElementNS(SVG_NS, "svg");
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -141,6 +163,8 @@ export class NotationView {
     this.barMark.setAttribute("aria-hidden", "true");
     this.playedLayer.classList.add("played-layer");
     this.playedLayer.setAttribute("aria-hidden", "true");
+    this.holdLayer.classList.add("hold-layer");
+    this.holdLayer.setAttribute("aria-hidden", "true");
   }
 
   show(exercise: Exercise, options: NotationOptions): void {
@@ -148,6 +172,7 @@ export class NotationView {
     this.exercise = exercise;
     this.markedBar = null;
     this.columns.clear();
+    this.holds.clear();
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
     void this.reload();
@@ -209,6 +234,12 @@ export class NotationView {
     this.wrongFlashTimer = window.setTimeout(() => {
       if (this.states[index] === "wrong") this.setState(index, "current");
     }, WRONG_FLASH_MS);
+  }
+
+  setHold(index: number, hold: HoldMark | null): void {
+    if (hold) this.holds.set(index, hold);
+    else if (!this.holds.delete(index)) return;
+    this.drawHolds();
   }
 
   /** Washes the bar (from 1) a phrase went wrong in, until the next phrase is shown; null clears it. */
@@ -291,6 +322,7 @@ export class NotationView {
       this.drawStaffLetters();
       this.drawBarMark();
       this.drawPlayed();
+      this.drawHolds();
       return;
     }
 
@@ -312,6 +344,7 @@ export class NotationView {
     this.drawStaffLetters();
     this.drawBarMark();
     this.drawPlayed();
+    this.drawHolds();
   }
 
   /** Places the bar wash over the marked bar's staff, a little above and below the lines. */
@@ -521,6 +554,76 @@ export class NotationView {
           }
         }
       }
+    }
+    this.root.append(layer);
+  }
+
+  /**
+   * Each held note gets a bar in a lane under its staff, laid out in time like the notes
+   * above it: its written length as a faint track, and the time the key was down filled in.
+   */
+  private drawHolds(): void {
+    const layer = this.holdLayer;
+    layer.replaceChildren();
+    const exercise = this.exercise;
+    if (this.holds.size === 0 || !this.ready || !exercise) {
+      layer.remove();
+      return;
+    }
+    const unit = 10 * this.osmd.Zoom;
+    const notes = exercise.bars.flat();
+    const onsets: number[] = [];
+    notes.reduce((beat, note) => (onsets.push(beat), beat + BEATS[note.duration]), 0);
+    const phraseBeats = notes.reduce((sum, note) => sum + BEATS[note.duration], 0);
+    const heads = this.graphicalNotes.map((note) => {
+      const { x, y } = note.PositionAndShape.AbsolutePosition;
+      const measure = note.parentVoiceEntry.parentStaffEntry.parentMeasure;
+      const box = measure.PositionAndShape;
+      return {
+        x: x * unit,
+        y: y * unit,
+        staffTop: box.AbsolutePosition.y * unit,
+        barEnd: (box.AbsolutePosition.x + box.BorderRight) * unit,
+      };
+    });
+    if (heads.length < notes.length) return;
+    // Beat → x along the music: each note's span runs to the next note, or to its barline
+    // when the next note starts a new line. Past the end, it carries on at the last span's pace.
+    const xAt = (beat: number, line: number): number => {
+      let k = 0;
+      while (k < notes.length - 1 && onsets[k + 1] <= beat) k++;
+      const next = heads[k + 1];
+      const end = next && next.staffTop === heads[k].staffTop ? next.x : heads[k].barEnd;
+      const endBeat = onsets[k + 1] ?? phraseBeats;
+      const x = heads[k].x + ((beat - onsets[k]) / (endBeat - onsets[k])) * (end - heads[k].x);
+      // A bar that runs onto the next line stops at its own line's end.
+      return heads[k].staffTop === line ? x : heads.filter((h) => h.staffTop === line).reduce((m, h) => Math.max(m, h.barEnd), 0);
+    };
+    const lanes = new Map<number, number>();
+    for (const head of heads) {
+      const lowest = Math.max(lanes.get(head.staffTop) ?? head.staffTop + HOLD_LANE_UNITS * unit + 4 * unit, head.y + HOLD_LANE_NOTE_GAP_UNITS * unit);
+      lanes.set(head.staffTop, lowest);
+    }
+    const add = (tag: string, attrs: Record<string, string | number>, className: string) => {
+      const node = document.createElementNS(SVG_NS, tag);
+      for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+      node.setAttribute("class", className);
+      layer.append(node);
+    };
+    const height = HOLD_BAR_UNITS * unit;
+    const pressed = pressedIndices(notes);
+    // Faults on top, so a note held into the next shows over that note's live trail.
+    const ordered = [...this.holds].sort(([, a], [, b]) => Number(a.state !== "live") - Number(b.state !== "live"));
+    for (const [index, hold] of ordered) {
+      const head = heads[index];
+      if (!head) continue;
+      const y = lanes.get(head.staffTop)! - height / 2 + (pressed.indexOf(index) % 2) * HOLD_LANE_STEP_UNITS * unit;
+      const start = xAt(onsets[index], head.staffTop);
+      const target = xAt(hold.until, head.staffTop);
+      add("rect", { x: start, y, width: Math.max(0, target - start), height, rx: height / 2 }, "hold-track");
+      const from = Math.max(start, xAt(hold.from, head.staffTop));
+      const to = xAt(hold.to, head.staffTop);
+      if (to > from) add("rect", { x: from, y, width: to - from, height, rx: height / 2 }, `hold-bar ${hold.state}`);
     }
     this.root.append(layer);
   }
