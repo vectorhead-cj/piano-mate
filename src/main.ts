@@ -711,7 +711,7 @@ async function main(): Promise<void> {
       return;
     }
     store.record({ type: "intro-completed", v: 1, id: newId(), at: Date.now(), session, clef, stageId, skipped });
-    startStage(clef, stageId, "read");
+    startStage(clef, stageId, stageTiers(placedStage(stageId)!.stage)[0]);
   }
 
   function stopIntro(): void {

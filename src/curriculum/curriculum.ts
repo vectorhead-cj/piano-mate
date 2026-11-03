@@ -7,7 +7,8 @@ import { spanById, spanLevel, type SpanId } from "./spans";
 /**
  * ★ Read = wait mode, ★★ Play = rhythm at the stage tempo, ★★★ Mix = Play with earlier
  * stages' phrases mixed in (it opens the next stage), ★★★★ Fluent = Mix at the target tempo.
- * The first stage has nothing earlier to mix, so it has no Mix (see stageTiers).
+ * The first stage has nothing earlier to mix, so it has no Mix, and a stage with no new
+ * notes to read has no Read (see stageTiers).
  */
 export type Tier = "read" | "play" | "mix" | "fluent";
 
@@ -336,9 +337,36 @@ export function stageReviews(stage: Stage): Review[] {
     .map((p, i) => ({ stage: p.stage, weight: 1 / (i + 1) }));
 }
 
-/** A stage's tiers in order: all of them, less Mix when there's nothing earlier to mix in. */
+const ACCIDENTAL_ORDER: readonly AccidentalFrequency[] = ["none", "rare", "medium", "common"];
+
+/**
+ * Whether a stage brings notes not read before: a new key, a key over a wider span than
+ * it has had, or more accidentals than any earlier stage. New rhythm or notation alone doesn't.
+ */
+export function stageAddsNotes(stage: Stage): boolean {
+  const order = placedStage(stage.id)?.order ?? PLACED_STAGES.length;
+  const widest = new Map<string, number>();
+  let accidentals = -1;
+  for (const { stage: earlier } of PLACED_STAGES.slice(0, order)) {
+    const steps = spanById(earlier.span).steps;
+    for (const key of earlier.keys) widest.set(key, Math.max(widest.get(key) ?? 0, steps));
+    accidentals = Math.max(accidentals, ACCIDENTAL_ORDER.indexOf(earlier.accidentals));
+  }
+  const steps = spanById(stage.span).steps;
+  return (
+    stage.keys.some((key) => (widest.get(key) ?? 0) < steps) ||
+    ACCIDENTAL_ORDER.indexOf(stage.accidentals) > accidentals
+  );
+}
+
+/**
+ * A stage's tiers in order: all of them, less Read when it has no new notes to read and
+ * less Mix when there's nothing earlier to mix in.
+ */
 export function stageTiers(stage: Stage): Tier[] {
-  return stageReviews(stage).length > 0 ? [...TIERS] : TIERS.filter((t) => t !== "mix");
+  return TIERS.filter(
+    (t) => (t !== "read" || stageAddsNotes(stage)) && (t !== "mix" || stageReviews(stage).length > 0),
+  );
 }
 
 /** Every tier's star: a stage's full set. */

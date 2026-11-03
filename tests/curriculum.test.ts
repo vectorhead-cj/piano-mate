@@ -8,6 +8,7 @@ import {
   stageExercises,
   stageNotations,
   stageReviews,
+  stageTiers,
   stageTitle,
   type Tier,
 } from "../src/curriculum/curriculum";
@@ -130,6 +131,24 @@ describe("stageReviews", () => {
     expect(ids("five-am").every((id) => placedStage(id)!.stage.span === "five")).toBe(true);
     expect(ids("octave-gf")).toContain("octave-c");
     expect(ids("octave-gf")).toContain("five-core");
+  });
+});
+
+describe("stageTiers", () => {
+  const tiers = (stageId: string) => stageTiers(placedStage(stageId)!.stage);
+
+  it("keeps Read for new keys, a key's wider span and more accidentals", () => {
+    expect(tiers("five-c")).toEqual(["read", "play", "fluent"]);
+    expect(tiers("five-g")[0]).toBe("read");
+    expect(tiers("octave-gf")[0]).toBe("read");
+    expect(tiers("octave-c-rare")[0]).toBe("read");
+  });
+
+  it("drops Read for new rhythm or notation, and for known keys mixed", () => {
+    expect(tiers("five-cgf")).toEqual(["play", "mix", "fluent"]);
+    expect(tiers("five-core-eighths")[0]).toBe("play");
+    expect(tiers("octave-core")[0]).toBe("play");
+    expect(tiers("octave-core-rare")[0]).toBe("play");
   });
 });
 
