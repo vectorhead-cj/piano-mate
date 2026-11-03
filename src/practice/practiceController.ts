@@ -15,6 +15,8 @@ import { beatMs } from "./timing";
 import { WaitSession, type Mark, type NoteResult } from "./waitSession";
 
 export const PHRASE_SCORE_DELAY_MS = 2500;
+/** Silent beats before the count-in of a phrase in a new key, to take in its key signature. */
+export const KEY_CHANGE_BEATS = 2;
 /** Failed attempts at full tempo before the player is offered a slower retry. */
 export const SLOW_DOWN_AFTER_FAILURES = 3;
 /** Each slow-down multiplies the tempo by this. */
@@ -29,6 +31,8 @@ export interface NotationDisplay {
   setOptions(options: NotationOptions): void;
   setState(index: number, state: NoteState): void;
   flashWrong(index: number): void;
+  /** Flashes the key signature's sharps or flats once the phrase being shown is drawn. */
+  flashKeySignature?(): void;
   /** Draws how long a pressed note was held against its written length; null clears it. */
   setHold?(index: number, hold: HoldMark | null): void;
 }
@@ -240,6 +244,7 @@ export class PracticeController {
    *   (used to keep the metronome continuous across phrases).
    */
   startNewExercise(autoplay = false, countInAt?: number): void {
+    const previousKey = this.currentExercise?.key;
     this.currentExercise =
       this.exerciseSource?.() ??
       generateExercise(
@@ -258,7 +263,8 @@ export class PracticeController {
     this.slowedDown = false;
     this.passes = 0;
     this.publishRetry();
-    this.beginCurrentExercise(autoplay || this.settings.mode === "wait", countInAt);
+    const keyChanged = previousKey !== undefined && previousKey !== this.currentExercise.key;
+    this.beginCurrentExercise(autoplay || this.settings.mode === "wait", countInAt, keyChanged);
   }
 
   /** Start a graded attempt on a clean sheet; rhythm mode rests a beat, then counts in a bar. */
@@ -331,7 +337,8 @@ export class PracticeController {
     this.deps.onRetryChange?.(this.retry);
   }
 
-  private beginCurrentExercise(hot: boolean, countInAt?: number): void {
+  /** @param keyChanged The phrase is in a new key: its signature flashes, and rhythm mode waits a little before counting in. */
+  private beginCurrentExercise(hot: boolean, countInAt?: number, keyChanged = false): void {
     clearTimeout(this.nextExerciseTimer);
     this.finishingRhythm = false;
     this.pendingNew = false;
@@ -341,11 +348,13 @@ export class PracticeController {
     this.teardownRhythm(!hot);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
     this.deps.notation.show(this.currentExercise, this.notationOptions());
+    if (keyChanged) this.deps.notation.flashKeySignature?.();
 
     if (this.settings.mode === "rhythm") {
       this.waitSession = null;
       if (hot) {
-        this.startRhythmClock(countInAt);
+        const settle = keyChanged ? KEY_CHANGE_BEATS * beatMs(this.tempo) : 0;
+        this.startRhythmClock((countInAt ?? this.now()) + settle);
       } else {
         this.rhythmSession = null;
         const pending = pressedIndices(this.currentExercise.bars.flat()).map((): Mark => "pending");

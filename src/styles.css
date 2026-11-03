@@ -983,6 +983,20 @@ dialog.midi-debug::backdrop {
 }
 
 /* The key-signature sign a played note takes; OSMD draws each sign as one path. */
+/* A phrase in a new key: its sharps or flats pulse while the player takes them in. */
+.vf-keysignature.key-flash path {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: key-flash 500ms ease-in-out 4 alternate;
+}
+
+@keyframes key-flash {
+  to {
+    fill: var(--accent);
+    transform: scale(1.25);
+  }
+}
+
 .vf-keysignature path.lit {
   fill: var(--played);
 }

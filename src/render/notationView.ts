@@ -131,6 +131,8 @@ export class NotationView {
   private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   private readonly holds = new Map<number, HoldMark>();
+  /** The key signature flashes once the phrase being loaded is drawn. */
+  private keyFlashPending = false;
   private readonly holdLayer = document.createElementNS(SVG_NS, "svg");
 
   constructor(root: HTMLElement) {
@@ -300,6 +302,14 @@ export class NotationView {
 
     this.renderFitted();
     this.ready = true;
+    if (this.keyFlashPending) this.flashKeySignature();
+  }
+
+  /** Flashes the key signature's sharps or flats, as soon as the phrase being shown is drawn. */
+  flashKeySignature(): void {
+    this.keyFlashPending = !this.ready;
+    if (this.keyFlashPending) return;
+    for (const signature of this.root.querySelectorAll(".vf-keysignature")) signature.classList.add("key-flash");
   }
 
   /**
