@@ -100,6 +100,17 @@ export class PieceScoreView {
     }
   }
 
+  /** Draws the score's fingering numbers or leaves them out, laying the music out again if it's drawn. */
+  setFingerings(on: boolean): void {
+    if (this.osmd.EngravingRules.RenderFingerings === on) return;
+    this.osmd.EngravingRules.RenderFingerings = on;
+    if (!this.osmd.Sheet) return;
+    // A render keeps the fingerings it placed before; a new graphic sheet starts without them.
+    this.osmd.updateGraphic();
+    this.width = 0;
+    this.draw();
+  }
+
   /** Draws `xml` (a whole piece, or the bars from `firstMeasure` on) and forgets earlier colours. */
   async show(xml: string, piece: Piece, firstMeasure = 0): Promise<void> {
     const generation = ++this.generation;

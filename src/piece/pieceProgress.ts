@@ -24,12 +24,14 @@ export interface PieceSettings {
   otherHand: boolean;
   /** Clicks through each pass, not just the count-in. */
   metronome: boolean;
+  /** The score's fingering numbers are drawn. */
+  fingerings: boolean;
 }
 
 export const DEFAULT_TEMPO = 80;
 
 export function defaultSettings(tempo = DEFAULT_TEMPO): PieceSettings {
-  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowShare: 0.6, otherHand: true, metronome: true };
+  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowShare: 0.6, otherHand: true, metronome: true, fingerings: true };
 }
 
 export const PLAN_LABELS: Record<Plan, string> = { "slow-first": "Slow first, then standard", standard: "Standard tempo directly" };

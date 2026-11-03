@@ -371,6 +371,8 @@ export class PieceMode {
     const record = await this.library!.get(id);
     if (!record) return;
     const piece = parsePiece(record.xml);
+    // Before v0.1.75 there was no fingering setting, and fingerings were drawn.
+    record.settings.fingerings ??= true;
     record.openedAt = Date.now();
     await this.library!.put(record);
     this.open = { record, piece, phrases: phrasesOf(record.phraseStarts, piece.measures.length) };
@@ -602,6 +604,7 @@ export class PieceMode {
         { class: "piece-toggles" },
         toggle("Synth plays the other hand", settings.otherHand, (otherHand) => update({ otherHand })),
         toggle("Metronome through each pass", settings.metronome, (metronome) => update({ metronome })),
+        toggle("Show fingering", settings.fingerings, (fingerings) => update({ fingerings })),
       ),
     );
   }
@@ -623,6 +626,7 @@ export class PieceMode {
     };
     const every = (bars: number) => setStarts(Array.from({ length: Math.ceil(piece.measures.length / bars) }, (_, i) => i * bars));
     const view = new PieceScoreView(sheet);
+    view.setFingerings(record.settings.fingerings);
     this.view = view;
     this.scroller = scroller;
     // Dragging across bars makes them one phrase; a tap on a bar starts a phrase there, or,
@@ -795,7 +799,16 @@ export class PieceMode {
     const sheet = h("div", { class: "piece-score" });
     const scroller = h("div", { class: "piece-scroll piece-scroll-practice" }, sheet);
     const view = new PieceScoreView(sheet);
+    view.setFingerings(record.settings.fingerings);
     this.view = view;
+
+    const fingerings = h("input", { type: "checkbox" });
+    fingerings.checked = record.settings.fingerings;
+    fingerings.addEventListener("change", () => {
+      record.settings.fingerings = fingerings.checked;
+      this.save();
+      view.setFingerings(fingerings.checked);
+    });
     this.scroller = scroller;
 
     this.root.replaceChildren(
@@ -825,6 +838,7 @@ export class PieceMode {
           ),
           h("span", { class: "piece-status-gap" }),
           h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
+          h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
         ),
         h(
           "p",
