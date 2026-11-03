@@ -983,18 +983,27 @@ dialog.midi-debug::backdrop {
 }
 
 /* The key-signature sign a played note takes; OSMD draws each sign as one path. */
-/* A phrase in a new key: its sharps or flats pulse while the player takes them in. */
-.vf-keysignature.key-flash path {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: key-flash 500ms ease-in-out 4 alternate;
+/* A phrase in a new key: a pencil loop round its key signature; drawn by NotationView. */
+.key-circle-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
-@keyframes key-flash {
-  to {
-    fill: var(--accent);
-    transform: scale(1.25);
-  }
+.key-circle {
+  fill: none;
+  stroke: var(--correct);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+}
+
+.key-circle.grain {
+  opacity: 0.5;
 }
 
 .vf-keysignature path.lit {

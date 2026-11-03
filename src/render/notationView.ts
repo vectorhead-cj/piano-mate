@@ -87,6 +87,15 @@ const HOLD_LANE_NOTE_GAP_UNITS = 1.4;
 const HOLD_BAR_UNITS = 0.45;
 /** Pressed notes take turns between two lanes this far apart, so a hold into the next note stays apart from it. */
 const HOLD_LANE_STEP_UNITS = 0.7;
+/** The pencil loop round a new key signature: drawn, held, then faded by the count-in. */
+const KEY_CIRCLE_DRAW_MS = 700;
+const KEY_CIRCLE_MS = 2000;
+/** How far the loop clears the signature sideways, and its half-height, in staff spaces. */
+const KEY_CIRCLE_PAD_UNITS = 1.1;
+const KEY_CIRCLE_RY_UNITS = 3.5;
+/** An empty C major slot gets a smaller loop, to sit in the narrow gap: its padding and half-height. */
+const EMPTY_KEY_CIRCLE_PAD_UNITS = 0.7;
+const EMPTY_KEY_CIRCLE_RY_UNITS = 2.8;
 const SVG_NS = "http://www.w3.org/2000/svg";
 /**
  * Accidentals as strokes in staff spaces, centred on the note's line or space (y down):
@@ -131,8 +140,10 @@ export class NotationView {
   private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   private readonly holds = new Map<number, HoldMark>();
-  /** The key signature flashes once the phrase being loaded is drawn. */
-  private keyFlashPending = false;
+  /** The key signature is circled once the phrase being loaded is drawn. */
+  private keyCirclePending = false;
+  /** The loop being drawn, kept so a re-render (which clears the container) can put it back. */
+  private keyCircle: SVGSVGElement | null = null;
   private readonly holdLayer = document.createElementNS(SVG_NS, "svg");
 
   constructor(root: HTMLElement) {
@@ -302,14 +313,80 @@ export class NotationView {
 
     this.renderFitted();
     this.ready = true;
-    if (this.keyFlashPending) this.flashKeySignature();
+    if (this.keyCirclePending) this.circleKeySignature();
   }
 
-  /** Flashes the key signature's sharps or flats, as soon as the phrase being shown is drawn. */
-  flashKeySignature(): void {
-    this.keyFlashPending = !this.ready;
-    if (this.keyFlashPending) return;
-    for (const signature of this.root.querySelectorAll(".vf-keysignature")) signature.classList.add("key-flash");
+  /**
+   * Circles each key signature with a pencil loop, as soon as the phrase being shown is
+   * drawn. C major has none, so its empty place between the clef and time signature is circled.
+   */
+  circleKeySignature(): void {
+    this.keyCirclePending = !this.ready;
+    if (this.keyCirclePending) return;
+    const origin = this.root.getBoundingClientRect();
+    const unit = 10 * this.osmd.Zoom;
+    const span = (selector: string) =>
+      [...this.root.querySelectorAll(selector)].map((shape) => {
+        const box = shape.getBoundingClientRect();
+        return { left: box.left - origin.left, right: box.right - origin.left, middle: (box.top + box.bottom) / 2 - origin.top };
+      });
+    let areas = span(".vf-keysignature");
+    const empty = areas.length === 0;
+    if (empty) {
+      const clef = span(".vf-clef")[0];
+      const time = span(".vf-timesignature")[0];
+      if (!clef || !time) return;
+      areas = [{ left: clef.right, right: time.left, middle: clef.middle }];
+    }
+    // Centred on the staff the signature sits on, not on the signs, which sit high or low.
+    const staffMiddles = [...this.root.querySelectorAll(".staffline")].map((staff) => {
+      // Halfway between its top and bottom lines (the flat paths); the group's own box reaches further.
+      const ys = [...staff.querySelectorAll("path")]
+        .map((line) => line.getBoundingClientRect())
+        .filter((box) => box.height < 2)
+        .map((box) => (box.top + box.bottom) / 2 - origin.top);
+      return (Math.min(...ys) + Math.max(...ys)) / 2;
+    });
+    const layer = document.createElementNS(SVG_NS, "svg");
+    layer.classList.add("key-circle-layer");
+    layer.setAttribute("aria-hidden", "true");
+    for (const area of areas) {
+      const cy = staffMiddles.reduce(
+        (best, y) => (Math.abs(y - area.middle) < Math.abs(best - area.middle) ? y : best),
+        staffMiddles[0] ?? area.middle,
+      );
+      const pad = empty ? EMPTY_KEY_CIRCLE_PAD_UNITS : KEY_CIRCLE_PAD_UNITS;
+      const ry = empty ? EMPTY_KEY_CIRCLE_RY_UNITS : KEY_CIRCLE_RY_UNITS;
+      const d = pencilLoop((area.left + area.right) / 2, cy, (area.right - area.left) / 2 + pad * unit, ry * unit);
+      const group = document.createElementNS(SVG_NS, "g");
+      // A firm line, and a fainter one just off it, for the grain of a pencil.
+      for (const [stroke, shift, className] of [[0.45, 0, "key-circle"], [0.18, 0.11, "key-circle grain"]] as const) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", d);
+        path.setAttribute("class", className);
+        path.setAttribute("stroke-width", String(stroke * unit));
+        path.setAttribute("transform", `translate(${shift * unit} ${-shift * unit})`);
+        group.append(path);
+      }
+      layer.append(group);
+    }
+    this.keyCircle?.remove();
+    this.keyCircle = layer;
+    this.root.append(layer);
+    for (const path of layer.querySelectorAll("path")) {
+      const length = path.getTotalLength();
+      path.style.strokeDasharray = String(length);
+      path.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], {
+        duration: KEY_CIRCLE_DRAW_MS,
+        easing: "cubic-bezier(.45,.05,.35,1)",
+        fill: "forwards",
+      });
+    }
+    const done = () => {
+      layer.remove();
+      if (this.keyCircle === layer) this.keyCircle = null;
+    };
+    layer.animate([{ opacity: 1 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], { duration: KEY_CIRCLE_MS }).finished.then(done, done);
   }
 
   /**
@@ -333,6 +410,7 @@ export class NotationView {
       this.drawBarMark();
       this.drawPlayed();
       this.drawHolds();
+      if (this.keyCircle) this.root.append(this.keyCircle);
       return;
     }
 
@@ -355,6 +433,7 @@ export class NotationView {
     this.drawBarMark();
     this.drawPlayed();
     this.drawHolds();
+    if (this.keyCircle) this.root.append(this.keyCircle);
   }
 
   /** Places the bar wash over the marked bar's staff, a little above and below the lines. */
@@ -644,6 +723,35 @@ export class NotationView {
       this.graphicalNotes[i].setColor(this.colors[this.states[i]], COLOR_OPTS);
     }
   }
+}
+
+/**
+ * A hand-drawn loop round (cx, cy): a wobbly ellipse that goes round a little more than
+ * once, drifting as it goes, so its ends overlap like a quick pencil circle. Each is different.
+ */
+function pencilLoop(cx: number, cy: number, rx: number, ry: number): string {
+  const steps = 90;
+  const turns = 1.18;
+  const phase = Math.random() * 2 * Math.PI;
+  const start = -2.4 + Math.random() * 0.5;
+  const points: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const angle = start + t * turns * 2 * Math.PI;
+    const wobble = 1 + 0.06 * Math.sin(angle * 2 + phase) + 0.04 * Math.sin(angle * 3.3 + phase * 1.7);
+    points.push([
+      cx + Math.cos(angle) * rx * wobble * (1 + 0.1 * t) + (t - 0.5) * 0.04 * rx,
+      cy + Math.sin(angle) * ry * wobble * (1 + 0.05 * t) - t * 0.08 * ry,
+    ]);
+  }
+  const at = ([x, y]: [number, number]) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+  let d = `M${at(points[0])}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x, y] = points[i];
+    const [nx, ny] = points[i + 1];
+    d += ` Q${at([x, y])} ${at([(x + nx) / 2, (y + ny) / 2])}`;
+  }
+  return d;
 }
 
 function collectGraphicalNotes(osmd: OpenSheetMusicDisplay): GraphicalNote[] {

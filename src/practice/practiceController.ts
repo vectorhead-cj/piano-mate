@@ -31,8 +31,8 @@ export interface NotationDisplay {
   setOptions(options: NotationOptions): void;
   setState(index: number, state: NoteState): void;
   flashWrong(index: number): void;
-  /** Flashes the key signature's sharps or flats once the phrase being shown is drawn. */
-  flashKeySignature?(): void;
+  /** Circles the key signature (where it would be, in C) once the phrase being shown is drawn. */
+  circleKeySignature?(): void;
   /** Draws how long a pressed note was held against its written length; null clears it. */
   setHold?(index: number, hold: HoldMark | null): void;
 }
@@ -337,7 +337,7 @@ export class PracticeController {
     this.deps.onRetryChange?.(this.retry);
   }
 
-  /** @param keyChanged The phrase is in a new key: its signature flashes, and rhythm mode waits a little before counting in. */
+  /** @param keyChanged The phrase is in a new key: its signature is circled, and rhythm mode waits a little before counting in. */
   private beginCurrentExercise(hot: boolean, countInAt?: number, keyChanged = false): void {
     clearTimeout(this.nextExerciseTimer);
     this.finishingRhythm = false;
@@ -348,7 +348,7 @@ export class PracticeController {
     this.teardownRhythm(!hot);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
     this.deps.notation.show(this.currentExercise, this.notationOptions());
-    if (keyChanged) this.deps.notation.flashKeySignature?.();
+    if (keyChanged) this.deps.notation.circleKeySignature?.();
 
     if (this.settings.mode === "rhythm") {
       this.waitSession = null;

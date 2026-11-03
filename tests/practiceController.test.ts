@@ -24,7 +24,7 @@ function setup(settings: Settings = DEFAULT_SETTINGS, now?: () => number) {
     setState: vi.fn(),
     flashWrong: vi.fn(),
     setHold: vi.fn(),
-    flashKeySignature: vi.fn(),
+    circleKeySignature: vi.fn(),
   };
   const keyboard = { setPressed: vi.fn(), flash: vi.fn(), setGuide: vi.fn() };
   const sound = { play: vi.fn(), click: vi.fn() };
@@ -716,11 +716,11 @@ describe("PracticeController rhythm retries", () => {
 
   it("flashes a new key's signature and rests two silent beats before counting in", () => {
     const ctx = quartersSetup();
-    ctx.notation.flashKeySignature.mockClear();
+    ctx.notation.circleKeySignature.mockClear();
     const inG: Exercise = { ...ctx.controller.exercise, key: "G" };
     ctx.controller.exerciseSource = () => inG;
     ctx.controller.startNewExercise(true, performance.now());
-    expect(ctx.notation.flashKeySignature).toHaveBeenCalledTimes(1);
+    expect(ctx.notation.circleKeySignature).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1999);
     expect(ctx.sound.click).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
@@ -732,7 +732,7 @@ describe("PracticeController rhythm retries", () => {
     ctx.controller.startNewExercise(true, performance.now());
     vi.advanceTimersByTime(0);
     expect(ctx.sound.click).toHaveBeenCalledWith(true);
-    expect(ctx.notation.flashKeySignature).toHaveBeenCalledTimes(1);
+    expect(ctx.notation.circleKeySignature).toHaveBeenCalledTimes(1);
   });
 
   it("slowing down mid-attempt counts as bailing out", () => {
