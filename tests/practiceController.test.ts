@@ -24,7 +24,7 @@ function setup(settings: Settings = DEFAULT_SETTINGS, now?: () => number) {
     setState: vi.fn(),
     flashWrong: vi.fn(),
     setHold: vi.fn(),
-    circleKeySignature: vi.fn(),
+    circleSignatures: vi.fn(),
   };
   const keyboard = { setPressed: vi.fn(), flash: vi.fn(), setGuide: vi.fn() };
   const sound = { play: vi.fn(), click: vi.fn() };
@@ -716,11 +716,11 @@ describe("PracticeController rhythm retries", () => {
 
   it("flashes a new key's signature and rests two silent beats before counting in", () => {
     const ctx = quartersSetup();
-    ctx.notation.circleKeySignature.mockClear();
+    ctx.notation.circleSignatures.mockClear();
     const inG: Exercise = { ...ctx.controller.exercise, key: "G" };
     ctx.controller.exerciseSource = () => inG;
     ctx.controller.startNewExercise(true, performance.now());
-    expect(ctx.notation.circleKeySignature).toHaveBeenCalledTimes(1);
+    expect(ctx.notation.circleSignatures).toHaveBeenCalledWith({ key: true, time: false });
     vi.advanceTimersByTime(1999);
     expect(ctx.sound.click).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
@@ -732,7 +732,20 @@ describe("PracticeController rhythm retries", () => {
     ctx.controller.startNewExercise(true, performance.now());
     vi.advanceTimersByTime(0);
     expect(ctx.sound.click).toHaveBeenCalledWith(true);
-    expect(ctx.notation.circleKeySignature).toHaveBeenCalledTimes(1);
+    expect(ctx.notation.circleSignatures).toHaveBeenCalledTimes(1);
+  });
+
+  it("circles a new time signature and rests two silent beats before counting in", () => {
+    const ctx = quartersSetup();
+    ctx.notation.circleSignatures.mockClear();
+    const inThree: Exercise = { ...ctx.controller.exercise, time: "3/4", bars: [ctx.controller.exercise.bars[0].slice(0, 3)] };
+    ctx.controller.exerciseSource = () => inThree;
+    ctx.controller.startNewExercise(true, performance.now());
+    expect(ctx.notation.circleSignatures).toHaveBeenCalledWith({ key: false, time: true });
+    vi.advanceTimersByTime(1999);
+    expect(ctx.sound.click).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(ctx.sound.click).toHaveBeenCalledWith(true);
   });
 
   it("slowing down mid-attempt counts as bailing out", () => {

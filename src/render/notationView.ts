@@ -21,6 +21,12 @@ export interface HoldMark {
   state: "live" | "short" | "long";
 }
 
+/** Which signatures changed from the phrase before, to be circled. */
+export interface SignatureChange {
+  key: boolean;
+  time: boolean;
+}
+
 export interface NotationOptions {
   showNames: boolean;
 }
@@ -140,8 +146,8 @@ export class NotationView {
   private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   private readonly holds = new Map<number, HoldMark>();
-  /** The key signature is circled once the phrase being loaded is drawn. */
-  private keyCirclePending = false;
+  /** Signatures to circle once the phrase being loaded is drawn. */
+  private circlePending: SignatureChange | null = null;
   /** The loop being drawn, kept so a re-render (which clears the container) can put it back. */
   private keyCircle: SVGSVGElement | null = null;
   private readonly holdLayer = document.createElementNS(SVG_NS, "svg");
@@ -313,16 +319,16 @@ export class NotationView {
 
     this.renderFitted();
     this.ready = true;
-    if (this.keyCirclePending) this.circleKeySignature();
+    if (this.circlePending) this.circleSignatures(this.circlePending);
   }
 
   /**
-   * Circles each key signature with a pencil loop, as soon as the phrase being shown is
-   * drawn. C major has none, so its empty place between the clef and time signature is circled.
+   * Circles each changed signature with a pencil loop, as soon as the phrase being shown is
+   * drawn. C major has no key signature, so its empty place before the time signature is circled.
    */
-  circleKeySignature(): void {
-    this.keyCirclePending = !this.ready;
-    if (this.keyCirclePending) return;
+  circleSignatures(changed: SignatureChange): void {
+    this.circlePending = this.ready ? null : changed;
+    if (this.circlePending) return;
     const origin = this.root.getBoundingClientRect();
     const unit = 10 * this.osmd.Zoom;
     const span = (selector: string) =>
@@ -330,14 +336,16 @@ export class NotationView {
         const box = shape.getBoundingClientRect();
         return { left: box.left - origin.left, right: box.right - origin.left, middle: (box.top + box.bottom) / 2 - origin.top };
       });
-    let areas = span(".vf-keysignature");
-    const empty = areas.length === 0;
-    if (empty) {
+    const areas: { left: number; right: number; middle: number; empty?: true }[] = [];
+    if (changed.key) {
+      const signatures = span(".vf-keysignature");
       const clef = span(".vf-clef")[0];
       const time = span(".vf-timesignature")[0];
-      if (!clef || !time) return;
-      areas = [{ left: clef.right, right: time.left, middle: clef.middle }];
+      if (signatures.length > 0) areas.push(...signatures);
+      else if (clef && time) areas.push({ left: clef.right, right: time.left, middle: clef.middle, empty: true });
     }
+    if (changed.time) areas.push(...span(".vf-timesignature"));
+    if (areas.length === 0) return;
     // Centred on the staff the signature sits on, not on the signs, which sit high or low.
     const staffMiddles = [...this.root.querySelectorAll(".staffline")].map((staff) => {
       // Halfway between its top and bottom lines (the flat paths); the group's own box reaches further.
@@ -355,8 +363,8 @@ export class NotationView {
         (best, y) => (Math.abs(y - area.middle) < Math.abs(best - area.middle) ? y : best),
         staffMiddles[0] ?? area.middle,
       );
-      const pad = empty ? EMPTY_KEY_CIRCLE_PAD_UNITS : KEY_CIRCLE_PAD_UNITS;
-      const ry = empty ? EMPTY_KEY_CIRCLE_RY_UNITS : KEY_CIRCLE_RY_UNITS;
+      const pad = area.empty ? EMPTY_KEY_CIRCLE_PAD_UNITS : KEY_CIRCLE_PAD_UNITS;
+      const ry = area.empty ? EMPTY_KEY_CIRCLE_RY_UNITS : KEY_CIRCLE_RY_UNITS;
       const d = pencilLoop((area.left + area.right) / 2, cy, (area.right - area.left) / 2 + pad * unit, ry * unit);
       const group = document.createElementNS(SVG_NS, "g");
       // A firm line, and a fainter one just off it, for the grain of a pencil.

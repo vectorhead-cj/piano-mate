@@ -6,7 +6,7 @@ import { midiOf } from "../music/pitch";
 import { pressedIndices, tiedOn } from "../music/ties";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
-import type { HoldMark, NotationOptions, NoteState } from "../render/notationView";
+import type { HoldMark, NotationOptions, NoteState, SignatureChange } from "../render/notationView";
 import { faultyNotes, FORGIVEN_HOLD_FAULTS, HOLD_POLICIES, type HoldStrictness } from "./holds";
 import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
@@ -15,7 +15,7 @@ import { beatMs } from "./timing";
 import { WaitSession, type Mark, type NoteResult } from "./waitSession";
 
 export const PHRASE_SCORE_DELAY_MS = 2500;
-/** Silent beats before the count-in of a phrase in a new key, to take in its key signature. */
+/** Silent beats before the count-in of a phrase in a new key or time, to take in its signatures. */
 export const KEY_CHANGE_BEATS = 2;
 /** Failed attempts at full tempo before the player is offered a slower retry. */
 export const SLOW_DOWN_AFTER_FAILURES = 3;
@@ -31,8 +31,8 @@ export interface NotationDisplay {
   setOptions(options: NotationOptions): void;
   setState(index: number, state: NoteState): void;
   flashWrong(index: number): void;
-  /** Circles the key signature (where it would be, in C) once the phrase being shown is drawn. */
-  circleKeySignature?(): void;
+  /** Circles the changed signatures (the key's place, in C) once the phrase being shown is drawn. */
+  circleSignatures?(changed: SignatureChange): void;
   /** Draws how long a pressed note was held against its written length; null clears it. */
   setHold?(index: number, hold: HoldMark | null): void;
 }
@@ -244,7 +244,7 @@ export class PracticeController {
    *   (used to keep the metronome continuous across phrases).
    */
   startNewExercise(autoplay = false, countInAt?: number): void {
-    const previousKey = this.currentExercise?.key;
+    const previous = this.currentExercise as Exercise | undefined;
     this.currentExercise =
       this.exerciseSource?.() ??
       generateExercise(
@@ -263,8 +263,11 @@ export class PracticeController {
     this.slowedDown = false;
     this.passes = 0;
     this.publishRetry();
-    const keyChanged = previousKey !== undefined && previousKey !== this.currentExercise.key;
-    this.beginCurrentExercise(autoplay || this.settings.mode === "wait", countInAt, keyChanged);
+    const changed: SignatureChange = {
+      key: previous !== undefined && previous.key !== this.currentExercise.key,
+      time: previous !== undefined && previous.time !== this.currentExercise.time,
+    };
+    this.beginCurrentExercise(autoplay || this.settings.mode === "wait", countInAt, changed);
   }
 
   /** Start a graded attempt on a clean sheet; rhythm mode rests a beat, then counts in a bar. */
@@ -337,8 +340,12 @@ export class PracticeController {
     this.deps.onRetryChange?.(this.retry);
   }
 
-  /** @param keyChanged The phrase is in a new key: its signature is circled, and rhythm mode waits a little before counting in. */
-  private beginCurrentExercise(hot: boolean, countInAt?: number, keyChanged = false): void {
+  /**
+   * @param changed Signatures that differ from the phrase before: they're circled, and rhythm
+   *   mode waits a little before counting in.
+   */
+  private beginCurrentExercise(hot: boolean, countInAt?: number, changed?: SignatureChange): void {
+    const resettle = changed !== undefined && (changed.key || changed.time);
     clearTimeout(this.nextExerciseTimer);
     this.finishingRhythm = false;
     this.pendingNew = false;
@@ -348,12 +355,12 @@ export class PracticeController {
     this.teardownRhythm(!hot);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
     this.deps.notation.show(this.currentExercise, this.notationOptions());
-    if (keyChanged) this.deps.notation.circleKeySignature?.();
+    if (resettle) this.deps.notation.circleSignatures?.(changed);
 
     if (this.settings.mode === "rhythm") {
       this.waitSession = null;
       if (hot) {
-        const settle = keyChanged ? KEY_CHANGE_BEATS * beatMs(this.tempo) : 0;
+        const settle = resettle ? KEY_CHANGE_BEATS * beatMs(this.tempo) : 0;
         this.startRhythmClock((countInAt ?? this.now()) + settle);
       } else {
         this.rhythmSession = null;

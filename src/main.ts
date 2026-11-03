@@ -171,8 +171,8 @@ async function main(): Promise<void> {
     setState(...args: Parameters<NotationView["setState"]>) {
       notationView.setState(...args);
     },
-    circleKeySignature() {
-      notationView.circleKeySignature();
+    circleSignatures(...args: Parameters<NotationView["circleSignatures"]>) {
+      notationView.circleSignatures(...args);
     },
     setHold(...args: Parameters<NotationView["setHold"]>) {
       notationView.setHold(...args);
