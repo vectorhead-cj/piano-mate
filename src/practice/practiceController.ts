@@ -68,6 +68,8 @@ export interface PhraseResult {
   notes: NoteResult[];
   /** Where the phrase's note-ons came from; empty when nothing was played. */
   sources: NoteSource[];
+  /** From the attempt's first note-on to its end; 0 when nothing was played. */
+  playedMs: number;
   /** Every note hit with no wrong keys. */
   passed: boolean;
   /** Went cold partway through; always a failure. */
@@ -129,6 +131,8 @@ export class PracticeController {
   private readonly metronome: Metronome | null;
   private readonly now: () => number;
   private readonly phraseSources = new Set<NoteSource>();
+  /** When the attempt's first note-on came, by `now`. */
+  private phraseStartedAt: number | undefined;
   private failures = 0;
   private slowTempo: number | undefined;
   /** Slowed down at some point on this phrase, so moving on takes two clean passes. */
@@ -193,6 +197,7 @@ export class PracticeController {
       deps.onPlayed?.(event.pitch, event.kind === "on");
       if (event.kind === "on" && this.hot) {
         this.phraseSources.add(event.source);
+        this.phraseStartedAt ??= this.now();
         const { pitch, time } = event;
         setTimeout(() => this.handleNoteOn(pitch, time), 0);
       } else if (event.kind === "off" && this.hot && this.settings.mode === "rhythm") {
@@ -331,6 +336,7 @@ export class PracticeController {
     this.finishingRhythm = false;
     this.pendingNew = false;
     this.phraseSources.clear();
+    this.phraseStartedAt = undefined;
     // Keep clicks going when chaining into the next phrase; otherwise silence.
     this.teardownRhythm(!hot);
     this.deps.score?.setIncludeRhythm(this.settings.mode === "rhythm");
@@ -681,6 +687,7 @@ export class PracticeController {
       holds,
       notes,
       sources: [...this.phraseSources],
+      playedMs: this.phraseStartedAt === undefined ? 0 : Math.max(0, this.now() - this.phraseStartedAt),
       passed,
       abandoned,
       slowed,

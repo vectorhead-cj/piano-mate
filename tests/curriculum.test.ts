@@ -258,6 +258,23 @@ describe("projectProgress", () => {
     expect(milestoneBetween(projectProgress(done.slice(0, -1)), mastered, "treble", first)).toEqual({ kind: "mastered", stars: 3 });
   });
 
+  it("dates each star by the phrase that earned it, and mastery by the round that completed it", () => {
+    const read = repeat(STAR_STREAK, () => phrase(first, "read", true));
+    const play = repeat(STAR_STREAK, () => phrase(first, "play", true));
+    const fluent = repeat(STAR_STREAK, () => phrase(first, "fluent", true));
+    const rounds = repeat(MISS_WINDOW * MASTERY_ROUNDS, () => phrase(first, "fluent", true));
+    const stage = projectProgress([...read, ...play, phrase(first, "read", false), ...fluent, ...rounds]).treble.stages[first];
+    expect(stage.starredAt).toEqual([read.at(-1)!.at, play.at(-1)!.at, fluent.at(-1)!.at]);
+    expect(stage.masteredAt).toBe(rounds.at(-1)!.at);
+  });
+
+  it("dates a star no earlier than the one before it", () => {
+    const play = repeat(STAR_STREAK, () => phrase(first, "play", true));
+    const read = repeat(STAR_STREAK, () => phrase(first, "read", true));
+    const stage = projectProgress([...play, ...read]).treble.stages[first];
+    expect(stage.starredAt).toEqual([read.at(-1)!.at, read.at(-1)!.at]);
+  });
+
   it("counts no mastery rounds at Play", () => {
     const events = [
       ...repeat(STAR_STREAK, () => phrase(first, "read", true)),

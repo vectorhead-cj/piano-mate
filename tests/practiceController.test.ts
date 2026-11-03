@@ -16,7 +16,7 @@ import { seeded } from "./helpers";
 /** Rhythm mode checks the clock this often; an attempt ends on the first check past its barline. */
 const TICK_MS = 30;
 
-function setup(settings: Settings = DEFAULT_SETTINGS) {
+function setup(settings: Settings = DEFAULT_SETTINGS, now?: () => number) {
   const stream = new NoteStream();
   const notation = { show: vi.fn(), setOptions: vi.fn(), setState: vi.fn(), flashWrong: vi.fn(), setHold: vi.fn() };
   const keyboard = { setPressed: vi.fn(), flash: vi.fn(), setGuide: vi.fn() };
@@ -34,6 +34,7 @@ function setup(settings: Settings = DEFAULT_SETTINGS) {
     random: seeded(42),
     onPhraseComplete,
     onHotChange,
+    now,
   });
 
   const expectedPitches = () => controller.exercise.bars.flat().map(midiOf);
@@ -154,6 +155,18 @@ describe("PracticeController (wait mode)", () => {
     expect(onPhraseComplete).toHaveBeenCalledTimes(1);
     expect(onPhraseComplete.mock.calls[0][0]).toMatchObject({ passed: false, abandoned: true, next: "retry" });
     expect(controller.retry.failures).toBe(1);
+  });
+
+  it("reports how long the attempt took from its first note", () => {
+    let time = 1000;
+    const { expectedPitches, press, onPhraseComplete } = setup(DEFAULT_SETTINGS, () => time);
+    time = 5000;
+    for (const pitch of expectedPitches()) {
+      press(pitch);
+      time += 500;
+    }
+    // From the first press to the last, which came 500 ms before the clock's last step.
+    expect(onPhraseComplete.mock.calls[0][0].playedMs).toBe((expectedPitches().length - 1) * 500);
   });
 
   it("moves on after one clean pass", () => {

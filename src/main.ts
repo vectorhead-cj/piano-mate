@@ -22,6 +22,7 @@ import {
 } from "./curriculum/curriculum";
 import { customSource, mixedSource, stageMidiRange, stageSource } from "./curriculum/corpusSource";
 import { currentUser, signOut } from "./account";
+import { dailyMinutes } from "./curriculum/activity";
 import { openEventLog } from "./curriculum/eventLog";
 import {
   countsForProgress,
@@ -75,6 +76,8 @@ import { bindPrefsPopover, bindTheme } from "./ui/theme";
 
 /** Time to see a clean intro example turn green before the next one comes up. */
 const INTRO_NEXT_DELAY_MS = 1500;
+/** Days of practice the home page charts, ending today. */
+const ACTIVITY_DAYS = 14;
 /** Words for a clean phrase, taken in turn so the fortieth doesn't read like the first. */
 const CLEAN_WORDS = ["Perfect", "Spot on", "Clean", "Nailed it"];
 /** Clean phrases in a row that swap the sparkle for a flame. */
@@ -387,11 +390,13 @@ async function main(): Promise<void> {
     const stage = context.kind === "curriculum" ? (review ?? placedStage(context.stageId)?.stage) : undefined;
     const level = stage ? spanLevel(exercise.clef, exercise.key, stage.span) : levelById(settings.range);
     const notes = exercise.bars.flat();
+    const at = Date.now();
     const event: PhraseCompleted = {
       type: "phrase-completed",
       v: 1,
       id: newId(),
-      at: Date.now(),
+      at,
+      startedAt: at - result.playedMs,
       session,
       context,
       mode: result.mode,
@@ -836,7 +841,7 @@ async function main(): Promise<void> {
     app.dataset.view = view.name;
 
     if (view.name === "home") {
-      renderHome(menu, { progress: store.progress, status: store.status, storage: store.storage, account }, {
+      renderHome(menu, { progress: store.progress, activity: dailyMinutes(store.history, ACTIVITY_DAYS), status: store.status, storage: store.storage, account }, {
         openCurriculum: () => showView({ name: "curriculum", selected: null }),
         openCustom,
         signIn: () => accountDialog.open(),

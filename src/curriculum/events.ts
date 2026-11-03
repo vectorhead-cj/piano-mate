@@ -44,6 +44,8 @@ export interface PhraseCompleted {
   id: string;
   /** Epoch ms when the phrase finished. */
   at: number;
+  /** Epoch ms of the attempt's first key press; left out by events recorded before it was. */
+  startedAt?: number;
   /** One page load. */
   session: string;
   context: PracticeContext;
@@ -134,6 +136,14 @@ export function timingBonus(event: PhraseCompleted): number | undefined {
   const window = onTimeWindowMs(event.tempo);
   const onTime = pressed.filter((n) => n.hit && n.offsetMs !== undefined && Math.abs(n.offsetMs) <= window);
   return onTime.length / pressed.length;
+}
+
+const BEATS_PER_BAR: Record<TimeSignature, number> = { "4/4": 4, "3/4": 3, "2/2": 2 };
+
+/** How long a phrase took to play; without startedAt, four bars at 60 bpm. */
+export function playedMs(event: PhraseCompleted): number {
+  if (event.startedAt !== undefined) return Math.max(0, event.at - event.startedAt);
+  return 4 * BEATS_PER_BAR[event.config.time ?? "4/4"] * 1000;
 }
 
 export type PhraseFault = { kind: "wrong" | "early" | "missed" | "short" | "long"; bar: number; index: number };

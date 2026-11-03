@@ -2514,3 +2514,60 @@ dialog.account-dialog::backdrop {
     transition: none !important;
   }
 }
+
+/* Home: minutes played per day, a bar each, today last. */
+.home-activity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.activity-chart {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.activity-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.activity-column {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 72px;
+  border-radius: 4px;
+  background: var(--track-bg);
+}
+
+.activity-bar {
+  display: block;
+  width: 100%;
+  min-height: 3px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.activity-day[data-empty] .activity-bar {
+  min-height: 0;
+}
+
+.activity-weekday {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.activity-day[data-today] .activity-weekday {
+  color: var(--ink);
+  font-weight: 700;
+}

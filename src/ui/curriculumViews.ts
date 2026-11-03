@@ -20,6 +20,7 @@ import {
   type Stage,
   type Tier,
 } from "../curriculum/curriculum";
+import type { DayActivity } from "../curriculum/activity";
 import type { IntroStep } from "../curriculum/intros";
 import { recentHits, type Milestone, type Progress, type StageProgress } from "../curriculum/progress";
 import { NOTATION_LABELS } from "../music/notation";
@@ -83,6 +84,8 @@ function meter(value: number, max: number, label: string): HTMLElement {
 
 export interface HomeModel {
   progress: Progress;
+  /** Minutes played per day, oldest first, ending today. */
+  activity: DayActivity[];
   status: StoreStatus;
   storage: "account" | "browser" | "none" | null;
   /** The signed-in player's email, or null when signed out. */
@@ -94,6 +97,58 @@ export interface HomeActions {
   openCustom(): void;
   signIn(): void;
   signOut(): void;
+}
+
+/** "3 Oct", with the year when it isn't this one. */
+export function dayText(at: number, now = Date.now()): string {
+  const date = new Date(at);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: sameYear ? undefined : "numeric" });
+}
+
+/** "40 min", "1 h 5 min"; under half a minute but not none reads "<1 min". */
+export function minutesText(minutes: number): string {
+  if (minutes > 0 && minutes < 0.5) return "<1 min";
+  const rounded = Math.round(minutes);
+  if (rounded < 60) return `${rounded} min`;
+  const rest = rounded % 60;
+  return rest === 0 ? `${rounded / 60} h` : `${Math.floor(rounded / 60)} h ${rest} min`;
+}
+
+/** The tallest bar stands for at least this, so a short day doesn't fill the chart. */
+const ACTIVITY_SCALE_MIN = 10;
+
+/** Minutes played per day as bars, today last, with the period's total above. */
+function activityCard(activity: readonly DayActivity[]): HTMLElement {
+  const total = activity.reduce((sum, d) => sum + d.minutes, 0);
+  const daysPlayed = activity.filter((d) => d.minutes > 0).length;
+  const scale = Math.max(ACTIVITY_SCALE_MIN, ...activity.map((d) => d.minutes));
+  const bars = activity.map((d, i) => {
+    const date = new Date(d.day);
+    const label = `${date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}: ${minutesText(d.minutes)}`;
+    const bar = h("span", { class: "activity-bar" });
+    bar.style.height = `${(d.minutes / scale) * 100}%`;
+    return h(
+      "span",
+      { class: "activity-day", title: label, "data-today": i === activity.length - 1 ? "true" : undefined, "data-empty": d.minutes > 0 ? undefined : "true" },
+      h("span", { class: "activity-column" }, bar),
+      h("span", { class: "activity-weekday", "aria-hidden": "true" }, date.toLocaleDateString(undefined, { weekday: "narrow" })),
+    );
+  });
+  const summary =
+    daysPlayed === 0
+      ? `Nothing played in the last ${activity.length} days`
+      : `${minutesText(total)} over the last ${activity.length} days · ${daysPlayed} ${daysPlayed === 1 ? "day" : "days"} played`;
+  return h(
+    "article",
+    { class: "menu-card home-activity" },
+    h("div", { class: "home-activity-head" }, h("h2", { class: "menu-card-title" }, "Practice"), h("span", { class: "menu-muted" }, summary)),
+    h(
+      "div",
+      { class: "activity-chart", role: "img", "aria-label": `Minutes played per day. ${activity.map((d) => minutesText(d.minutes)).join(", ")}` },
+      ...bars,
+    ),
+  );
 }
 
 /** A stroked 24×24 icon; `body` is fixed SVG markup from this file. */
@@ -219,6 +274,7 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
         h("p", { class: "home-lede" }, "Practice using real phrases from a large corpus of classical and folk music"),
       ),
       h("div", { class: "home-choices" }, curriculum, custom),
+      activityCard(model.activity),
       h(
         "footer",
         { class: "home-foot" },
@@ -445,7 +501,7 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         "span",
         { class: "menu-muted" },
         earned
-          ? "Earned"
+          ? `Earned ${dayText(progress.starredAt[i])}`
           : `${recentHits(tierProgress.recent)}/${MISS_WINDOW} of the last ${MISS_WINDOW} · ${ADVANCE_TEXT}`,
       ),
       button,
@@ -465,7 +521,7 @@ function stageDetail(stageId: string, progress: StageProgress, actions: TrackAct
         "span",
         { class: "menu-muted" },
         progress.mastered
-          ? "Mastered"
+          ? `Mastered ${dayText(progress.masteredAt!)}`
           : progress.stars === maxStars(stage)
             ? `Master: ${MASTERY_TEXT} · ${rounds} of ${MASTERY_ROUNDS}`
             : `Master: after ${"★".repeat(maxStars(stage))}, ${MASTERY_TEXT}`,

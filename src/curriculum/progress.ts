@@ -45,14 +45,22 @@ export interface TierProgress extends Streak {
   best: number;
   attempts: number;
   perfects: number;
+  /** Epoch ms of the phrase that first brought `best` to STAR_STREAK. */
+  starredAt?: number;
+  /** Fluent only: epoch ms of the round that completed mastery. */
+  masteredAt?: number;
 }
 
 export interface StageProgress {
   tiers: Record<Tier, TierProgress>;
   /** 0–4: ★ Read, ★★ Play, ★★★ Mix, ★★★★ Fluent, each earned in order (0–3 without Mix). */
   stars: number;
+  /** Epoch ms each earned star was earned, in order: a star counts once every star before it has. */
+  starredAt: number[];
   /** Every star and MASTERY_ROUNDS clean rounds at Fluent. */
   mastered: boolean;
+  /** When the stage was mastered, once it is. */
+  masteredAt?: number;
   /**
    * The stage has new notation, and its intro (a row of its own before the stage) can be
    * watched: the previous stage has ★★★, or this is the first stage.
@@ -126,11 +134,13 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
       if (tier.round.length === MISS_WINDOW) {
         tier.rounds = recentHits(tier.round) >= STAR_HITS ? tier.rounds + 1 : 0;
         tier.round = [];
+        if (tier.rounds === MASTERY_ROUNDS) tier.masteredAt = event.at;
       }
     }
     Object.assign(tier, extendStreak(tier, perfect));
     tier.recent = [...tier.recent, perfect].slice(-MISS_WINDOW);
     tier.best = Math.max(tier.best, tier.streak);
+    if (tier.best >= STAR_STREAK) tier.starredAt ??= event.at;
   }
 
   return Object.fromEntries(
@@ -162,14 +172,17 @@ function trackProgress(
     const introDone = intro && (seen.has(stage.id) || practised);
     const unlocked: boolean = previousPassed && (!intro || introDone);
     let stars = 0;
+    const starredAt: number[] = [];
     const ownTiers = stageTiers(stage);
     for (const tier of ownTiers) {
       if (tiers[tier].best < STAR_STREAK) break;
       stars++;
+      starredAt.push(Math.max(tiers[tier].starredAt!, starredAt[starredAt.length - 1] ?? 0));
     }
     const isMastered = stars === maxStars(stage) && tiers.fluent.rounds >= MASTERY_ROUNDS;
+    const masteredAt = isMastered ? Math.max(tiers.fluent.masteredAt!, starredAt[starredAt.length - 1]) : undefined;
     const tierOpen = Object.fromEntries(TIERS.map((tier) => [tier, unlocked && ownTiers.includes(tier) && stars >= ownTiers.indexOf(tier)])) as Record<Tier, boolean>;
-    stages[stage.id] = { tiers, stars, mastered: isMastered, introOpen, introDone, unlocked, tierOpen };
+    stages[stage.id] = { tiers, stars, starredAt, mastered: isMastered, masteredAt, introOpen, introDone, unlocked, tierOpen };
 
     const advance = advanceStars(stage);
     if (stars >= advance) passed++;
