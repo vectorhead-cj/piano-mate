@@ -189,38 +189,38 @@ describe("RhythmSession holds", () => {
     return session;
   }
 
-  it("coaches half notes let go before half their length, and leaves quarters be", () => {
+  it("coaches half notes let go before a quarter of their length, and leaves quarters be", () => {
     const session = holdSession("coach");
     session.play(60, COUNT_IN);
     expect(session.release(60, COUNT_IN + 100)).toEqual({ index: 0, short: false });
     session.play(62, COUNT_IN + 1000);
     session.release(62, COUNT_IN + 1000);
     session.play(64, COUNT_IN + 2000);
-    expect(session.release(64, COUNT_IN + 2900)).toEqual({ index: 2, short: true });
+    expect(session.release(64, COUNT_IN + 2400)).toEqual({ index: 2, short: true });
     expect(session.results().map((n) => n.hold)).toEqual([undefined, undefined, "short"]);
-    expect(session.results()[2].releaseMs).toBe(-1100);
+    expect(session.results()[2].releaseMs).toBe(-1600);
     // Coaching never fails a note: its rhythm dot stays clean.
     expect(session.marks().rhythm).toEqual(["correct", "correct", "correct"]);
   });
 
-  it("holds every note to three quarters of its length when strict, and long notes to 85%", () => {
+  it("holds every note to half its length when strict", () => {
     const session = holdSession("strict");
     session.play(60, COUNT_IN);
-    expect(session.release(60, COUNT_IN + 700)?.short).toBe(true);
+    expect(session.release(60, COUNT_IN + 450)?.short).toBe(true);
     expect(session.marks().rhythm[0]).toBe("wrong");
     session.play(62, COUNT_IN + 1000);
-    expect(session.release(62, COUNT_IN + 1800)?.short).toBe(false);
+    expect(session.release(62, COUNT_IN + 1500)?.short).toBe(false);
     session.play(64, COUNT_IN + 2000);
-    expect(session.release(64, COUNT_IN + 2000 + 1650)?.short).toBe(true);
+    expect(session.release(64, COUNT_IN + 2000 + 950)?.short).toBe(true);
   });
 
   it("grades a release against the beat, so a late press let go on time was held right", () => {
     const session = holdSession("strict");
     session.play(60, COUNT_IN);
     session.release(60, COUNT_IN + 1000);
-    // Pressed 300ms late, held 500ms: let go at 80% of the written quarter.
+    // Pressed 300ms late, held 250ms: let go at 55% of the written quarter.
     session.play(62, COUNT_IN + 1300);
-    expect(session.release(62, COUNT_IN + 1800)).toEqual({ index: 1, short: false });
+    expect(session.release(62, COUNT_IN + 1550)).toEqual({ index: 1, short: false });
   });
 
   it("flags a key held well into the next note, by half its length when coaching and a quarter when strict", () => {
@@ -243,8 +243,8 @@ describe("RhythmSession holds", () => {
     session.play(60, COUNT_IN);
     session.release(60, COUNT_IN + 2000);
     session.play(64, COUNT_IN + 2000);
-    // The tied E is four beats long: let go after 1.9 of them is too soon.
-    expect(session.release(64, COUNT_IN + 3900)).toEqual({ index: 1, short: true });
+    // The tied E is four beats long: let go after 0.9 of them is too soon.
+    expect(session.release(64, COUNT_IN + 2900)).toEqual({ index: 1, short: true });
     expect(session.holding()).toEqual([]);
   });
 

@@ -20,12 +20,13 @@ export interface HoldPolicy {
 }
 
 /**
- * ★★ Play and ★★★ Mix coach half notes and longer; ★★★★ Fluent grades every note, tighter.
+ * ★★ Play and ★★★ Mix coach half notes and longer held under a quarter of their length;
+ * ★★★★ Fluent fails any note held under half its length.
  * Holding too long is checked on every note: smearing into the next is wrong at any length.
  */
 export const HOLD_POLICIES: Record<HoldStrictness, HoldPolicy> = {
-  coach: { minBeats: 2, minHold: 0.5, minHoldLong: 0.5, maxOverlap: 0.5, fails: false },
-  strict: { minBeats: 0, minHold: 0.75, minHoldLong: 0.85, maxOverlap: 0.25, fails: true },
+  coach: { minBeats: 2, minHold: 0.25, minHoldLong: 0.25, maxOverlap: 0.5, fails: false },
+  strict: { minBeats: 0, minHold: 0.5, minHoldLong: 0.5, maxOverlap: 0.25, fails: true },
 };
 
 /** Let go too soon, or held well into the next note. */

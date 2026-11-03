@@ -656,7 +656,7 @@ describe("PracticeController rhythm retries", () => {
     hold(ctx, 62, 1000);
     expect(ctx.keyboard.setGuide).toHaveBeenCalledWith(60, true);
     expect(ctx.keyboard.setGuide).toHaveBeenCalledWith(60, false);
-    hold(ctx, 64, 500);
+    hold(ctx, 64, 400);
     expect(ctx.notation.setHold).toHaveBeenLastCalledWith(2, expect.objectContaining({ state: "short", until: 4 }));
     vi.advanceTimersByTime(firstAt + 4000 + TICK_MS - performance.now());
     expect(ctx.onPhraseComplete).toHaveBeenCalledWith(expect.objectContaining({ passed: true }));
@@ -669,7 +669,7 @@ describe("PracticeController rhythm retries", () => {
     ctx.controller.goHot();
     const firstAt = performance.now() + 1000 + 4000;
     vi.advanceTimersByTime(firstAt - performance.now());
-    hold(ctx, 60, 500);
+    hold(ctx, 60, 400);
     expectFailedAt(ctx, 0, { hit: true, wrong: 0, hold: "short" });
     expect(ctx.onPhraseComplete.mock.lastCall![0].holds).toBe("strict");
     expect(ctx.keyboard.setGuide).not.toHaveBeenCalledWith(60, true);
