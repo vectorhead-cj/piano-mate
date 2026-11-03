@@ -1,4 +1,4 @@
-import type { PieceProgress, PieceSettings } from "./pieceProgress";
+import type { PieceProgress, PieceSettings, StepProgress } from "./pieceProgress";
 
 /** An imported piece, its phrase split, how it's practised and how far it has come. */
 export interface PieceRecord {
@@ -15,8 +15,12 @@ export interface PieceRecord {
   phraseStarts: number[];
   settings: PieceSettings;
   progress: PieceProgress;
-  /** The intro cards have been read or skipped. */
-  introDone: boolean;
+  /** The intro section is unfolded. */
+  introOpen?: boolean;
+  /** Each intro card's drill, by feature id. */
+  intros?: Record<string, StepProgress>;
+  /** Before v0.1.74: the intro cards had been read or skipped. */
+  introDone?: boolean;
 }
 
 export interface PieceLibrary {

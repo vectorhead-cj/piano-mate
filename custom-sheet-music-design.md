@@ -103,12 +103,12 @@ The first version narrows and reshapes the decisions above around learning one p
 
 **Flow.** *Pieces* on the home page → import a file → split it into phrases → a piece page → practice. The piece page lists:
 
-- **Before you start:** skippable cards for the notation the piece uses, found by the parser. They cover key, time, tempo, range, fast note values, tuplets, chords per hand, ties, accidentals, grace notes, ornaments and repeats.
+- **Before you start:** a foldable section with a card for each thing the piece uses, found by the parser. The cards cover clefs, key, time (including the C and ¢ signs), tempo, range, fast note values, tuplets, chords per hand, ties, accidentals, grace notes, ornaments and repeats. Each card shows an example: the first bar where the thing appears, with its notes picked out, or a small score of its own (the key's scale, a beat pattern, the range). Where it helps, a card also has an intro to play: the scale, a beat pattern, a ladder of note values, or that first bar in its hand. An intro is graded like a phrase and passes on one clean run.
 - **Phrases:** a table of every phrase × step with its streak.
 - **Full piece:** the final stage.
 - **How to learn it:** the settings below.
 
-**Phrases.** The player taps a bar to start a phrase there, or uses the "every 2/4/8 bars" shortcuts. Progress is kept by the bars a phrase spans, so re-splitting other phrases keeps it.
+**Phrases.** Phrases are shaded in alternating colours and numbered. The player drags across bars to make them one phrase, taps a bar to start a phrase there, or uses the "every 2/4/8 bars" shortcuts. On touch screens, dragging works along a line; a vertical swipe scrolls the score. Progress is kept by the bars a phrase spans, so re-splitting other phrases keeps it.
 
 **Steps.** Each phrase goes left hand → right hand → both hands. With *slow first*, each hand is earned at the slow tempo and then at the standard one. With *standard directly*, only at the standard tempo. A step passes after a streak of N passes with at most M misses; both are set per piece (default 10 and 1). A phrase repeats until stopped or passed. *Next phrase* moves on at any time. The full piece is both hands at the standard tempo, repeats taken, played through clean once.
 

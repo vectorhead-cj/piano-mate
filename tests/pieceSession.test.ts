@@ -14,7 +14,7 @@ import {
 import { PieceSession } from "../src/piece/pieceSession";
 import { barRange, playSpan } from "../src/piece/targets";
 
-const BAR: PieceMeasure = { label: "1", start: 0, length: 4, beats: 4, time: "4/4", fifths: 0, mode: "major", repeatStart: false, repeatEnd: false, jump: false };
+const BAR: PieceMeasure = { label: "1", start: 0, length: 4, beats: 4, time: "4/4", fifths: 0, mode: "major", repeatStart: false, repeatEnd: false, jump: false, clefs: { right: "G2", left: "F4" } };
 
 function n(hand: "left" | "right", midi: number, start: number, length = 1, extra: Partial<PieceNote> = {}): PieceNote {
   const measure = Math.floor(start / 4);

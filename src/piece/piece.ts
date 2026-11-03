@@ -37,6 +37,10 @@ export interface PieceMeasure {
   /** Quarter beats in a full bar of its time signature. */
   beats: number;
   time: string;
+  /** The time signature is written as a sign: C for 4/4, ¢ for 2/2. */
+  timeSymbol?: "common" | "cut";
+  /** The clef on each staff, as its sign and line: "G2" (treble), "F4" (bass), "C3" (alto)… */
+  clefs: { right: string; left: string };
   /** Sharps (+) or flats (−) in the key signature. */
   fifths: number;
   mode: "major" | "minor";

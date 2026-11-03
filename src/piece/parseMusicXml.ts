@@ -103,6 +103,8 @@ export function parsePiece(xml: string): Piece {
   let mode: "major" | "minor" = "major";
   let beats = 4;
   let time = "4/4";
+  let timeSymbol: PieceMeasure["timeSymbol"];
+  let clefs = { right: "G2", left: "F4" };
   let tempo: number | undefined;
   let tempoText: string | undefined;
   let start = 0;
@@ -118,6 +120,8 @@ export function parsePiece(xml: string): Piece {
       length: 0,
       beats,
       time,
+      ...(timeSymbol && { timeSymbol }),
+      clefs,
       fifths,
       mode,
       repeatStart: false,
@@ -144,9 +148,20 @@ export function parsePiece(xml: string): Piece {
             const bottom = number(timeElement, "beat-type") ?? 4;
             time = `${top}/${bottom}`;
             beats = (top * 4) / bottom;
+            const symbol = timeElement.getAttribute("symbol");
+            timeSymbol = symbol === "common" || symbol === "cut" ? symbol : undefined;
           }
-          // Signatures at the start of a bar belong to it.
-          if (position === 0) Object.assign(measure, { fifths, mode, time, beats });
+          for (const clef of children(node, "clef")) {
+            const sign = `${text(clef, "sign") ?? "G"}${text(clef, "line") ?? ""}`;
+            const hand = handOfStaff(Number(clef.getAttribute("number") ?? 1));
+            clefs = { ...clefs, [hand]: sign };
+          }
+          // Signatures and clefs at the start of a bar belong to it.
+          if (position === 0) {
+            Object.assign(measure, { fifths, mode, time, beats, clefs });
+            if (timeSymbol) measure.timeSymbol = timeSymbol;
+            else delete measure.timeSymbol;
+          }
           break;
         }
         case "backup":

@@ -6,9 +6,10 @@ const CARRIED = ["divisions", "key", "time", "staves"] as const;
 /**
  * The MusicXML to draw: the piano part alone, without the file's own line and page breaks
  * so it lays out to the screen. Given bars (measure indices, inclusive), only those, with
- * the signatures and clefs in force at the first, and without repeat signs: a phrase plays once.
+ * the signatures and clefs in force at the first, and without repeat signs (a phrase plays
+ * once) unless `repeats` keeps them.
  */
-export function scoreXml(xml: string, bars?: { from: number; to: number }): string {
+export function scoreXml(xml: string, bars?: { from: number; to: number; repeats?: boolean }): string {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
   const root = doc.documentElement;
   const part = pianoPart(root);
@@ -52,7 +53,7 @@ export function scoreXml(xml: string, bars?: { from: number; to: number }): stri
       for (const clef of clefs.values()) attributes.append(clef.cloneNode(true));
       first.insertBefore(attributes, first.firstChild);
     }
-    for (const barline of [...part.getElementsByTagName("barline")]) {
+    for (const barline of bars.repeats ? [] : [...part.getElementsByTagName("barline")]) {
       for (const node of [...barline.children]) if (node.tagName === "repeat" || node.tagName === "ending") node.remove();
     }
   }

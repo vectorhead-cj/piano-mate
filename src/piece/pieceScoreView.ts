@@ -60,10 +60,17 @@ export class PieceScoreView {
   private colors = readColors();
   private width = 0;
   private generation = 0;
-  /** Bars marked as starting a phrase, and the bars picked out as the one in hand. */
-  private marks: { starts: Set<number>; active?: { from: number; to: number } } = { starts: new Set() };
+  /** Phrases shaded in turn and numbered, with bars being picked out over them. */
+  private bands: { from: number; to: number }[] = [];
+  private selection: { from: number; to: number } | null = null;
+  /** The bar being played. */
+  private cursor: number | null = null;
 
-  constructor(private readonly root: HTMLElement) {
+  /** `zoom` fixes the size, for small examples; otherwise it follows the width. */
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly zoom?: number,
+  ) {
     this.sheet.className = "piece-sheet";
     this.overlay.className = "piece-overlay";
     this.overlay.setAttribute("aria-hidden", "true");
@@ -80,7 +87,17 @@ export class PieceScoreView {
       drawMeasureNumbers: true,
       disableCursor: true,
       defaultColorMusic: this.colors.pending,
+      ...(zoom !== undefined && { drawingParameters: "compacttight" }),
     });
+    if (zoom !== undefined) {
+      // A small example sits snug in its card: just room for ledger lines and the bar numbers.
+      const rules = this.osmd.EngravingRules;
+      rules.PageTopMargin = 1;
+      rules.PageTopMarginNarrow = 1;
+      rules.PageBottomMargin = 1;
+      rules.PageLeftMargin = 0.5;
+      rules.PageRightMargin = 0.5;
+    }
   }
 
   /** Draws `xml` (a whole piece, or the bars from `firstMeasure` on) and forgets earlier colours. */
@@ -102,7 +119,7 @@ export class PieceScoreView {
     const width = this.root.clientWidth;
     if (width === 0 || width === this.width) return;
     this.width = width;
-    this.osmd.Zoom = Math.min(1.15, Math.max(0.6, width / BASE_WIDTH_PX));
+    this.osmd.Zoom = this.zoom ?? Math.min(1.15, Math.max(0.6, width / BASE_WIDTH_PX));
     this.osmd.render();
     this.collect();
     this.drawMarks();
@@ -116,9 +133,22 @@ export class PieceScoreView {
     for (const notes of this.drawn.values()) for (const note of notes) note.setColor(this.colors.pending, COLOR_OPTS);
   }
 
-  /** Lines at the bars that start phrases, and a wash over the phrase in hand. */
-  markPhrases(starts: Iterable<number>, active?: { from: number; to: number }): void {
-    this.marks = { starts: new Set(starts), active };
+  /** Shades each phrase's bars, alternating, with its number at its start. */
+  setBands(bands: readonly { from: number; to: number }[]): void {
+    this.bands = [...bands];
+    this.drawMarks();
+  }
+
+  /** Bars being picked out, as a drag across them goes; null clears them. */
+  setSelection(selection: { from: number; to: number } | null): void {
+    this.selection = selection && { from: Math.min(selection.from, selection.to), to: Math.max(selection.from, selection.to) };
+    this.drawMarks();
+  }
+
+  /** Washes the bar being played; null clears it. */
+  setCursor(measure: number | null): void {
+    if (measure === this.cursor) return;
+    this.cursor = measure;
     this.drawMarks();
   }
 
@@ -149,9 +179,8 @@ export class PieceScoreView {
     const piece = this.piece!;
     const unit = 10 * this.osmd.Zoom;
     const byKey = new Map<string, number>();
-    piece.notes.forEach((note, i) => {
-      if (!note.grace) byKey.set(`${note.measure}|${note.hand}|${note.offset}|${note.midi}`, i);
-    });
+    // Grace notes share their main note's time, so they're told apart by being grace notes.
+    piece.notes.forEach((note, i) => byKey.set(`${note.grace ? "g" : ""}${note.measure}|${note.hand}|${note.offset}|${note.midi}`, i));
     this.drawn = new Map();
     this.boxes = [];
     this.osmd.GraphicSheet.MeasureList.forEach((staves, j) => {
@@ -162,10 +191,10 @@ export class PieceScoreView {
         for (const entry of graphical.staffEntries) {
           const offset = Math.round(entry.relInMeasureTimestamp.RealValue * 4 * 9600) / 9600;
           for (const voice of entry.graphicalVoiceEntries) {
-            if (voice.parentVoiceEntry.IsGrace) continue;
+            const grace = voice.parentVoiceEntry.IsGrace ? "g" : "";
             for (const note of voice.notes) {
               if (note.sourceNote.isRest()) continue;
-              const index = byKey.get(`${measure}|${hand}|${offset}|${note.sourceNote.halfTone + HALFTONE_TO_MIDI}`);
+              const index = byKey.get(`${grace}${measure}|${hand}|${offset}|${note.sourceNote.halfTone + HALFTONE_TO_MIDI}`);
               if (index === undefined) continue;
               this.drawn.set(index, [...(this.drawn.get(index) ?? []), note]);
             }
@@ -185,20 +214,26 @@ export class PieceScoreView {
 
   private drawMarks(): void {
     this.overlay.replaceChildren();
-    const { starts, active } = this.marks;
+    const place = (className: string, box: BarBox) => {
+      const node = document.createElement("div");
+      node.className = className;
+      Object.assign(node.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
+      this.overlay.append(node);
+      return node;
+    };
+    const within = (range: { from: number; to: number } | null, measure: number) => range !== null && measure >= range.from && measure <= range.to;
     for (const box of this.boxes) {
-      if (active && box.measure >= active.from && box.measure <= active.to) {
-        const wash = document.createElement("div");
-        wash.className = "piece-bar-active";
-        Object.assign(wash.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
-        this.overlay.append(wash);
+      const band = this.bands.findIndex((b) => within(b, box.measure));
+      if (band >= 0) {
+        const shade = place(`piece-band piece-band-${band % 2 ? "odd" : "even"}`, box);
+        // The number sits at the phrase's first bar, and again where it carries on to a new line.
+        const lineStart = this.boxes.find((b) => b.measure === box.measure - 1)?.top !== box.top;
+        if (box.measure === this.bands[band].from || lineStart) {
+          shade.append(Object.assign(document.createElement("span"), { className: "piece-band-label", textContent: String(band + 1) }));
+        }
       }
-      if (starts.has(box.measure)) {
-        const line = document.createElement("div");
-        line.className = "piece-phrase-start";
-        Object.assign(line.style, { left: `${box.left}px`, top: `${box.top}px`, height: `${box.height}px` });
-        this.overlay.append(line);
-      }
+      if (within(this.selection, box.measure)) place("piece-bar-selected", box);
+      if (box.measure === this.cursor) place("piece-bar-active", box);
     }
   }
 }

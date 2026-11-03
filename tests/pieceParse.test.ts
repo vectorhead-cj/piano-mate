@@ -6,10 +6,13 @@ import { parsePiece, PieceError, readScoreFile } from "../src/piece/parseMusicXm
 import { playOrder, type PieceMeasure } from "../src/piece/piece";
 import { scoreXml } from "../src/piece/scoreXml";
 
-async function k208() {
+async function k208Xml(): Promise<string> {
   const bytes = readFileSync("tests/fixtures/scarlatti-k208.mxl");
-  const xml = await readScoreFile("scarlatti-k208.mxl", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  return parsePiece(xml);
+  return readScoreFile("scarlatti-k208.mxl", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+
+async function k208() {
+  return parsePiece(await k208Xml());
 }
 
 /** A two-staff score from bars of raw MusicXML notes, divisions 2 (an eighth is 1). */
@@ -38,7 +41,8 @@ describe("parsePiece", () => {
     expect(piece.tempo).toBe(60);
     expect(piece.tempoText).toBe("Adagio e cantabile");
     expect(piece.measures).toHaveLength(25);
-    expect(piece.measures[0]).toMatchObject({ fifths: 3, time: "4/4", beats: 4, start: 0, length: 4 });
+    expect(piece.measures[0]).toMatchObject({ fifths: 3, time: "4/4", timeSymbol: "common", beats: 4, start: 0, length: 4 });
+    expect(piece.measures[0].clefs).toEqual({ right: "G2", left: "F4" });
     // Each bar is 4/4 and they follow on.
     piece.measures.forEach((m, i) => expect(m.start).toBe(4 * i));
     const left = piece.notes.filter((n) => n.hand === "left");
@@ -117,6 +121,7 @@ describe("playOrder", () => {
     repeatStart: false,
     repeatEnd: false,
     jump: false,
+    clefs: { right: "G2", left: "F4" },
     ...extra,
   });
 
@@ -148,5 +153,34 @@ describe("scoreXml", () => {
     const notesOf = (p: typeof piece, from: number) =>
       p.notes.filter((n) => n.measure >= from && n.measure <= from + 2).map((n) => [n.measure - from, n.hand, n.offset, n.midi]);
     expect(notesOf(excerpt, 0)).toEqual(notesOf(piece, repeatBar - 1));
+  });
+});
+
+describe("intro cards", () => {
+  it("give K.208's cards examples and drills that can be played", async () => {
+    const xml = await k208Xml();
+    const piece = parsePiece(xml);
+    const features = pieceFeatures(piece);
+    const time = features.find((f) => f.id === "time")!;
+    expect(time.title).toBe("Time: 4/4, written C");
+    expect(time.detail).toContain("isn't a clef");
+    expect(features.find((f) => f.id === "clefs")!.detail).toContain("treble (G) clef");
+    for (const feature of features) {
+      for (const score of [feature.example, feature.drill?.score]) {
+        if (!score) continue;
+        const music = score.kind === "xml" ? parsePiece(score.xml) : parsePiece(scoreXml(xml, score));
+        expect(music.notes.length, feature.id).toBeGreaterThan(0);
+      }
+    }
+    // The scale: A major up and down in the right hand, an octave lower in the left.
+    const scale = parsePiece((features.find((f) => f.id === "key")!.drill!.score as { xml: string }).xml);
+    const rightHand = scale.notes.filter((n) => n.hand === "right").map((n) => n.midi);
+    expect(rightHand.slice(0, 8)).toEqual([69, 71, 73, 74, 76, 78, 80, 81]);
+    expect(rightHand.slice(8)).toEqual([81, 80, 78, 76, 74, 73, 71, 69]);
+    // Chords: the first bar with a left-hand chord, its chord notes picked out.
+    const chords = features.find((f) => f.id === "chords-left")!;
+    expect(chords.drill!.hand).toBe("left");
+    const bar = chords.example as { kind: "bars"; from: number; highlight: number[] };
+    expect(bar.highlight.every((i) => piece.notes[i].chord && piece.notes[i].measure === bar.from)).toBe(true);
   });
 });
