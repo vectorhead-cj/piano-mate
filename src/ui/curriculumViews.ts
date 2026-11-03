@@ -95,6 +95,7 @@ export interface HomeModel {
 export interface HomeActions {
   openCurriculum(): void;
   openCustom(): void;
+  openPieces(): void;
   signIn(): void;
   signOut(): void;
 }
@@ -244,6 +245,16 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
     h("div", { class: "menu-card-foot menu-card-foot-end" }, customButton),
   );
 
+  const piecesButton = h("button", { class: "btn-secondary", type: "button" }, "Open");
+  piecesButton.addEventListener("click", actions.openPieces);
+  const pieces = h(
+    "article",
+    { class: "menu-card home-choice" },
+    h("h2", { class: "menu-card-title" }, "Pieces"),
+    h("p", { class: "menu-muted" }, "Import a MusicXML score and learn it phrase by phrase: each hand, then both, up to tempo."),
+    h("div", { class: "menu-card-foot menu-card-foot-end" }, piecesButton),
+  );
+
   const status = storageStatus(model);
   let accountButton: HTMLButtonElement | null = null;
   if (status.action) {
@@ -273,7 +284,7 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
         h("h1", { class: "home-title" }, "Read and play!"),
         h("p", { class: "home-lede" }, "Practice using real phrases from a large corpus of classical and folk music"),
       ),
-      h("div", { class: "home-choices" }, curriculum, custom),
+      h("div", { class: "home-choices" }, curriculum, custom, pieces),
       activityCard(model.activity),
       h(
         "footer",

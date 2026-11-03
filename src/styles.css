@@ -2594,3 +2594,320 @@ dialog.account-dialog::backdrop {
   color: var(--ink);
   font-weight: 700;
 }
+
+/* Pieces: an imported score's library, its page, the phrase editor and practice. The page
+   scrolls as a whole, except while editing or practising, where the score scrolls inside it. */
+.pieces[data-drop] {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  border-radius: 14px;
+}
+
+.pieces-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 8px 0 24px;
+  box-sizing: border-box;
+}
+
+.pieces-page-fill {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.pieces[data-screen="phrases"],
+.pieces[data-screen="practice"] {
+  overflow: hidden;
+}
+
+.piece-import {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.piece-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+}
+
+.piece-card .menu-card-title {
+  font-size: 1.1rem;
+}
+
+.piece-empty {
+  padding: 8px 4px;
+}
+
+.piece-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 10px;
+  font-size: 0.88rem;
+}
+
+.piece-notice-error {
+  border-color: color-mix(in srgb, var(--wrong) 55%, var(--surface-edge));
+  color: var(--wrong);
+}
+
+.piece-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.piece-head .home-title,
+.piece-head .menu-heading {
+  margin: 0;
+}
+
+.piece-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.piece-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.piece-section summary {
+  cursor: pointer;
+}
+
+.piece-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 10px 18px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.piece-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.piece-feature-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.piece-table-wrap {
+  overflow-x: auto;
+}
+
+.piece-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.piece-table th,
+.piece-table td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--surface-edge);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.piece-table thead th {
+  border-top: none;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.piece-table tbody th {
+  font-weight: 600;
+}
+
+.piece-chip {
+  min-width: 54px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.piece-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--surface-edge));
+}
+
+.piece-chip[data-state="started"] {
+  color: var(--ink);
+}
+
+.piece-chip[data-state="next"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.piece-chip[data-state="passed"] {
+  border-color: color-mix(in srgb, var(--correct) 50%, transparent);
+  background: color-mix(in srgb, var(--correct) 16%, var(--control-bg));
+  color: var(--correct);
+}
+
+.piece-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+
+.piece-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.piece-field select,
+.piece-field input {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.piece-tempo {
+  display: flex;
+  gap: 8px;
+}
+
+.piece-tempo input {
+  width: 5.5em;
+}
+
+.piece-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+}
+
+.piece-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.piece-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.piece-step {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 999px;
+  background: var(--control-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.piece-step[data-passed] {
+  color: var(--correct);
+}
+
+.piece-step[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--control-bg));
+  color: var(--ink);
+}
+
+.piece-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.piece-status-gap {
+  flex: 1;
+}
+
+.piece-result {
+  margin: 0;
+  min-height: 1.4em;
+  font-weight: 600;
+}
+
+.piece-result-perfect {
+  color: var(--correct);
+}
+
+.piece-result-fault {
+  color: var(--wrong);
+}
+
+.piece-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--surface-edge);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--surface-top), var(--surface));
+}
+
+.piece-score {
+  position: relative;
+}
+
+.piece-score-edit {
+  cursor: pointer;
+}
+
+.piece-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.piece-bar-active {
+  position: absolute;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.piece-phrase-start {
+  position: absolute;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}

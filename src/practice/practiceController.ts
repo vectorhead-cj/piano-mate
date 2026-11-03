@@ -170,6 +170,8 @@ export class PracticeController {
    * and fail it there. Playing through is the default: getting to the end matters too.
    */
   failAtOnce: Record<PracticeMode, boolean> = { wait: false, rhythm: false };
+  /** Another mode has the note stream: keys neither sound, light nor start an attempt here. */
+  muted = false;
   /** Keys lit by the hold guide, with when each note's written length ends. */
   private readonly guides = new Map<number, number>();
 
@@ -182,6 +184,7 @@ export class PracticeController {
         : null;
 
     deps.stream.subscribe((event) => {
+      if (this.muted) return;
       if (event.source === "midi" && this.keyCapture) {
         if (event.kind === "on") {
           const capture = this.keyCapture;

@@ -97,6 +97,41 @@ Import feedback:
 - **History:** one event per pass in the same `practice_events` table: piece, bar range, hand, mode, tempo, and the notes missed. A new event `type` alongside the curriculum ones. Each event is a row with its `type` and time copied into columns, so a piece's passes can be queried for trouble spots later without a migration.
 - **Signed out:** files would have to stay in the browser (IndexedDB, since localStorage is too small) and move to the account on sign-in, as practice events do. Or import could simply require signing in, which is simpler. To be decided.
 
+## v0.1: a piece curriculum (built)
+
+The first version narrows and reshapes the decisions above around learning one piece at a time. The code is in `src/piece/`.
+
+**Flow.** *Pieces* on the home page → import a file → split it into phrases → a piece page → practice. The piece page lists:
+
+- **Before you start:** skippable cards for the notation the piece uses, found by the parser. They cover key, time, tempo, range, fast note values, tuplets, chords per hand, ties, accidentals, grace notes, ornaments and repeats.
+- **Phrases:** a table of every phrase × step with its streak.
+- **Full piece:** the final stage.
+- **How to learn it:** the settings below.
+
+**Phrases.** The player taps a bar to start a phrase there, or uses the "every 2/4/8 bars" shortcuts. Progress is kept by the bars a phrase spans, so re-splitting other phrases keeps it.
+
+**Steps.** Each phrase goes left hand → right hand → both hands. With *slow first*, each hand is earned at the slow tempo and then at the standard one. With *standard directly*, only at the standard tempo. A step passes after a streak of N passes with at most M misses; both are set per piece (default 10 and 1). A phrase repeats until stopped or passed. *Next phrase* moves on at any time. The full piece is both hands at the standard tempo, repeats taken, played through clean once.
+
+**Timed only.** There is no wait mode: decision 1 changed. Right and wrong follow rhythm mode: a wrong key, a right key before its window, or a note left unplayed spoils the pass; a late hit inside the window counts. Each press is matched to the nearest unplayed note at that pitch. The window is rhythm mode's, narrowed to half the gap to the next same-pitch note, so fast runs resolve. This answers the timing-window open question for now. Grace notes and ornaments are not graded. Ties are held. Holds aren't graded yet.
+
+**Tempo.** The standard tempo comes from the file and can be typed or tapped in. The slow tempo is a share of it (40–80%).
+
+**Hands.** By default the synth plays the other hand at tempo, and that hand's keys are ignored.
+
+**Parsing.** We parse MusicXML ourselves rather than through OSMD's model (decision 2 changed). This keeps parsing testable without a renderer. OSMD still draws, and the drawn notes are found again by bar, staff, place in the bar and pitch; every note of K.208 maps. `.mxl` is unzipped with JSZip.
+
+**Display.** Phrases are drawn as an excerpt of their own bars, with the signatures in force and without repeat signs. The full piece is the whole score, scrolling to the bar being played, with the current bar washed. Half-page turns are not built.
+
+**Storage.** For now in the browser's IndexedDB, keyed by a hash of the MusicXML. The Supabase bucket and `pieces` table of decision 6 come next, so pieces follow the player across devices.
+
+**Next:**
+
+- Supabase storage and sync.
+- Playable intros: a scale for the key, or a sample bar for a new note value.
+- Hold grading.
+- An on-screen keyboard for single-note steps.
+- A passed step no longer counting after the tempo is raised.
+
 ## Open questions
 
 - **Timing window for timed mode.** The current window, ±max(350 ms, half a beat) in `src/practice/timing.ts`, was sized for the generated music: at most eighth notes, one at a time. In real pieces (sixteenths, two hands, chords) it overlaps neighbouring onsets, so a press can't be reliably matched to the note it was meant for. The window must adapt to the piece, by tempo and how close together its notes are, and a press should be matched to the nearest onset not yet played. Details to be decided.

@@ -42,6 +42,7 @@ import { loadCorpus } from "./music/corpus";
 import { levelById } from "./music/levels";
 import { midiNoteName, midiOf } from "./music/pitch";
 import type { Clef, Exercise, Level, NoteSource } from "./music/types";
+import { PieceMode } from "./piece/pieceMode";
 import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
 import type { Mark } from "./practice/waitSession";
@@ -226,7 +227,7 @@ async function main(): Promise<void> {
     .catch((error) => console.warn("Could not read the signed-in account", error));
   const session = newId();
 
-  type View = { name: "home" } | { name: "curriculum"; selected: StageRef | null } | { name: "practice" };
+  type View = { name: "home" } | { name: "curriculum"; selected: StageRef | null } | { name: "practice" } | { name: "pieces" };
   let view: View = { name: "home" };
   let context: PracticeContext = { kind: "custom" };
   /** What the settings bar shows; curriculum stages override most of it while they run. */
@@ -356,6 +357,14 @@ async function main(): Promise<void> {
     });
   }
   bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
+  const piecesView = element("pieces");
+  const pieceMode = new PieceMode({
+    root: piecesView,
+    stream,
+    synth,
+    soundMidiKeys: () => soundMidiKeys.checked,
+    startKey: () => practice.retryPitch,
+  });
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {
     unlockAllBox.checked = localStorage.getItem(UNLOCK_ALL_KEY) === "true";
@@ -810,6 +819,9 @@ async function main(): Promise<void> {
   }
 
   function showView(next: View): void {
+    if (view.name === "pieces" && next.name !== "pieces") pieceMode.hide();
+    // Pieces take the note stream for themselves while they're up.
+    practice.muted = next.name === "pieces";
     if (view.name === "practice" && next.name !== "practice") {
       milestone = null;
       celebrating = null;
@@ -819,6 +831,7 @@ async function main(): Promise<void> {
     }
     view = next;
     renderView();
+    if (view.name === "pieces") void pieceMode.show();
     if (view.name === "practice") {
       // The keyboard and staff measure themselves; they were hidden until now.
       updateKeyboardRange();
@@ -828,7 +841,8 @@ async function main(): Promise<void> {
 
   function renderView(): void {
     const practising = view.name === "practice";
-    menu.hidden = practising;
+    menu.hidden = practising || view.name === "pieces";
+    piecesView.hidden = view.name !== "pieces";
     practiceView.hidden = !practising;
     navBack.hidden = view.name === "home";
     customControls.hidden = !(practising && context.kind === "custom");
@@ -855,6 +869,7 @@ async function main(): Promise<void> {
       renderHome(menu, { progress: store.progress, activity: dailyMinutes(store.history, ACTIVITY_DAYS), status: store.status, storage: store.storage, account }, {
         openCurriculum: () => showView({ name: "curriculum", selected: null }),
         openCustom,
+        openPieces: () => showView({ name: "pieces" }),
         signIn: () => accountDialog.open(),
         signOut: () => {
           signOut()
@@ -888,6 +903,8 @@ async function main(): Promise<void> {
   navBack.addEventListener("click", () => {
     if (view.name === "practice" && context.kind === "curriculum") {
       showView({ name: "curriculum", selected: { clef: context.clef, stageId: context.stageId } });
+    } else if (view.name === "pieces" && pieceMode.back()) {
+      // Up a screen within pieces.
     } else {
       showView({ name: "home" });
     }

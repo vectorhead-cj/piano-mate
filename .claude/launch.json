@@ -30,6 +30,20 @@
       "url": "http://localhost:5174"
     },
     {
+      "name": "dev-5176",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176",
+        "--strictPort"
+      ],
+      "port": 5176,
+      "url": "http://localhost:5176"
+    },
+    {
       "name": "corpus-report",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
