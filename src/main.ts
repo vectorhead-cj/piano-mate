@@ -347,6 +347,14 @@ async function main(): Promise<void> {
   holdGuide.addEventListener("change", () => {
     practice.holdGuide = holdGuide.checked;
   });
+  for (const mode of ["wait", "rhythm"] as const) {
+    const name = mode === "wait" ? "failAtOnceWait" : "failAtOnceRhythm";
+    const box = element<HTMLFormElement>("settings").elements.namedItem(name) as HTMLInputElement;
+    practice.failAtOnce[mode] = box.checked;
+    box.addEventListener("change", () => {
+      practice.failAtOnce[mode] = box.checked;
+    });
+  }
   bindRetryKey(element<HTMLButtonElement>("retry-key"), practice, () => syncHot(practice.isHot));
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {

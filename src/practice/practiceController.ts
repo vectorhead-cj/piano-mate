@@ -10,7 +10,7 @@ import type { HoldMark, NotationOptions, NoteState, SignatureChange } from "../r
 import { faultyNotes, FORGIVEN_HOLD_FAULTS, HOLD_POLICIES, type HoldStrictness } from "./holds";
 import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
-import type { Settings } from "./settings";
+import type { PracticeMode, Settings } from "./settings";
 import { beatMs } from "./timing";
 import { WaitSession, type Mark, type NoteResult } from "./waitSession";
 
@@ -165,6 +165,11 @@ export class PracticeController {
   holdStrictness: HoldStrictness = "coach";
   /** Show, while coaching, how long to hold each note: a trail on the staff and a lit key. */
   holdGuide = true;
+  /**
+   * Per mode: fail the attempt at its first fault, or play on to the end of the phrase
+   * and fail it there. Playing through is the default: getting to the end matters too.
+   */
+  failAtOnce: Record<PracticeMode, boolean> = { wait: false, rhythm: false };
   /** Keys lit by the hold guide, with when each note's written length ends. */
   private readonly guides = new Map<number, number>();
 
@@ -463,6 +468,7 @@ export class PracticeController {
         keyboard.flash(pitch, "wrong");
         keyboard.flash(result.expectedPitch, "hint");
         this.publishLiveScore();
+        if (this.failAtOnce.wait) this.finishWaitPhrase();
         break;
       case "ignored":
         break;
@@ -475,8 +481,8 @@ export class PracticeController {
     const { notation, keyboard } = this.deps;
     const { missed, result } = session.play(pitch, time);
     this.applyMisses(missed);
-    // A fault fails the attempt there and then, rather than when the phrase runs out.
-    if (missed.length > 0) {
+    // With failAtOnce a fault fails the attempt there and then, rather than when the phrase runs out.
+    if (missed.length > 0 && this.failAtOnce.rhythm) {
       this.finishRhythmPhrase();
       return;
     }
@@ -502,12 +508,12 @@ export class PracticeController {
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
         keyboard.flash(result.expectedPitch, "hint");
-        this.finishRhythmPhrase();
+        this.faultInRhythm();
         break;
       case "early":
         notation.flashWrong(result.index);
         keyboard.flash(pitch, "wrong");
-        this.finishRhythmPhrase();
+        this.faultInRhythm();
         break;
       case "ignored":
         break;
@@ -526,7 +532,13 @@ export class PracticeController {
     }
     this.markHold(session, released.index, time, "short");
     this.publishLiveScore();
-    if (this.holdsFail(session)) this.finishRhythmPhrase();
+    if (this.holdsFail(session) && this.failAtOnce.rhythm) this.finishRhythmPhrase();
+  }
+
+  /** A wrong or early press: fails the attempt now with failAtOnce, else it plays on. */
+  private faultInRhythm(): void {
+    if (this.failAtOnce.rhythm) this.finishRhythmPhrase();
+    else this.publishLiveScore();
   }
 
   /** Holds count and are off more often than a phrase forgives. */
@@ -592,14 +604,14 @@ export class PracticeController {
       const now = this.now();
       const { missed, currentIndex, completed } = session.tick(now);
       this.applyMisses(missed);
-      if (missed.length > 0) {
+      if (missed.length > 0 && this.failAtOnce.rhythm) {
         this.finishRhythmPhrase();
         return;
       }
       const overheld = session.overheld(now);
       for (const index of overheld) this.markHold(session, index, now, "long");
       if (overheld.length > 0) this.publishLiveScore();
-      if (overheld.length > 0 && this.holdsFail(session)) {
+      if (overheld.length > 0 && this.holdsFail(session) && this.failAtOnce.rhythm) {
         this.finishRhythmPhrase();
         return;
       }

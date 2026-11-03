@@ -116,6 +116,18 @@ describe("PracticeController (wait mode)", () => {
     expect(keyboard.flash).toHaveBeenLastCalledWith(second, "hint");
   });
 
+  it("fails the phrase at the first wrong key with failAtOnce", () => {
+    const { controller, keyboard, expectedPitches, press, onPhraseComplete } = setup();
+    controller.failAtOnce.wait = true;
+    const [first] = expectedPitches();
+
+    press(first + 1);
+    expect(keyboard.flash).toHaveBeenCalledWith(first, "hint");
+    expect(controller.isHot).toBe(false);
+    expect(onPhraseComplete).toHaveBeenCalledWith(expect.objectContaining({ passed: false, mode: "wait" }));
+    expect(onPhraseComplete.mock.lastCall![0].notes[0]).toMatchObject({ wrong: 1, hit: false });
+  });
+
   it("goes cold after a failed phrase, keeping its marks until going hot retries it clean", () => {
     const { controller, notation, keyboard, score, sound, expectedPitches, press } = setup();
     const firstExercise = controller.exercise;
@@ -568,6 +580,7 @@ describe("PracticeController rhythm retries", () => {
 
   it("ignores the count-in, then fails the attempt at once on a note pressed before its window", () => {
     const ctx = quartersSetup();
+    ctx.controller.failAtOnce.rhythm = true;
     // A beat's rest, then a bar's count-in: playing in it is free.
     ctx.controller.goHot();
     vi.advanceTimersByTime(2000);
@@ -586,14 +599,33 @@ describe("PracticeController rhythm retries", () => {
 
   it("fails the attempt at once on a wrong note", () => {
     const ctx = quartersSetup();
+    ctx.controller.failAtOnce.rhythm = true;
     const firstAt = playFirst(ctx);
     vi.advanceTimersByTime(firstAt + 1000 - performance.now());
     ctx.press(63, firstAt + 1000);
     expectFailedAt(ctx, 1, { wrong: 1, hit: false });
   });
 
+  it("plays on past a wrong note and a missed one by default, failing the attempt at the barline", () => {
+    const ctx = quartersSetup();
+    const firstAt = playFirst(ctx);
+    vi.advanceTimersByTime(firstAt + 1000 - performance.now());
+    ctx.press(63, firstAt + 1000);
+    ctx.press(62, firstAt + 1000);
+    // E's window closes unplayed; F is played on time.
+    vi.advanceTimersByTime(firstAt + 3000 - performance.now());
+    expect(ctx.controller.isHot).toBe(true);
+    ctx.press(65, firstAt + 3000);
+    expect(ctx.onPhraseComplete).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(firstAt + 4000 + TICK_MS - performance.now());
+    expectFailedAt(ctx, 1, { wrong: 1, hit: true });
+    expect(ctx.onPhraseComplete.mock.lastCall![0].notes[2]).toMatchObject({ wrong: 0, hit: false });
+    expect(ctx.onPhraseComplete.mock.lastCall![0].notes[3]).toMatchObject({ hit: true });
+  });
+
   it("fails the attempt as soon as a note's window closes unplayed", () => {
     const ctx = quartersSetup();
+    ctx.controller.failAtOnce.rhythm = true;
     const firstAt = playFirst(ctx);
     // D's window closes half a beat after it's due.
     vi.advanceTimersByTime(firstAt + 1000 + 500 - performance.now());
@@ -697,6 +729,7 @@ describe("PracticeController rhythm retries", () => {
 
   it("fails the attempt at once on a second note let go too soon when holds are strict", () => {
     const ctx = quartersSetup();
+    ctx.controller.failAtOnce.rhythm = true;
     const firstAt = strictShortFirst(ctx);
     vi.advanceTimersByTime(firstAt + 1000 - performance.now());
     hold(ctx, 62, 400);
@@ -706,6 +739,7 @@ describe("PracticeController rhythm retries", () => {
 
   it("fails the attempt when a second note is held too far into the next under strict holds", () => {
     const ctx = quartersSetup();
+    ctx.controller.failAtOnce.rhythm = true;
     const firstAt = strictShortFirst(ctx);
     vi.advanceTimersByTime(firstAt + 1000 - performance.now());
     ctx.stream.emit({ kind: "on", pitch: 62, time: firstAt + 1000, source: "screen" });
