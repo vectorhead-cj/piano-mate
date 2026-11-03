@@ -4,7 +4,8 @@ export type HandChoice = Hand | "both";
 
 export const HAND_LABELS: Record<HandChoice, string> = { left: "Left hand", right: "Right hand", both: "Both hands" };
 
-export type Ornament = "trill" | "mordent" | "turn";
+/** A mordent goes down to the note below and back; an upper mordent up to the note above. */
+export type Ornament = "trill" | "mordent" | "upper-mordent" | "turn" | "inverted-turn" | "delayed-turn" | "delayed-inverted-turn";
 
 /** One written note. Times are in quarter beats from the start of the piece, in written order. */
 export interface PieceNote {
@@ -23,10 +24,17 @@ export interface PieceNote {
   /** Index of the note this one is tied on to. */
   tieNext?: number;
   grace: boolean;
+  /** A grace note with a slash through it: a quick crush on the beat, not a leaning appoggiatura. */
+  acciaccatura?: boolean;
+  /** Under a slur that goes on past it, so it's held into the next note. */
+  slurred?: boolean;
   /** Part of a chord: another note in its hand starts with it. */
   chord: boolean;
   tuplet: boolean;
   ornament?: Ornament;
+  /** An ornament's notes above and below, as MIDI: in the key, after the bar's accidentals and any written on the ornament. */
+  upper?: number;
+  lower?: number;
 }
 
 export interface PieceMeasure {

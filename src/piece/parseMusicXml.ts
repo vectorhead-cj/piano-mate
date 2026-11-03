@@ -60,13 +60,65 @@ export function pianoPart(root: Element, warnings: string[] = []): Element {
   return piano;
 }
 
+const ORNAMENTS: [string, Ornament][] = [
+  ["trill-mark", "trill"],
+  ["mordent", "mordent"],
+  ["inverted-mordent", "upper-mordent"],
+  ["turn", "turn"],
+  ["inverted-turn", "inverted-turn"],
+  ["delayed-turn", "delayed-turn"],
+  ["delayed-inverted-turn", "delayed-inverted-turn"],
+];
+
+const ACCIDENTAL_ALTERS: Record<string, number> = { sharp: 1, natural: 0, flat: -1, "double-sharp": 2, "sharp-sharp": 2, "flat-flat": -2 };
+
 function ornamentOf(note: Element): Ornament | undefined {
   const ornaments = note.querySelector("notations > ornaments");
   if (!ornaments) return undefined;
-  if (child(ornaments, "trill-mark") || child(ornaments, "wavy-line")) return "trill";
-  if (child(ornaments, "mordent") || child(ornaments, "inverted-mordent")) return "mordent";
-  if (child(ornaments, "turn") || child(ornaments, "inverted-turn") || child(ornaments, "delayed-turn")) return "turn";
+  for (const [tag, ornament] of ORNAMENTS) if (child(ornaments, tag)) return ornament;
+  // A trill can be written as its wavy line alone.
+  if (children(ornaments, "wavy-line").some((line) => line.getAttribute("type") === "start")) return "trill";
   return undefined;
+}
+
+/** The alter the key signature gives a letter. */
+function keyAlter(fifths: number, step: string): number {
+  if (fifths > 0) return "FCGDAEB".indexOf(step) < fifths ? 1 : 0;
+  if (fifths < 0) return "BEADGCF".indexOf(step) < -fifths ? -1 : 0;
+  return 0;
+}
+
+/**
+ * An ornament's neighbour a letter above or below the note: altered as written on the
+ * ornament, else as the bar has had that note so far, else as the key has it.
+ */
+function neighbour(
+  step: string,
+  octave: number,
+  direction: 1 | -1,
+  mark: number | undefined,
+  barAlters: Map<string, number>,
+  fifths: number,
+): number {
+  const letters = "CDEFGAB";
+  const index = letters.indexOf(step) + direction;
+  const nextStep = letters[(index + 7) % 7];
+  const nextOctave = octave + (index > 6 ? 1 : index < 0 ? -1 : 0);
+  const alter = mark ?? barAlters.get(`${nextStep}${nextOctave}`) ?? keyAlter(fifths, nextStep);
+  return 12 * (nextOctave + 1) + STEPS[nextStep] + alter;
+}
+
+/** Accidentals written over (`above`) and under an ornament; one with no placement is the ornament's own side. */
+function ornamentMarks(note: Element, ornament: Ornament): { above?: number; below?: number } {
+  const marks: { above?: number; below?: number } = {};
+  const ornaments = note.querySelector("notations > ornaments");
+  for (const mark of ornaments ? children(ornaments, "accidental-mark") : []) {
+    const alter = ACCIDENTAL_ALTERS[mark.textContent?.trim() ?? ""];
+    if (alter === undefined) continue;
+    const placement = mark.getAttribute("placement") ?? (ornament === "mordent" ? "below" : "above");
+    marks[placement === "below" ? "below" : "above"] = alter;
+  }
+  return marks;
 }
 
 /** Rounds away float noise from tuplet divisions, so equal times compare equal. */
@@ -111,6 +163,8 @@ export function parsePiece(xml: string): Piece {
   let skippedStaves = false;
   /** The open ending a bar belongs to until its stop or discontinue. */
   let ending: number[] | undefined;
+  /** Slurs open on each staff, by number. */
+  const slurs = new Map<number, Set<string>>();
 
   for (const measureElement of children(part, "measure")) {
     const index = measures.length;
@@ -132,6 +186,8 @@ export function parsePiece(xml: string): Piece {
     let furthest = 0;
     /** Start of the last note, for <chord/> notes that share it. */
     let lastStart = 0;
+    /** The alter each note has had so far in the bar, by staff and then step and octave, for ornaments' neighbours. */
+    const barAlters = new Map<number, Map<string, number>>();
 
     for (const node of measureElement.children) {
       switch (node.tagName) {
@@ -226,14 +282,27 @@ export function parsePiece(xml: string): Piece {
             skippedStaves = true;
             break;
           }
-          const step = STEPS[text(pitch, "step") ?? "C"];
-          const midi = 12 * ((number(pitch, "octave") ?? 4) + 1) + step + Math.round(number(pitch, "alter") ?? 0);
+          const stepName = text(pitch, "step") ?? "C";
+          const octave = number(pitch, "octave") ?? 4;
+          const alter = Math.round(number(pitch, "alter") ?? 0);
+          const midi = 12 * (octave + 1) + STEPS[stepName] + alter;
           const ties = children(node, "tie").map((tie) => tie.getAttribute("type"));
           if (isChord) {
             for (let j = notes.length - 1; j >= 0 && notes[j].measure === index; j--) {
               if (notes[j].hand === handOfStaff(staff) && notes[j].offset === tidy(noteStart)) notes[j].chord = true;
             }
           }
+          const open = slurs.get(staff) ?? new Set<string>();
+          slurs.set(staff, open);
+          for (const slur of node.querySelectorAll("notations > slur")) {
+            const id = slur.getAttribute("number") ?? "1";
+            if (slur.getAttribute("type") === "stop") open.delete(id);
+            if (slur.getAttribute("type") === "start") open.add(id);
+          }
+          const alters = barAlters.get(staff) ?? new Map<string, number>();
+          barAlters.set(staff, alters);
+          const ornament = ornamentOf(node);
+          const marks = ornament ? ornamentMarks(node, ornament) : {};
           notes.push({
             hand: handOfStaff(staff),
             midi,
@@ -244,11 +313,18 @@ export function parsePiece(xml: string): Piece {
             type: text(node, "type"),
             tiedFrom: ties.includes("stop"),
             grace,
+            ...(grace && child(node, "grace")!.getAttribute("slash") === "yes" && { acciaccatura: true }),
+            ...(open.size > 0 && { slurred: true }),
             chord: isChord,
             tuplet: child(node, "time-modification") !== undefined,
-            ornament: ornamentOf(node),
+            ...(ornament && {
+              ornament,
+              upper: neighbour(stepName, octave, 1, marks.above, alters, fifths),
+              lower: neighbour(stepName, octave, -1, marks.below, alters, fifths),
+            }),
             ...(ties.includes("start") && { tieNext: -1 }),
           });
+          alters.set(`${stepName}${octave}`, alter);
           break;
         }
       }

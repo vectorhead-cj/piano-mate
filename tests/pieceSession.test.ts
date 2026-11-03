@@ -126,6 +126,38 @@ describe("PieceSession", () => {
     expect(span.targets).toHaveLength(1);
     expect(span.targets[0]).toMatchObject({ length: 8, notes: [0, 1] });
   });
+
+  it("doesn't grade a trill, and lets its keys be played any way", () => {
+    const trilled: Piece = {
+      ...piece(),
+      notes: [n("right", 72, 0), n("right", 74, 1, 2, { ornament: "trill", upper: 76, lower: 72 }), n("right", 72, 3)],
+    };
+    const span = playSpan(trilled, [0], "right");
+    expect(span.targets.map((t) => t.pitch)).toEqual([72, 72]);
+    expect(span.ungraded.map((t) => t.pitch)).toEqual([74]);
+    const s = new PieceSession(span, 60, 4);
+    s.arm(0);
+    s.play(72, 4000);
+    // E–D–E–D through beats 2 and 3, and the next C on time.
+    [5000, 5120, 5240, 5360, 5480].forEach((t, i) => expect(s.play(i % 2 ? 74 : 76, t).kind).toBe("ignored"));
+    s.play(72, 7000);
+    s.tick(20_000);
+    expect(s.result()).toMatchObject({ clean: true, hits: 2, total: 2 });
+  });
+
+  it("plays an appoggiatura on the beat and grades the note after where it then falls", () => {
+    const leaning: Piece = {
+      ...piece(),
+      notes: [n("right", 74, 0, 0, { grace: true, type: "eighth" }), n("right", 72, 0, 2)],
+    };
+    const span = playSpan(leaning, [0], "right");
+    expect(span.targets).toHaveLength(1);
+    expect(span.targets[0]).toMatchObject({ due: 0.5, length: 1.5, graces: { notes: [0], lead: 0.5 } });
+    const s = new PieceSession(span, 60, 4);
+    s.arm(0);
+    expect(s.play(74, 4000).kind).toBe("ignored");
+    expect(s.play(72, 4500)).toMatchObject({ kind: "hit", timing: "on-time" });
+  });
 });
 
 describe("piece curriculum", () => {

@@ -103,6 +103,52 @@ describe("parsePiece", () => {
     expect(piece.notes[2].tiedFrom).toBe(false);
   });
 
+  it("gives K.208's ornaments their neighbours in the key and the bar", async () => {
+    const piece = await k208();
+    const ornamented = piece.notes.filter((n) => n.ornament).map((n) => [n.measure + 1, n.ornament, n.midi, n.upper, n.lower]);
+    expect(ornamented).toEqual([
+      [11, "upper-mordent", 66, 68, 64], // F♯4: G♯ from the key
+      [13, "upper-mordent", 63, 64, 61], // D♯4: E, C♯
+      [15, "trill", 71, 73, 69], // B4: C♯5 from the key
+      [23, "upper-mordent", 71, 73, 69],
+      [25, "trill", 71, 73, 69],
+    ]);
+  });
+
+  it("alters an ornament's neighbour by the bar's accidentals and its own accidental mark", () => {
+    const trill = (mark = "") => `<notations><ornaments><trill-mark/>${mark}</ornaments></notations><staff>1</staff>`;
+    const piece = parsePiece(
+      score(
+        `<note><pitch><step>D</step><alter>-1</alter><octave>5</octave></pitch><duration>2</duration><staff>1</staff></note>` +
+          note("C", 5, 2, trill()) +
+          note("C", 5, 2, trill("<accidental-mark>sharp</accidental-mark>")) +
+          note("E", 5, 2, '<notations><ornaments><mordent/><accidental-mark placement="below">flat</accidental-mark></ornaments></notations><staff>1</staff>'),
+      ),
+    );
+    expect(piece.notes.slice(1).map((n) => [n.ornament, n.upper, n.lower])).toEqual([
+      ["trill", 73, 71], // D♭ earlier in the bar
+      ["trill", 75, 71], // D♯ as marked
+      ["mordent", 77, 73], // D♭ below, as marked
+    ]);
+  });
+
+  it("tells slashed grace notes and slurred notes apart", () => {
+    const piece = parsePiece(
+      score(
+        '<note><grace slash="yes"/><pitch><step>D</step><octave>5</octave></pitch><staff>1</staff><notations><slur type="start"/></notations></note>' +
+          note("C", 5, 4, '<staff>1</staff><notations><slur type="stop"/></notations>') +
+          '<note><grace/><pitch><step>D</step><octave>5</octave></pitch><staff>1</staff></note>' +
+          note("C", 5, 4, "<staff>1</staff>"),
+      ),
+    );
+    expect(piece.notes.map((n) => [n.grace, n.acciaccatura ?? false, n.slurred ?? false])).toEqual([
+      [true, true, true],
+      [false, false, false],
+      [true, false, false],
+      [false, false, false],
+    ]);
+  });
+
   it("refuses what isn't MusicXML", () => {
     expect(() => parsePiece("<html><body>hi</body></html>")).toThrow(PieceError);
     expect(() => parsePiece("not xml at all <")).toThrow(PieceError);

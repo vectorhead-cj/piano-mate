@@ -1,4 +1,5 @@
 import { Metronome } from "../audio/metronome";
+import { SoundQueue, type QueuedNote } from "../audio/soundQueue";
 import type { Synth } from "../audio/synth";
 import type { NoteStream } from "../input/noteStream";
 import { midiNoteName } from "../music/pitch";
@@ -33,6 +34,7 @@ import {
 import { PieceScoreView, type NoteMark } from "./pieceScoreView";
 import { PieceSession, type FaultKind, type PassResult } from "./pieceSession";
 import { scoreXml } from "./scoreXml";
+import { soundsOf, type Sound } from "./sounding";
 import { barRange, playSpan, type PlaySpan } from "./targets";
 
 /** Rest between one pass and the next one's count-in. */
@@ -41,6 +43,10 @@ const PASS_GAP_MS = 1500;
 const TICK_MS = 25;
 /** How long the last notes stay coloured before the pass's result. */
 const PASS_TAIL_MS = 400;
+/** Shortest a note sounds, however quick. */
+const MIN_HOLD_SECONDS = 0.04;
+/** Share of its length a detached note sounds, so repeated notes are heard as separate presses. */
+const DETACHED = 0.9;
 /** Taps further apart than this start a new tap-tempo count. */
 const TAP_RESET_MS = 2500;
 const SLOW_SHARES = [0.4, 0.5, 0.6, 0.7, 0.8] as const;
@@ -171,12 +177,15 @@ export class PieceMode {
   /** The example scores on the piece page, kept so a resize redraws them. */
   private examples: PieceScoreView[] = [];
   private taps: number[] = [];
-  /** The synth's notes for the other hand, still to sound. */
+  /** Listening: the marks and cursor still to move with the music. */
   private soundTimers: number[] = [];
+  /** The synth's notes still to sound: the other hand, or all of it when listening. */
+  private readonly soundQueue: SoundQueue;
 
   constructor(private readonly deps: PieceModeDependencies) {
     this.root = deps.root;
     this.metronome = new Metronome({ click: (accent) => deps.synth.click(accent) });
+    this.soundQueue = new SoundQueue(deps.synth);
     deps.stream.subscribe((event) => this.onNote(event));
     document.addEventListener("keydown", (event) => {
       if (!this.visible || this.screen.name !== "practice" || event.code !== "Space" || event.repeat) return;
@@ -866,12 +875,14 @@ export class PieceMode {
     view.clearMarks();
     const at = (beat: number, run: () => void) =>
       this.soundTimers.push(window.setTimeout(run, Math.max(0, start + beat * beatMs - performance.now())));
-    for (const target of span.targets) {
-      at(target.due, () => {
-        this.deps.synth.play(target.pitch, 0.6, Math.max(0.1, (target.length * beatMs * 0.9) / 1000));
-        view.setMark(target.notes, "current");
-      });
-      at(target.due + target.length, () => view.setMark(target.notes, "pending"));
+    const targets = [...span.targets, ...span.ungraded];
+    this.soundQueue.play(queuedNotes(soundsOf(info.piece, targets, info.tempo), start, beatMs, 0.6));
+    for (const target of targets) {
+      // A note's mark comes on with its grace notes.
+      const from = target.due - (target.graces?.lead ?? 0);
+      const notes = [...(target.graces?.notes ?? []), ...target.notes];
+      at(from, () => view.setMark(notes, "current"));
+      at(target.due + target.length, () => view.setMark(notes, "pending"));
     }
     span.order.forEach((measure, slot) =>
       at(span.slotStarts[slot], () => {
@@ -939,17 +950,13 @@ export class PieceMode {
     session.arm(now);
     const beatMs = 60_000 / info.tempo;
     this.metronome.start(info.tempo, record.settings.metronome ? beats + Math.ceil(span.length) : beats, now, beats);
-    const timers: number[] = [];
-    if (record.settings.otherHand && info.hand !== "both") {
-      for (const other of span.others) {
-        const at = session.start! + other.due * beatMs;
-        timers.push(window.setTimeout(() => this.deps.synth.play(other.pitch, 0.55, Math.max(0.1, other.length * beatMs * 0.9) / 1000), Math.max(0, at - performance.now())));
-      }
-    }
     this.view.clearMarks();
     // The other hand of the pass before may still be sounding out; this one takes over.
     for (const timer of this.soundTimers) clearTimeout(timer);
-    this.soundTimers = timers;
+    this.soundTimers = [];
+    if (record.settings.otherHand && info.hand !== "both") {
+      this.soundQueue.play(queuedNotes(soundsOf(piece, span.others, info.tempo), session.start!, beatMs, 0.55));
+    } else this.soundQueue.stop();
     const pass: Pass = { session, span, timer: 0, slot: -1 };
     this.pass = pass;
     this.refreshPractice();
@@ -1077,9 +1084,20 @@ export class PieceMode {
     this.clearPass();
     for (const timer of this.soundTimers) clearTimeout(timer);
     this.soundTimers = [];
+    this.soundQueue.stop();
     this.metronome.stop();
     this.view?.setCursor(null);
   }
+}
+
+/** Sounds for the synth, `start` being when the span's first beat falls (a performance.now() time). */
+function queuedNotes(sounds: readonly Sound[], start: number, beatMs: number, velocity: number): QueuedNote[] {
+  return sounds.map((sound) => ({
+    pitch: sound.pitch,
+    velocity: velocity * sound.velocity,
+    holdSeconds: Math.max(MIN_HOLD_SECONDS, (sound.length * beatMs * (sound.legato ? 1 : DETACHED)) / 1000),
+    at: start + sound.at * beatMs,
+  }));
 }
 
 function samePlace(a: PracticePlace, b: PracticePlace): boolean {

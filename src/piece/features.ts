@@ -1,7 +1,7 @@
 import { KEYS, MINOR_KEYS, signatureLetters } from "../music/keys";
 import { midiNoteName } from "../music/pitch";
 import { miniScore, scaleNotes, spellMidi, tonicNote, tonicOctave, type MiniType } from "./miniScore";
-import type { Hand, HandChoice, Piece, PieceNote } from "./piece";
+import type { Hand, HandChoice, Ornament, Piece, PieceNote } from "./piece";
 
 /** Music to show on a card: bars of the piece with some notes picked out, or a score of its own. */
 export type FeatureScore =
@@ -35,6 +35,16 @@ const NOTE_VALUES: readonly [string, string][] = [
   ["64th", "64th notes"],
   ["128th", "128th notes"],
 ];
+
+const ORNAMENT_NAMES: Record<Ornament, string> = {
+  trill: "trills",
+  mordent: "mordents",
+  "upper-mordent": "upper mordents",
+  turn: "turns",
+  "inverted-turn": "inverted turns",
+  "delayed-turn": "delayed turns",
+  "delayed-inverted-turn": "delayed inverted turns",
+};
 
 const SIGN = { 1: "♯", [-1]: "♭" } as const;
 
@@ -267,7 +277,7 @@ export function pieceFeatures(piece: Piece): PieceFeature[] {
     features.push({
       id: "grace",
       title: "Grace notes",
-      detail: `${graces} small grace note${graces === 1 ? "" : "s"}, played quickly into the note after. Play them, but they aren't graded.`,
+      detail: `${graces} small grace note${graces === 1 ? "" : "s"}. One on its own leans on the beat for its written value, and the note after comes that much later; a slashed one is quick. Play them, but they aren't graded.`,
       ...inFirstBar(piece, (n) => n.grace),
     });
   }
@@ -276,8 +286,8 @@ export function pieceFeatures(piece: Piece): PieceFeature[] {
   if (ornaments.length > 0) {
     features.push({
       id: "ornaments",
-      title: `Ornaments: ${list(ornaments.map((o) => `${o}s`))}`,
-      detail: "A trill alternates quickly with the note above; a mordent flicks once to the next note and back. Play them as you like: only the written main note is graded, on its beat.",
+      title: `Ornaments: ${list(ornaments.map((o) => ORNAMENT_NAMES[o]))}`,
+      detail: "A trill alternates quickly with the note above, starting from it; a mordent flicks once to the next note and back. Press Listen to hear them. Play them as you like: ornamented notes aren't graded.",
       ...inFirstBar(piece, (n) => n.ornament !== undefined),
     });
   }

@@ -4,6 +4,8 @@ const DECAY_SECONDS = 1.5;
 const SUSTAIN_LEVEL = 0.45;
 const SUSTAIN_SETTLE_SECONDS = 0.3;
 const RELEASE_SECONDS = 0.12;
+/** Short held notes release faster, so quick ornament notes stay clear of each other. */
+const MIN_RELEASE_SECONDS = 0.03;
 const CLICK_GAIN = 0.22;
 const CLICK_SECONDS = 0.04;
 
@@ -12,6 +14,8 @@ export class Synth {
   private context: AudioContext | null = null;
   /** In-flight resume so concurrent play/click/unlock share one unlock attempt. */
   private unlocking: Promise<AudioContext | null> | null = null;
+  /** Notes scheduled to start later, so they can be called off. */
+  private pending: { oscillator: OscillatorNode; gain: GainNode; start: number }[] = [];
 
   /** Call from a user gesture. Browsers only allow AudioContext to leave "suspended" then. */
   unlock(): void {
@@ -21,17 +25,31 @@ export class Synth {
   /**
    * @param holdSeconds Sustain the note this long, then release it, instead of letting it
    *   decay like a pluck (used to play phrases back, where note lengths matter).
+   * @param at When to start, as a performance.now() time; now if absent or past. Played on
+   *   the audio clock, so notes scheduled a little ahead keep exact time.
    */
-  play(pitch: number, velocity = 0.8, holdSeconds?: number): void {
+  play(pitch: number, velocity = 0.8, holdSeconds?: number, at?: number): void {
     const running = this.runningContext();
     if (running) {
-      this.scheduleNote(running, pitch, velocity, holdSeconds);
+      this.scheduleNote(running, pitch, velocity, holdSeconds, at);
       return;
     }
     // First unlock (or after suspension): wait for resume so the note isn't dropped.
     void this.ensureRunning().then((context) => {
-      if (context) this.scheduleNote(context, pitch, velocity, holdSeconds);
+      if (context) this.scheduleNote(context, pitch, velocity, holdSeconds, at);
     });
+  }
+
+  /** Calls off notes scheduled ahead that haven't started yet; ones sounding ring on. */
+  cancelPending(): void {
+    const now = this.context?.currentTime ?? 0;
+    for (const { oscillator, gain, start } of this.pending) {
+      if (start <= now) continue;
+      oscillator.onended = null;
+      oscillator.stop();
+      gain.disconnect();
+    }
+    this.pending = [];
   }
 
   /** Short metronome blip. Accent beats use a slightly higher pitch. */
@@ -72,10 +90,11 @@ export class Synth {
     return this.context.state === "running" ? this.context : null;
   }
 
-  private scheduleNote(context: AudioContext, pitch: number, velocity: number, holdSeconds?: number): void {
-    const now = context.currentTime;
+  private scheduleNote(context: AudioContext, pitch: number, velocity: number, holdSeconds?: number, at?: number): void {
+    const now = Math.max(context.currentTime, at === undefined ? 0 : context.currentTime + (at - performance.now()) / 1000);
     const peak = PEAK_GAIN * velocity;
-    const end = holdSeconds === undefined ? now + DECAY_SECONDS : now + holdSeconds + RELEASE_SECONDS;
+    const release = holdSeconds === undefined ? 0 : Math.min(RELEASE_SECONDS, Math.max(MIN_RELEASE_SECONDS, holdSeconds / 2));
+    const end = holdSeconds === undefined ? now + DECAY_SECONDS : now + holdSeconds + release;
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
@@ -95,7 +114,12 @@ export class Synth {
     oscillator.type = "triangle";
     oscillator.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
     oscillator.connect(gain);
-    oscillator.onended = () => gain.disconnect();
+    const voice = { oscillator, gain, start: now };
+    if (now > context.currentTime) this.pending.push(voice);
+    oscillator.onended = () => {
+      gain.disconnect();
+      this.pending = this.pending.filter((v) => v !== voice);
+    };
     oscillator.start(now);
     oscillator.stop(end + 0.1);
   }

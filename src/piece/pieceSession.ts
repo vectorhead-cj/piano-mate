@@ -1,5 +1,5 @@
 import { acceptWindowMs, beatMs, timingGrade, type TimingGrade } from "../practice/timing";
-import type { PlaySpan, Target } from "./targets";
+import type { Leeway, PlaySpan, Target } from "./targets";
 
 /** The narrowest a note's window gets when the same key comes again soon after. */
 const MIN_WINDOW_MS = 60;
@@ -35,6 +35,7 @@ export class PieceSession {
   readonly countInMs: number;
   readonly lengthMs: number;
   private readonly others: readonly Target[];
+  private readonly leeway: readonly Leeway[];
   private readonly windows: number[];
   private readonly beat: number;
   /** The widest any window gets: searches by due time can stop past it. */
@@ -49,6 +50,7 @@ export class PieceSession {
   constructor(span: PlaySpan, tempo: number, countInBeats: number) {
     this.targets = span.targets;
     this.others = span.others;
+    this.leeway = span.leeway;
     this.tempo = tempo;
     this.beat = beatMs(tempo);
     this.countInMs = countInBeats * this.beat;
@@ -148,6 +150,9 @@ export class PieceSession {
     if (this.others.some((o) => o.pitch === pitch && Math.abs(time - this.wallTime(o.due)) <= this.accept)) {
       return { kind: "ignored" };
     }
+    // An ornament's or grace note's keys, played however the player likes.
+    const free = (l: Leeway) => time >= this.wallTime(l.from) - this.accept && time <= this.wallTime(l.to) + this.accept;
+    if (this.leeway.some((l) => l.pitches.includes(pitch) && free(l))) return { kind: "ignored" };
 
     // The right key a little before its window: too early. Before the count-in ends it's just noodling.
     for (let i = this.firstOpen; i < this.targets.length; i++) {
