@@ -7,7 +7,7 @@ import { pressedIndices, tiedOn } from "../music/ties";
 import type { Exercise, NoteSource } from "../music/types";
 import type { KeyFlash } from "../render/keyboardView";
 import type { HoldMark, NotationOptions, NoteState } from "../render/notationView";
-import { cleanNote, HOLD_POLICIES, type HoldStrictness } from "./holds";
+import { faultyNotes, FORGIVEN_HOLD_FAULTS, HOLD_POLICIES, type HoldStrictness } from "./holds";
 import { exactPitch } from "./matcher";
 import { RhythmSession } from "./rhythmSession";
 import type { Settings } from "./settings";
@@ -510,7 +510,12 @@ export class PracticeController {
     }
     this.markHold(session, released.index, time, "short");
     this.publishLiveScore();
-    if (session.holdPolicy.fails) this.finishRhythmPhrase();
+    if (this.holdsFail(session)) this.finishRhythmPhrase();
+  }
+
+  /** Holds count and are off more often than a phrase forgives. */
+  private holdsFail(session: RhythmSession): boolean {
+    return session.holdPolicy.fails && session.holdFaults > FORGIVEN_HOLD_FAULTS;
   }
 
   /** The hold guide shows while holds are coached, never while they're graded strictly. */
@@ -578,7 +583,7 @@ export class PracticeController {
       const overheld = session.overheld(now);
       for (const index of overheld) this.markHold(session, index, now, "long");
       if (overheld.length > 0) this.publishLiveScore();
-      if (overheld.length > 0 && session.holdPolicy.fails) {
+      if (overheld.length > 0 && this.holdsFail(session)) {
         this.finishRhythmPhrase();
         return;
       }
@@ -665,7 +670,7 @@ export class PracticeController {
     abandoned = false,
     holds?: HoldStrictness,
   ): PhraseResult {
-    const passed = notes.every((n) => cleanNote(n, holds));
+    const passed = !faultyNotes(notes, holds).includes(true);
     const slowed = this.slowTempo !== undefined;
     if (slowed) {
       if (passed) this.slowTempo = undefined;

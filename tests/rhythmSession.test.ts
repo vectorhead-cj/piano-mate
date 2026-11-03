@@ -203,15 +203,17 @@ describe("RhythmSession holds", () => {
     expect(session.marks().rhythm).toEqual(["correct", "correct", "correct"]);
   });
 
-  it("holds every note to half its length when strict", () => {
+  it("holds every note to half its length when strict, forgiving the first that isn't", () => {
     const session = holdSession("strict");
     session.play(60, COUNT_IN);
     expect(session.release(60, COUNT_IN + 450)?.short).toBe(true);
-    expect(session.marks().rhythm[0]).toBe("wrong");
+    expect(session.marks().rhythm[0]).toBe("correct");
     session.play(62, COUNT_IN + 1000);
     expect(session.release(62, COUNT_IN + 1500)?.short).toBe(false);
     session.play(64, COUNT_IN + 2000);
     expect(session.release(64, COUNT_IN + 2000 + 950)?.short).toBe(true);
+    expect(session.holdFaults).toBe(2);
+    expect(session.marks().rhythm).toEqual(["correct", "correct", "wrong"]);
   });
 
   it("grades a release against the beat, so a late press let go on time was held right", () => {

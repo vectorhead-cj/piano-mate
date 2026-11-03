@@ -663,35 +663,49 @@ describe("PracticeController rhythm retries", () => {
     expect(ctx.onPhraseComplete.mock.lastCall![0].notes[2]).toMatchObject({ hold: "short" });
   });
 
-  it("fails the attempt at once on a note let go too soon when holds are strict, with no guide", () => {
-    const ctx = quartersSetup();
+  /** Strict holds: goes hot and plays C on time, let go too soon; returns when it was due. */
+  function strictShortFirst(ctx: ReturnType<typeof setup>): number {
     ctx.controller.holdStrictness = "strict";
     ctx.controller.goHot();
     const firstAt = performance.now() + 1000 + 4000;
     vi.advanceTimersByTime(firstAt - performance.now());
     hold(ctx, 60, 400);
-    expectFailedAt(ctx, 0, { hit: true, wrong: 0, hold: "short" });
-    expect(ctx.onPhraseComplete.mock.lastCall![0].holds).toBe("strict");
+    return firstAt;
+  }
+
+  it("forgives one note let go too soon when holds are strict, with no guide", () => {
+    const ctx = quartersSetup();
+    const firstAt = strictShortFirst(ctx);
+    expect(ctx.controller.isHot).toBe(true);
+    for (const [i, pitch] of [62, 64, 65].entries()) {
+      vi.advanceTimersByTime(firstAt + (i + 1) * 1000 - performance.now());
+      hold(ctx, pitch, 900);
+    }
+    vi.advanceTimersByTime(firstAt + 4000 + TICK_MS - performance.now());
+    const result = ctx.onPhraseComplete.mock.lastCall![0];
+    expect(result).toMatchObject({ passed: true, holds: "strict" });
+    expect(result.notes[0]).toMatchObject({ hold: "short" });
     expect(ctx.keyboard.setGuide).not.toHaveBeenCalledWith(60, true);
   });
 
-  it("fails the attempt when a key is held too far into the next note under strict holds", () => {
+  it("fails the attempt at once on a second note let go too soon when holds are strict", () => {
     const ctx = quartersSetup();
-    ctx.controller.holdStrictness = "strict";
-    const firstAt = playFirstHeld(ctx);
-    vi.advanceTimersByTime(firstAt + 1250 + TICK_MS - performance.now());
-    expectFailedAt(ctx, 0, { hold: "long" });
+    const firstAt = strictShortFirst(ctx);
+    vi.advanceTimersByTime(firstAt + 1000 - performance.now());
+    hold(ctx, 62, 400);
+    expectFailedAt(ctx, 1, { hit: true, wrong: 0, hold: "short" });
+    expect(ctx.onPhraseComplete.mock.lastCall![0].holds).toBe("strict");
   });
 
-  /** Goes hot and puts C down on time, leaving it held; returns when it was due. */
-  function playFirstHeld(ctx: ReturnType<typeof setup>): number {
-    ctx.controller.goHot();
-    const firstAt = performance.now() + 1000 + 4000;
-    vi.advanceTimersByTime(firstAt - performance.now());
-    ctx.stream.emit({ kind: "on", pitch: 60, time: firstAt, source: "screen" });
+  it("fails the attempt when a second note is held too far into the next under strict holds", () => {
+    const ctx = quartersSetup();
+    const firstAt = strictShortFirst(ctx);
+    vi.advanceTimersByTime(firstAt + 1000 - performance.now());
+    ctx.stream.emit({ kind: "on", pitch: 62, time: firstAt + 1000, source: "screen" });
     vi.advanceTimersByTime(0);
-    return firstAt;
-  }
+    vi.advanceTimersByTime(firstAt + 2250 + TICK_MS - performance.now());
+    expectFailedAt(ctx, 1, { hold: "long" });
+  });
 
   it("slowing down mid-attempt counts as bailing out", () => {
     const ctx = setup(settings);

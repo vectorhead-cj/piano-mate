@@ -1,4 +1,4 @@
-import { cleanNote, type HoldStrictness } from "../practice/holds";
+import { faultyNotes, type HoldStrictness } from "../practice/holds";
 import { onTimeWindowMs } from "../practice/timing";
 import type { NoteResult } from "../practice/waitSession";
 import type { AccidentalFrequency, Alter, Clef, Duration, Letter, RhythmFlavor, Spelling, TimeSignature } from "../music/types";
@@ -119,9 +119,12 @@ export function parseSpelling(text: string): Spelling {
   return { letter: match[1] as Letter, alter, octave: Number(match[3]) };
 }
 
-/** Every note right first time (and, in rhythm mode, inside its timing window and held right when holds count). */
+/**
+ * Every note right first time (and, in rhythm mode, inside its timing window and, when holds
+ * count, held right but for one).
+ */
 export function isPerfect(event: PhraseCompleted): boolean {
-  return event.notes.every((n) => cleanNote(n, event.holds));
+  return !faultyNotes(event.notes, event.holds).includes(true);
 }
 
 /** Whether a phrase can earn or break curriculum progress: MIDI input only. */
@@ -152,7 +155,7 @@ export type PhraseFault = { kind: "wrong" | "early" | "missed" | "short" | "long
 export function firstFault(
   event: Pick<PhraseCompleted, "barSizes" | "holds"> & { notes: readonly NoteResult[] },
 ): PhraseFault | undefined {
-  const index = event.notes.findIndex((n) => !cleanNote(n, event.holds));
+  const index = faultyNotes(event.notes, event.holds).indexOf(true);
   if (index < 0) return undefined;
   const note = event.notes[index];
   let bar = 0;

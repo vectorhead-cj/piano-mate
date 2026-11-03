@@ -32,7 +32,20 @@ export const HOLD_POLICIES: Record<HoldStrictness, HoldPolicy> = {
 /** Let go too soon, or held well into the next note. */
 export type HoldFault = "short" | "long";
 
-/** Right key, in its window, no wrong keys first, and (when holds count) held as long as written. */
-export function cleanNote(note: NoteResult, holds?: HoldStrictness): boolean {
-  return note.hit && note.wrong === 0 && !(note.hold && holds !== undefined && HOLD_POLICIES[holds].fails);
+/** Holds off this many times in a phrase still pass it when holds count; one more fails it. */
+export const FORGIVEN_HOLD_FAULTS = 1;
+
+/**
+ * Whether each hold fault counts against its phrase: none while coaching, and when holds
+ * count, those after the forgiven ones, in note order.
+ */
+export function countedHolds(holds: readonly (HoldFault | undefined)[], fails: boolean): boolean[] {
+  let seen = 0;
+  return holds.map((hold) => fails && hold !== undefined && ++seen > FORGIVEN_HOLD_FAULTS);
+}
+
+/** Per note, whether it kept the phrase from being clean: wrong, missed, or a counted hold fault. */
+export function faultyNotes(notes: readonly NoteResult[], holds?: HoldStrictness): boolean[] {
+  const counted = countedHolds(notes.map((n) => n.hold), holds !== undefined && HOLD_POLICIES[holds].fails);
+  return notes.map((n, i) => !n.hit || n.wrong > 0 || counted[i]);
 }

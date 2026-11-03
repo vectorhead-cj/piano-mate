@@ -2,7 +2,7 @@ import { midiOf } from "../music/pitch";
 import { barBeats, BEATS } from "../music/rhythms";
 import type { Exercise, Note } from "../music/types";
 import { isTieContinuation, nextPressed, pressedIndices, tiedOn } from "../music/ties";
-import { HOLD_POLICIES, type HoldFault, type HoldPolicy } from "./holds";
+import { countedHolds, HOLD_POLICIES, type HoldFault, type HoldPolicy } from "./holds";
 import type { PitchMatcher } from "./matcher";
 import type { Mark, NoteResult } from "./waitSession";
 import {
@@ -140,12 +140,13 @@ export class RhythmSession {
   /** Pressed notes only: a tied note is one press. A note is settled once the clock moves past it. */
   marks(): PhraseMarks {
     const pressed = pressedIndices(this.notes);
+    const counted = countedHolds(this.holds, this.holdPolicy.fails);
     return {
       notes: pressed.map((i) =>
         this.wrongs[i] > this.earlies[i] ? "wrong" : i < this.index ? (this.pitchOk[i] ? "correct" : "wrong") : "pending",
       ),
       rhythm: pressed.map((i) =>
-        this.earlies[i] > 0 || (this.holds[i] && this.holdPolicy.fails) ? "wrong" : i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending",
+        this.earlies[i] > 0 || counted[i] ? "wrong" : i < this.index ? (this.timingOk[i] ? "correct" : "wrong") : "pending",
       ),
     };
   }
@@ -163,6 +164,11 @@ export class RhythmSession {
             ...(this.holds[i] && { hold: this.holds[i] }),
           },
     );
+  }
+
+  /** Notes let go too soon or held too long so far. */
+  get holdFaults(): number {
+    return this.holds.filter((hold) => hold !== undefined).length;
   }
 
   /** Notes whose keys are down, in the order they were pressed. */
