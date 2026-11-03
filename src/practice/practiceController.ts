@@ -164,7 +164,7 @@ export class PracticeController {
   /** How strictly rhythm mode grades holds; each attempt takes it as it starts. */
   holdStrictness: HoldStrictness = "coach";
   /** Show, while coaching, how long to hold each note: a trail on the staff and a lit key. */
-  holdGuide = true;
+  holdGuide = false;
   /**
    * Per mode: fail the attempt at its first fault, or play on to the end of the phrase
    * and fail it there. Playing through is the default: getting to the end matters too.

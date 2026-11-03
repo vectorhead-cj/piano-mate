@@ -686,8 +686,23 @@ describe("PracticeController rhythm retries", () => {
     expect(ctx.controller.isHot).toBe(false);
   });
 
+  it("draws only holds that are off unless every hold is asked for", () => {
+    const ctx = halfEndSetup();
+    ctx.controller.goHot();
+    const firstAt = performance.now() + 1000 + 4000;
+    vi.advanceTimersByTime(firstAt - performance.now());
+    hold(ctx, 60, 1000);
+    hold(ctx, 62, 1000);
+    hold(ctx, 64, 400);
+    const states = ctx.notation.setHold.mock.calls.map(([, mark]) => mark?.state ?? null);
+    expect(states).not.toContain("live");
+    expect(states).toContain("short");
+    expect(ctx.keyboard.setGuide).not.toHaveBeenCalledWith(expect.anything(), true);
+  });
+
   it("coaches a half note let go too soon: marked on the staff, still a pass", () => {
     const ctx = halfEndSetup();
+    ctx.controller.holdGuide = true;
     ctx.controller.goHot();
     const firstAt = performance.now() + 1000 + 4000;
     vi.advanceTimersByTime(firstAt - performance.now());
