@@ -93,9 +93,9 @@ const HOLD_LANE_NOTE_GAP_UNITS = 1.4;
 const HOLD_BAR_UNITS = 0.45;
 /** Pressed notes take turns between two lanes this far apart, so a hold into the next note stays apart from it. */
 const HOLD_LANE_STEP_UNITS = 0.7;
-/** The pencil loop round a new key signature: drawn, held, then faded by the count-in. */
-const KEY_CIRCLE_DRAW_MS = 700;
-const KEY_CIRCLE_MS = 2000;
+/** The pencil loop round a new key signature: drawn, held, then faded into the count-in. */
+const KEY_CIRCLE_DRAW_MS = 1500;
+const KEY_CIRCLE_MS = 3500;
 /** How far the loop clears the signature sideways, and its half-height, in staff spaces. */
 const KEY_CIRCLE_PAD_UNITS = 1.1;
 const KEY_CIRCLE_RY_UNITS = 3.5;
