@@ -66,10 +66,14 @@ export class PieceScoreView {
   /** The bar being played. */
   private cursor: number | null = null;
 
-  /** `zoom` fixes the size, for small examples; otherwise it follows the width. */
+  /**
+   * `zoom` fixes the size, for small examples; otherwise it follows the width. `compact` draws
+   * with the tight margins of the curriculum's staff, as a fixed zoom does.
+   */
   constructor(
     private readonly root: HTMLElement,
     private readonly zoom?: number,
+    compact = zoom !== undefined,
   ) {
     this.sheet.className = "piece-sheet";
     this.overlay.className = "piece-overlay";
@@ -87,9 +91,15 @@ export class PieceScoreView {
       drawMeasureNumbers: true,
       disableCursor: true,
       defaultColorMusic: this.colors.pending,
-      ...(zoom !== undefined && { drawingParameters: "compacttight" }),
+      ...(compact && { drawingParameters: "compacttight" }),
     });
-    if (zoom !== undefined) {
+    if (compact && zoom === undefined) {
+      // As the curriculum's staff: room kept for ledger lines (C4 below the staff).
+      const rules = this.osmd.EngravingRules;
+      rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 2.5);
+      rules.PageTopMargin = Math.max(rules.PageTopMargin, 1.5);
+      rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
+    } else if (zoom !== undefined) {
       // A small example sits snug in its card: just room for ledger lines and the bar numbers.
       const rules = this.osmd.EngravingRules;
       rules.PageTopMargin = 1;

@@ -32,7 +32,7 @@ import {
   type StepProgress,
 } from "./pieceProgress";
 import { PieceScoreView, type NoteMark } from "./pieceScoreView";
-import { PieceSession, type FaultKind, type PassResult } from "./pieceSession";
+import { PieceSession } from "./pieceSession";
 import { scoreXml } from "./scoreXml";
 import { soundsOf, type Sound } from "./sounding";
 import { barRange, playSpan, type PlaySpan } from "./targets";
@@ -92,9 +92,6 @@ function dots(marks: readonly ("pending" | "correct" | "wrong")[]): HTMLElement 
   for (const mark of marks) row.append(h("span", { class: "score-dot", "data-mark": mark }));
   return row;
 }
-
-const FAULT_TEXT: Record<FaultKind, string> = { wrong: "Wrong note", early: "Too early", missed: "Missed a note" };
-const FAULT_EMOJI: Record<FaultKind, string> = { wrong: "❌", early: "⏩", missed: "🙈" };
 
 type Screen =
   | { name: "library" }
@@ -170,7 +167,6 @@ export class PieceMode {
   private looping = false;
   private pass: Pass | null = null;
   private nextPassTimer: number | undefined;
-  private result: { text: string; tone: "perfect" | "fault" | "info" } | null = null;
   private justPassed: PracticePlace | null = null;
   /** Mini scores of the intro cards, read once. */
   private readonly miniPieces = new Map<string, Piece>();
@@ -247,7 +243,6 @@ export class PieceMode {
   private async go(screen: Screen): Promise<void> {
     this.stop();
     this.screen = screen;
-    this.result = null;
     this.justPassed = null;
     if (screen.name === "library") {
       this.open = null;
@@ -540,8 +535,8 @@ export class PieceMode {
   }
 
   private stepChip(place: Place, progress: StepProgress | undefined, streak: number, next: Place): HTMLButtonElement {
-    const passed = progress?.passedAt !== undefined;
     const hits = streakMarks(progress, streak).filter((m) => m === "correct").length;
+    const passed = progress?.passedAt !== undefined;
     const isNext = samePlace(place, next);
     const chip = button(passed ? "✓" : progress ? `${hits}/${streak}` : "–", () => void this.go({ name: "practice", place }), "piece-chip", {
       "data-state": passed ? "passed" : isNext ? "next" : progress ? "started" : "open",
@@ -634,7 +629,7 @@ export class PieceMode {
       count.textContent = `${open.phrases.length} phrase${open.phrases.length === 1 ? "" : "s"}`;
     };
     const every = (bars: number) => setStarts(Array.from({ length: Math.ceil(piece.measures.length / bars) }, (_, i) => i * bars));
-    const view = new PieceScoreView(sheet);
+    const view = new PieceScoreView(sheet, undefined, true);
     view.setFingerings(record.settings.fingerings);
     this.view = view;
     this.scroller = scroller;
@@ -761,7 +756,6 @@ export class PieceMode {
     const { record, phrases } = open;
     const info = this.placeOf(place);
     const progress = this.progressAt(place);
-    const passed = progress?.passedAt !== undefined;
 
     const chips =
       place.kind === "phrase"
@@ -779,7 +773,7 @@ export class PieceMode {
           )
         : null;
 
-    const startButton = button(this.looping ? "Stop" : "Start", () => this.toggle(), "btn-primary piece-start");
+    const startButton = button(this.looping ? "Stop" : "Start", () => this.toggle(), "btn-secondary piece-start");
     const nextPhrase =
       place.kind === "phrase" && place.phrase < phrases.length - 1
         ? button("Next phrase", () => {
@@ -807,7 +801,7 @@ export class PieceMode {
 
     const sheet = h("div", { class: "piece-score" });
     const scroller = h("div", { class: "piece-scroll piece-scroll-practice" }, sheet);
-    const view = new PieceScoreView(sheet);
+    const view = new PieceScoreView(sheet, undefined, true);
     view.setFingerings(record.settings.fingerings);
     this.view = view;
 
@@ -820,41 +814,35 @@ export class PieceMode {
     });
     this.scroller = scroller;
 
+    const hotState = h("div", { class: "hot-state", "aria-live": "polite" }, this.hotText());
     this.root.replaceChildren(
       h(
         "div",
-        { class: "pieces-page pieces-page-fill piece-practice" },
-        h(
-          "header",
-          { class: "piece-head" },
-          h("div", {}, h("h1", { class: "menu-heading" }, info.title), h("p", { class: "menu-muted" }, `${record.title} · ${info.detail}`)),
-          h("div", { class: "piece-head-actions" }, nextPhrase, nextStep, listen, startButton),
-        ),
-        chips,
+        { class: "stage piece-practice" },
         h(
           "div",
-          { class: "piece-status" },
-          h("span", { class: "score-label" }, "Streak"),
-          dots(streakMarks(progress, info.streak)),
-          h(
-            "span",
-            { class: "menu-muted" },
-            passed
-              ? "Passed ✓"
-              : info.misses > 0
-                ? `${info.streak} passes, ${info.misses} may go wrong`
-                : `${info.streak} clean pass${info.streak === 1 ? "" : "es"}`,
-          ),
-          h("span", { class: "piece-status-gap" }),
-          h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
-          h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
+          { class: "practice-bar" },
+          h("div", { class: "practice-bar-title" }, h("span", { class: "practice-bar-name" }, info.title), h("span", { class: "practice-bar-number" }, `${record.title} · ${info.detail}`)),
+          chips,
         ),
         h(
-          "p",
-          { class: `piece-result${this.result ? ` piece-result-${this.result.tone}` : ""}`, role: "status" },
-          this.statusText(),
+          "div",
+          { class: "status-row" },
+          h("section", { class: "phrase-score", "aria-label": "Score" }, this.streakStat(progress, info)),
+          h("section", { class: "transport", "aria-label": "Phrase controls" }, listen, nextPhrase, nextStep, startButton),
         ),
-        scroller,
+        h(
+          "section",
+          { class: "notation-panel", "data-hot": String(this.looping), "aria-label": "Notation" },
+          hotState,
+          h("div", { class: "notation-sheet" }, scroller),
+          h(
+            "div",
+            { class: "piece-options" },
+            h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
+            h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
+          ),
+        ),
       ),
     );
     void view.show(info.xml, info.piece, info.firstMeasure);
@@ -864,7 +852,6 @@ export class PieceMode {
   private listen(): void {
     if (this.screen.name !== "practice" || !this.view) return;
     this.stop();
-    this.result = null;
     this.refreshPractice();
     this.deps.synth.unlock();
     const info = this.placeOf(this.screen.place);
@@ -893,11 +880,23 @@ export class PieceMode {
     at(span.length, () => view.setCursor(null));
   }
 
-  /** The last pass's result, with the live marker while passes run. */
-  private statusText(): string {
-    const idle = `Press Start, Space or ${midiNoteName(this.deps.startKey())} to play. It repeats until you stop.`;
-    if (!this.looping) return this.result?.text ?? idle;
-    return this.result ? `● Live · last: ${this.result.text}` : "● Live";
+  /** The notation panel's tag: live while passes run, otherwise how to start. */
+  private hotText(): string {
+    return this.looping ? "● Live" : `Free play · ${midiNoteName(this.deps.startKey())} or Space to start`;
+  }
+
+  /** The streak as the curriculum draws it: clean passes out of what's needed, and what that takes. */
+  private streakStat(progress: StepProgress | undefined, info: Practice): HTMLElement {
+    const marks = streakMarks(progress, info.streak);
+    const caption = progress?.passedAt !== undefined ? "Passed ✓" : info.misses > 0 ? `${info.misses} may go wrong` : "";
+    return h(
+      "div",
+      { class: "score-stat score-streak" },
+      h("span", { class: "score-label" }, "Streak"),
+      dots(marks),
+      h("span", { class: "score-count" }, h("span", {}, String(marks.filter((m) => m === "correct").length)), h("span", { class: "score-of" }, `/${info.streak}`)),
+      h("span", { class: "score-caption", hidden: caption === "" }, caption),
+    );
   }
 
   private placeName(place: Place | PracticePlace): string {
@@ -914,11 +913,9 @@ export class PieceMode {
     this.deps.synth.unlock();
     if (this.looping) {
       this.stop();
-      this.result = null;
-    } else {
+      } else {
       this.looping = true;
-      this.result = null;
-      this.justPassed = null;
+        this.justPassed = null;
       this.startPass();
     }
     this.refreshPractice();
@@ -930,11 +927,10 @@ export class PieceMode {
     const page = this.root.querySelector(".piece-practice");
     const start = page?.querySelector<HTMLButtonElement>(".piece-start");
     if (start) start.textContent = this.looping ? "Stop" : "Start";
-    const result = page?.querySelector<HTMLElement>(".piece-result");
-    if (result) {
-      result.className = `piece-result${this.result ? ` piece-result-${this.result.tone}` : ""}`;
-      result.textContent = this.statusText();
-    }
+    const hot = page?.querySelector<HTMLElement>(".notation-panel");
+    if (hot) hot.dataset.hot = String(this.looping);
+    const state = page?.querySelector<HTMLElement>(".hot-state");
+    if (state) state.textContent = this.hotText();
   }
 
   private startPass(): void {
@@ -1030,45 +1026,21 @@ export class PieceMode {
     else record.progress = place.kind === "full" ? { ...record.progress, full: after } : withStep(record.progress, phrases[place.phrase], place.step, after);
     this.save();
     const newlyPassed = before?.passedAt === undefined && after.passedAt !== undefined;
-    this.result = this.passMessage(result, after, info, pass.span, newlyPassed, place.kind);
     if (newlyPassed) {
       this.looping = false;
       this.justPassed = place;
       this.metronome.stop();
       // Redraw for the next-step button; the passed pass's colours go with it.
-      const keep = this.result;
       this.renderPractice(place);
-      this.result = keep;
-      this.refreshPractice();
       return;
     }
-    this.refreshStreak(after, info.streak);
+    this.refreshStreak(after, info);
     this.refreshPractice();
     if (this.looping) this.nextPassTimer = window.setTimeout(() => this.looping && this.startPass(), PASS_GAP_MS);
   }
 
-  private refreshStreak(progress: StepProgress, streak: number): void {
-    const row = this.root.querySelector(".piece-status .score-dots");
-    row?.replaceWith(dots(streakMarks(progress, streak)));
-  }
-
-  private passMessage(
-    result: PassResult,
-    progress: StepProgress,
-    { streak, piece }: Practice,
-    span: PlaySpan,
-    passed: boolean,
-    kind: PracticePlace["kind"],
-  ): { text: string; tone: "perfect" | "fault" | "info" } {
-    const hits = streakMarks(progress, streak).filter((m) => m === "correct").length;
-    if (passed && kind === "full") return { text: "🏆 The whole piece, clean at tempo", tone: "perfect" };
-    if (passed && kind === "intro") return { text: "👂 Intro played clean", tone: "perfect" };
-    if (passed) return { text: `🌟 Step passed · ${hits}/${streak}`, tone: "perfect" };
-    if (result.clean) return { text: `✨ Clean · ${hits}/${streak}`, tone: "perfect" };
-    const fault = result.fault;
-    if (!fault) return { text: `❌ Not quite · ${hits}/${streak}`, tone: "fault" };
-    const bar = piece.measures[span.order[fault.slot]].label;
-    return { text: `${FAULT_EMOJI[fault.kind]} ${FAULT_TEXT[fault.kind]} in bar ${bar} · ${result.hits}/${result.total} notes · ${hits}/${streak}`, tone: "fault" };
+  private refreshStreak(progress: StepProgress, info: Practice): void {
+    this.root.querySelector(".phrase-score .score-stat")?.replaceWith(this.streakStat(progress, info));
   }
 
   private clearPass(): void {

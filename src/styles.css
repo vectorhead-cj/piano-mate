@@ -2903,29 +2903,32 @@ dialog.account-dialog::backdrop {
   color: var(--ink);
 }
 
-.piece-status {
+/* The practice screen wears the curriculum's panes; only what a long score needs differs. */
+.piece-practice .transport {
+  flex-wrap: wrap;
+}
+
+.piece-practice .notation-sheet {
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+}
+
+.piece-practice .piece-scroll {
+  width: 100%;
+  padding-top: 22px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.piece-options {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.piece-status-gap {
-  flex: 1;
-}
-
-.piece-result {
-  margin: 0;
-  min-height: 1.4em;
-  font-weight: 600;
-}
-
-.piece-result-perfect {
-  color: var(--correct);
-}
-
-.piece-result-fault {
-  color: var(--wrong);
+  justify-content: center;
+  gap: 6px 22px;
+  padding: 6px 16px 10px;
 }
 
 .piece-scroll {
