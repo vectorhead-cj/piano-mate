@@ -8,6 +8,8 @@ const RELEASE_SECONDS = 0.12;
 const MIN_RELEASE_SECONDS = 0.03;
 const CLICK_GAIN = 0.22;
 const CLICK_SECONDS = 0.04;
+const BELL_CLICK_SECONDS = 0.07;
+const BELL_CLICK_GAIN = 1.2;
 
 /** A short plucked tone. Placeholder until we swap in piano samples. */
 export class Synth {
@@ -52,15 +54,15 @@ export class Synth {
     this.pending = [];
   }
 
-  /** Short metronome blip. Accent beats use a slightly higher pitch. */
-  click(accent = false): void {
+  /** Short metronome blip. Accent beats use a slightly higher pitch; bell is the softer voice for bars that aren't 4/4. */
+  click(accent = false, bell = false): void {
     const running = this.runningContext();
     if (running) {
-      this.scheduleClick(running, accent);
+      this.scheduleClick(running, accent, bell);
       return;
     }
     void this.ensureRunning().then((context) => {
-      if (context) this.scheduleClick(context, accent);
+      if (context) this.scheduleClick(context, accent, bell);
     });
   }
 
@@ -124,21 +126,35 @@ export class Synth {
     oscillator.stop(end + 0.1);
   }
 
-  private scheduleClick(context: AudioContext, accent: boolean): void {
+  private scheduleClick(context: AudioContext, accent: boolean, bell: boolean): void {
     const at = context.currentTime;
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(CLICK_GAIN * (accent ? 1 : 0.7), at + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + CLICK_SECONDS);
+    const seconds = bell ? BELL_CLICK_SECONDS : CLICK_SECONDS;
+    gain.gain.exponentialRampToValueAtTime(CLICK_GAIN * (bell ? BELL_CLICK_GAIN : 1) * (accent ? 1 : 0.7), at + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + seconds);
     gain.connect(context.destination);
 
-    const oscillator = context.createOscillator();
-    oscillator.type = "square";
-    oscillator.frequency.value = accent ? 1200 : 900;
-    oscillator.connect(gain);
-    oscillator.onended = () => gain.disconnect();
-    oscillator.start(at);
-    oscillator.stop(at + CLICK_SECONDS + 0.02);
+    const frequency = accent ? 1200 : 900;
+    // 4/4 keeps the square blip; other signatures get a triangle with a quiet octave on top.
+    const voices: [OscillatorType, number, number][] = bell
+      ? [["triangle", frequency, 1], ["sine", frequency * 2, 0.3]]
+      : [["square", frequency, 1]];
+    voices.forEach(([type, hz, level], i) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = type;
+      oscillator.frequency.value = hz;
+      if (level === 1) oscillator.connect(gain);
+      else {
+        const partial = context.createGain();
+        partial.gain.value = level;
+        oscillator.connect(partial);
+        partial.connect(gain);
+      }
+      if (i === 0) oscillator.onended = () => gain.disconnect();
+      oscillator.start(at);
+      oscillator.stop(at + seconds + 0.02);
+    });
   }
 }

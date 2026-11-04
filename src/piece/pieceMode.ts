@@ -184,7 +184,7 @@ export class PieceMode {
 
   constructor(private readonly deps: PieceModeDependencies) {
     this.root = deps.root;
-    this.metronome = new Metronome({ click: (accent) => deps.synth.click(accent) });
+    this.metronome = new Metronome({ click: (accent, bell) => deps.synth.click(accent, bell) });
     this.soundQueue = new SoundQueue(deps.synth);
     deps.stream.subscribe((event) => this.onNote(event));
     document.addEventListener("keydown", (event) => {

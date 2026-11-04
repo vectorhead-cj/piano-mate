@@ -1,7 +1,7 @@
 import { beatMs } from "../practice/timing";
 
 export interface ClickSound {
-  click(accent?: boolean): void;
+  click(accent?: boolean, bell?: boolean): void;
 }
 
 /**
@@ -20,7 +20,7 @@ export class Metronome {
     for (let beat = 0; beat < totalBeats; beat++) {
       const at = wallStart + beat * ms;
       const handle = setTimeout(() => {
-        this.sound.click(beat % beatsPerBar === 0);
+        this.sound.click(beat % beatsPerBar === 0, beatsPerBar !== 4);
       }, Math.max(0, at - performance.now()));
       this.pending.push(handle);
     }

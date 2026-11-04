@@ -6,7 +6,7 @@ import { beatMs, expectedOnsets } from "../practice/timing";
 
 export interface PlaybackSound {
   play(pitch: number, velocity?: number, holdSeconds?: number): void;
-  click(accent?: boolean): void;
+  click(accent?: boolean, bell?: boolean): void;
 }
 
 export interface PlaybackListener {
@@ -58,7 +58,7 @@ export class PhrasePlayer {
     };
 
     for (let beat = 0; beat < totalBeats; beat++) {
-      at(beat * ms, () => this.sound.click(beat % beatsPerBar === 0));
+      at(beat * ms, () => this.sound.click(beat % beatsPerBar === 0, beatsPerBar !== 4));
     }
     notes.forEach((note, i) => {
       at(first + onsets[i], () => listener.onNote?.(i));
