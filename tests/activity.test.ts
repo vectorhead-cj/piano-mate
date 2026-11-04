@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dailyMinutes } from "../src/curriculum/activity";
-import { playedMs, type PhraseCompleted } from "../src/curriculum/events";
+import { CARD_MAX_MS, dailyMinutes } from "../src/curriculum/activity";
+import { playedMs, type CardAnswered, type PhraseCompleted } from "../src/curriculum/events";
 
 function phrase(at: number, startedAt?: number, time?: PhraseCompleted["config"]["time"]): PhraseCompleted {
   return {
@@ -44,5 +44,27 @@ describe("dailyMinutes", () => {
     const days = dailyMinutes(events, 3, now);
     expect(days.map((d) => d.day)).toEqual([at(2, 0), at(1, 0), at(0, 0)]);
     expect(days.map((d) => d.minutes)).toEqual([0.5, 0, 3]);
+  });
+
+  it("counts flashcards apart from phrases, each for as long as it was up but no longer than a minute", () => {
+    const card = (answered: number, shown: number): CardAnswered => ({
+      type: "card-answered",
+      v: 1,
+      id: `c${answered}`,
+      at: answered,
+      startedAt: shown,
+      session: "s",
+      concept: "treble/C/five",
+      clef: "treble",
+      key: "C",
+      time: "4/4",
+      notes: ["C4"],
+      answer: [60],
+      input: "screen",
+    });
+    const events = [card(at(0, 9), at(0, 9) - 15_000), card(at(0, 10), at(0, 10) - 10 * 60_000), phrase(at(0, 11), at(0, 11) - 60_000)];
+    const [today] = dailyMinutes(events, 1, now);
+    expect(today.cardMinutes).toBeCloseTo((15_000 + CARD_MAX_MS) / 60_000);
+    expect(today.minutes).toBe(1);
   });
 });

@@ -1,3 +1,4 @@
+import { midiOf } from "../music/pitch";
 import { faultyNotes, type HoldStrictness } from "../practice/holds";
 import { onTimeWindowMs } from "../practice/timing";
 import type { NoteResult } from "../practice/waitSession";
@@ -145,10 +146,40 @@ export interface PiecePass {
   notes: ("pending" | "correct" | "late" | "wrong")[];
 }
 
-export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted | PiecePass;
+/**
+ * A flashcard answered (see src/flashcards). The card is one bar of four quarter notes that
+ * tests a concept (a clef, key and range, with or without accidentals), and the result counts
+ * against the concept, not the particular bar. Whether it was right is derived, not stored
+ * (see cardOutcome), so the grading can change and old answers are re-scored.
+ */
+export interface CardAnswered {
+  type: "card-answered";
+  v: 1;
+  id: string;
+  /** Epoch ms when the answer was given. */
+  at: number;
+  /** Epoch ms when the card came up. */
+  startedAt: number;
+  session: string;
+  /** The concept tested: its id (src/flashcards/concepts.ts). */
+  concept: string;
+  clef: Clef;
+  key: string;
+  time: TimeSignature;
+  /** Spelled pitches of the bar's notes, in order, e.g. "F#4". */
+  notes: string[];
+  /** MIDI pitches the player entered, in order; empty when they pressed "I don't know". */
+  answer: number[];
+  input: InputKind;
+}
 
-/** What curriculum progress and the activity chart are folded from; ProgressStore loads only these. */
-export const CURRICULUM_EVENT_TYPES = ["phrase-completed", "intro-completed", "track-started"] as const satisfies readonly PracticeEvent["type"][];
+export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted | PiecePass | CardAnswered;
+
+/**
+ * What ProgressStore loads: the events curriculum progress, the flashcard schedule and the
+ * activity chart are folded from.
+ */
+export const PROGRESS_EVENT_TYPES = ["phrase-completed", "intro-completed", "track-started", "card-answered"] as const satisfies readonly PracticeEvent["type"][];
 
 const ALTER_TEXT: Record<Alter, string> = { [-1]: "b", 0: "", 1: "#" };
 
@@ -216,4 +247,17 @@ export function firstFault(
 export function newId(): string {
   const random = Math.random().toString(36).slice(2, 10);
   return `${Date.now().toString(36)}-${random}`;
+}
+
+/** "unknown" is "I don't know": nothing entered. A card is "correct" only when every note is. */
+export type CardOutcome = "correct" | "wrong" | "unknown";
+
+/** Whether each note of a card was answered right, in order: the right key at the right place. */
+export function cardNoteHits(event: Pick<CardAnswered, "notes" | "answer">): boolean[] {
+  return event.notes.map((note, i) => event.answer[i] === midiOf(parseSpelling(note)));
+}
+
+export function cardOutcome(event: Pick<CardAnswered, "notes" | "answer">): CardOutcome {
+  if (event.answer.length === 0) return "unknown";
+  return cardNoteHits(event).every(Boolean) ? "correct" : "wrong";
 }

@@ -43,6 +43,7 @@ import { loadCorpus } from "./music/corpus";
 import { levelById } from "./music/levels";
 import { midiNoteName, midiOf } from "./music/pitch";
 import type { Clef, Exercise, Level, NoteSource } from "./music/types";
+import { FlashcardMode, flashcardSummary } from "./flashcards/flashcardMode";
 import { PieceMode } from "./piece/pieceMode";
 import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/practiceController";
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
@@ -229,7 +230,12 @@ async function main(): Promise<void> {
     .catch((error) => console.warn("Could not read the signed-in account", error));
   const session = newId();
 
-  type View = { name: "home" } | { name: "curriculum"; selected: StageRef | null } | { name: "practice" } | { name: "pieces" };
+  type View =
+    | { name: "home" }
+    | { name: "curriculum"; selected: StageRef | null }
+    | { name: "practice" }
+    | { name: "pieces" }
+    | { name: "flashcards" };
   let view: View = { name: "home" };
   let context: PracticeContext = { kind: "custom" };
   /** What the settings bar shows; curriculum stages override most of it while they run. */
@@ -370,6 +376,16 @@ async function main(): Promise<void> {
     session,
     signIn: () => accountDialog.open(),
   });
+  const flashcardsView = element("flashcards");
+  const flashcardMode = new FlashcardMode({
+    root: flashcardsView,
+    stream,
+    synth,
+    store,
+    session,
+    soundMidiKeys: () => soundMidiKeys.checked,
+    openCurriculum: () => showView({ name: "curriculum", selected: null }),
+  });
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {
     unlockAllBox.checked = localStorage.getItem(UNLOCK_ALL_KEY) === "true";
@@ -385,6 +401,7 @@ async function main(): Promise<void> {
     }
     store.setUnlockAll(unlockAllBox.checked);
     if (view.name === "practice") renderView();
+    if (view.name === "home") renderView();
   });
 
   function inputKind(sources: NoteSource[]): InputKind {
@@ -826,8 +843,9 @@ async function main(): Promise<void> {
 
   function showView(next: View): void {
     if (view.name === "pieces" && next.name !== "pieces") pieceMode.hide();
-    // Pieces take the note stream for themselves while they're up.
-    practice.muted = next.name === "pieces";
+    if (view.name === "flashcards" && next.name !== "flashcards") flashcardMode.hide();
+    // Pieces and flashcards take the note stream for themselves while they're up.
+    practice.muted = next.name === "pieces" || next.name === "flashcards";
     if (view.name === "practice" && next.name !== "practice") {
       milestone = null;
       celebrating = null;
@@ -838,6 +856,7 @@ async function main(): Promise<void> {
     view = next;
     renderView();
     if (view.name === "pieces") void pieceMode.show();
+    if (view.name === "flashcards") flashcardMode.show();
     if (view.name === "practice") {
       // The keyboard and staff measure themselves; they were hidden until now.
       updateKeyboardRange();
@@ -847,8 +866,9 @@ async function main(): Promise<void> {
 
   function renderView(): void {
     const practising = view.name === "practice";
-    menu.hidden = practising || view.name === "pieces";
+    menu.hidden = practising || view.name === "pieces" || view.name === "flashcards";
     piecesView.hidden = view.name !== "pieces";
+    flashcardsView.hidden = view.name !== "flashcards";
     practiceView.hidden = !practising;
     navBack.hidden = view.name === "home";
     customControls.hidden = !(practising && context.kind === "custom");
@@ -872,10 +892,11 @@ async function main(): Promise<void> {
     app.dataset.view = view.name;
 
     if (view.name === "home") {
-      renderHome(menu, { progress: store.progress, activity: dailyMinutes(store.history, ACTIVITY_DAYS), status: store.status, storage: store.storage, account }, {
+      renderHome(menu, { progress: store.progress, activity: dailyMinutes(store.history, ACTIVITY_DAYS), flashcards: flashcardSummary(store), status: store.status, storage: store.storage, account }, {
         openCurriculum: () => showView({ name: "curriculum", selected: null }),
         openCustom,
         openPieces: () => showView({ name: "pieces" }),
+        openFlashcards: () => showView({ name: "flashcards" }),
         signIn: () => accountDialog.open(),
         signOut: () => {
           signOut()
@@ -916,7 +937,8 @@ async function main(): Promise<void> {
     }
   });
   store.subscribe(() => {
-    if (view.name !== "practice") renderView();
+    // Flashcards redraw themselves as cards are answered.
+    if (view.name !== "practice" && view.name !== "flashcards") renderView();
   });
   viewsReady = true;
   renderView();

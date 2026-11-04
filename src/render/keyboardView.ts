@@ -2,6 +2,12 @@ import { isBlackKey, pitchClass, whiteKeyName } from "../music/pitch";
 
 export type KeyFlash = "correct" | "wrong" | "hint";
 
+/**
+ * A key marked until cleared: "correct" is a note answered right, "missed" the key a note
+ * should have been, "wrong" a key pressed that was no note's answer.
+ */
+export type KeyMark = "correct" | "missed" | "wrong";
+
 const FLASH_MS: Record<KeyFlash, number> = { correct: 250, wrong: 400, hint: 900 };
 const MIN_WHITE_KEY_PX = 44;
 const MAX_OCTAVES = 2;
@@ -74,6 +80,38 @@ export class KeyboardView {
   /** The hold guide: a key stays lit for as long as its note should be held. */
   setGuide(midi: number, on: boolean): void {
     this.keys.get(midi)?.classList.toggle("hold-guide", on);
+  }
+
+  /** A number on the key (the place it holds in an answer); null takes it off. */
+  setBadge(midi: number, text: string | null): void {
+    const key = this.keys.get(midi);
+    if (!key) return;
+    let badge = key.querySelector<HTMLElement>(".badge");
+    if (text === null) {
+      badge?.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "badge";
+      key.append(badge);
+    }
+    badge.textContent = text;
+  }
+
+  setMark(midi: number, mark: KeyMark | null): void {
+    const key = this.keys.get(midi);
+    if (!key) return;
+    if (mark === null) delete key.dataset.mark;
+    else key.dataset.mark = mark;
+  }
+
+  /** Takes every badge and mark off. */
+  clearAnnotations(): void {
+    for (const midi of this.keys.keys()) {
+      this.setBadge(midi, null);
+      this.setMark(midi, null);
+    }
   }
 
   flash(midi: number, kind: KeyFlash): void {

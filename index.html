@@ -217,6 +217,24 @@
 
       <main id="pieces" class="menu pieces" hidden></main>
 
+      <main id="flashcards" class="stage flashcards" data-state="empty" hidden>
+        <section class="flashcard-status" data-flashcard-status aria-label="Flashcard" aria-live="polite"></section>
+        <section class="notation-panel flashcard-panel" aria-label="Flashcard">
+          <div class="flashcard-message" data-flashcard-message role="status"></div>
+          <div class="notation-sheet">
+            <div class="flashcard-notation" data-flashcard-notation></div>
+          </div>
+          <p class="flashcard-feedback" data-flashcard-feedback role="status" aria-live="polite"></p>
+        </section>
+        <div class="flashcard-actions">
+          <button type="button" class="btn-secondary" data-flashcard-secondary>Start fresh</button>
+          <button type="button" class="btn-primary" data-flashcard-primary>I don't know</button>
+        </div>
+        <section class="keyboard-area flashcard-keys" aria-label="Keyboard">
+          <div class="keyboard" data-flashcard-keyboard></div>
+        </section>
+      </main>
+
       <main id="practice" class="stage">
         <section id="intro-panel" class="intro-panel" aria-label="Intro" aria-live="polite" hidden></section>
         <div class="status-row">

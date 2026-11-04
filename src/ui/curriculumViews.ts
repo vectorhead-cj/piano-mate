@@ -21,6 +21,7 @@ import {
   type Tier,
 } from "../curriculum/curriculum";
 import type { DayActivity } from "../curriculum/activity";
+import type { FlashcardSummary } from "../flashcards/flashcardMode";
 import type { IntroStep } from "../curriculum/intros";
 import { recentHits, type Milestone, type Progress, type StageProgress } from "../curriculum/progress";
 import { NOTATION_LABELS } from "../music/notation";
@@ -86,6 +87,7 @@ export interface HomeModel {
   progress: Progress;
   /** Minutes played per day, oldest first, ending today. */
   activity: DayActivity[];
+  flashcards: FlashcardSummary;
   status: StoreStatus;
   storage: "account" | "browser" | "none" | null;
   /** The signed-in player's email, or null when signed out. */
@@ -96,6 +98,7 @@ export interface HomeActions {
   openCurriculum(): void;
   openCustom(): void;
   openPieces(): void;
+  openFlashcards(): void;
   signIn(): void;
   signOut(): void;
 }
@@ -119,20 +122,27 @@ export function minutesText(minutes: number): string {
 /** The tallest bar stands for at least this, so a short day doesn't fill the chart. */
 const ACTIVITY_SCALE_MIN = 10;
 
-/** Minutes played per day as bars, today last, with the period's total above. */
+/** Minutes per day as bars, today last, phrases and flashcards stacked in their own colours. */
 function activityCard(activity: readonly DayActivity[]): HTMLElement {
-  const total = activity.reduce((sum, d) => sum + d.minutes, 0);
-  const daysPlayed = activity.filter((d) => d.minutes > 0).length;
-  const scale = Math.max(ACTIVITY_SCALE_MIN, ...activity.map((d) => d.minutes));
+  const minutes = (d: DayActivity) => d.minutes + d.cardMinutes;
+  const total = activity.reduce((sum, d) => sum + minutes(d), 0);
+  const daysPlayed = activity.filter((d) => minutes(d) > 0).length;
+  const scale = Math.max(ACTIVITY_SCALE_MIN, ...activity.map(minutes));
+  const dayLabel = (d: DayActivity) => {
+    const date = new Date(d.day).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    if (minutes(d) === 0) return `${date}: nothing`;
+    return `${date}: ${[d.minutes > 0 && `${minutesText(d.minutes)} of phrases`, d.cardMinutes > 0 && `${minutesText(d.cardMinutes)} of flashcards`].filter(Boolean).join(", ")}`;
+  };
   const bars = activity.map((d, i) => {
     const date = new Date(d.day);
-    const label = `${date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}: ${minutesText(d.minutes)}`;
-    const bar = h("span", { class: "activity-bar" });
-    bar.style.height = `${(d.minutes / scale) * 100}%`;
+    const phrases = h("span", { class: "activity-bar", "data-none": d.minutes > 0 ? undefined : "true" });
+    phrases.style.height = `${(d.minutes / scale) * 100}%`;
+    const cards = h("span", { class: "activity-bar cards", "data-none": d.cardMinutes > 0 ? undefined : "true" });
+    cards.style.height = `${(d.cardMinutes / scale) * 100}%`;
     return h(
       "span",
-      { class: "activity-day", title: label, "data-today": i === activity.length - 1 ? "true" : undefined, "data-empty": d.minutes > 0 ? undefined : "true" },
-      h("span", { class: "activity-column" }, bar),
+      { class: "activity-day", title: dayLabel(d), "data-today": i === activity.length - 1 ? "true" : undefined, "data-empty": minutes(d) > 0 ? undefined : "true" },
+      h("span", { class: "activity-column" }, phrases, cards),
       h("span", { class: "activity-weekday", "aria-hidden": "true" }, date.toLocaleDateString(undefined, { weekday: "narrow" })),
     );
   });
@@ -146,9 +156,10 @@ function activityCard(activity: readonly DayActivity[]): HTMLElement {
     h("div", { class: "home-activity-head" }, h("h2", { class: "menu-card-title" }, "Practice"), h("span", { class: "menu-muted" }, summary)),
     h(
       "div",
-      { class: "activity-chart", role: "img", "aria-label": `Minutes played per day. ${activity.map((d) => minutesText(d.minutes)).join(", ")}` },
+      { class: "activity-chart", role: "img", "aria-label": `Minutes per day. ${activity.map(dayLabel).join(". ")}` },
       ...bars,
     ),
+    h("div", { class: "activity-legend", "aria-hidden": "true" }, h("span", {}, "Phrases"), h("span", { class: "cards" }, "Flashcards")),
   );
 }
 
@@ -235,6 +246,26 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
     h("div", { class: "menu-card-foot menu-card-foot-end" }, curriculumButton),
   );
 
+  const { counts, unlocked } = model.flashcards;
+  const cardsButton = h("button", { class: counts.total > 0 ? "btn-primary" : "btn-secondary", type: "button" }, counts.total > 0 ? "Practise" : "Open");
+  cardsButton.addEventListener("click", actions.openFlashcards);
+  const cardsDue =
+    unlocked === 0
+      ? "They open as you finish stage intros in the curriculum."
+      : counts.total === 0
+        ? "Nothing due right now."
+        : [counts.new > 0 && `${counts.new} new`, counts.learning > 0 && `${counts.learning} learning`, counts.review > 0 && `${counts.review} to review`]
+            .filter(Boolean)
+            .join(" · ");
+  const flashcards = h(
+    "article",
+    { class: "menu-card home-choice" },
+    h("h2", { class: "menu-card-title" }, "Flashcards"),
+    h("p", { class: "menu-muted" }, "One bar at a time: enter its four notes on the keyboard, in order. Keys and ranges you've unlocked come back on a spaced schedule."),
+    h("p", { class: "home-cards-due" }, cardsDue),
+    h("div", { class: "menu-card-foot menu-card-foot-end" }, cardsButton),
+  );
+
   const customButton = h("button", { class: "btn-secondary", type: "button" }, "Open");
   customButton.addEventListener("click", actions.openCustom);
   const custom = h(
@@ -284,7 +315,7 @@ export function renderHome(root: HTMLElement, model: HomeModel, actions: HomeAct
         h("h1", { class: "home-title" }, "Read and play!"),
         h("p", { class: "home-lede" }, "Practice using real phrases from a large corpus of classical and folk music"),
       ),
-      h("div", { class: "home-choices" }, curriculum, custom, pieces),
+      h("div", { class: "home-choices" }, curriculum, flashcards, custom, pieces),
       activityCard(model.activity),
       h(
         "footer",

@@ -1,11 +1,11 @@
 import type { EventLog } from "./eventLog";
-import { CURRICULUM_EVENT_TYPES, type PracticeEvent } from "./events";
+import { PROGRESS_EVENT_TYPES, type PracticeEvent } from "./events";
 import { projectProgress, unlockAll, type Progress } from "./progress";
 
 export type StoreStatus = "loading" | "ready" | "save-failed";
 
 /**
- * Holds the curriculum's events (CURRICULUM_EVENT_TYPES) in memory and the progress derived from them. Recording updates progress
+ * Holds the events of PROGRESS_EVENT_TYPES in memory and the progress derived from them. Recording updates progress
  * at once; saving happens in the background. Events recorded before the log has loaded are
  * kept and written once it has.
  */
@@ -22,7 +22,7 @@ export class ProgressStore {
     void log.then(async (opened) => {
       let loaded: PracticeEvent[] = [];
       try {
-        loaded = await opened.load({ types: CURRICULUM_EVENT_TYPES });
+        loaded = await opened.load({ types: PROGRESS_EVENT_TYPES });
       } catch (error) {
         console.warn("Could not load practice history", error);
       }
@@ -62,6 +62,11 @@ export class ProgressStore {
       this.status = "save-failed";
       this.notify();
     });
+  }
+
+  /** Whether the debug switch that opens every stage is on. */
+  get allUnlocked(): boolean {
+    return this.unlockAll;
   }
 
   /** Debug: open every stage without changing what's recorded. */

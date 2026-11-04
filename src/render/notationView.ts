@@ -61,6 +61,8 @@ const COLOR_OPTS = {
 const WRONG_FLASH_MS = 500;
 /** OSMD lays out at containerWidth/zoom then scales — higher zoom = bigger notes. */
 const MAX_ZOOM = 2.8;
+/** Flashcards show one bar, so it can be drawn larger. */
+const NUMBERED_MAX_ZOOM = 6;
 const FIT_PADDING_PX = 24;
 
 /** Staff letters, bottom line upwards, alternating line/space. */
@@ -114,6 +116,9 @@ export class NotationView {
   private colors = readThemeColors();
   private staffLetters = false;
   private readonly lettersLayer = document.createElement("div");
+  /** Flashcards: each note's place in the bar written above it. */
+  private numbers = false;
+  private readonly numbersLayer = document.createElement("div");
   /** A soft wash behind the bar a phrase went wrong in, from 1; null when none. */
   private markedBar: number | null = null;
   private readonly barMark = document.createElement("div");
@@ -159,6 +164,8 @@ export class NotationView {
     rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 2.5);
     rules.PageTopMargin = Math.max(rules.PageTopMargin, 1.5);
     rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
+    this.numbersLayer.className = "note-numbers";
+    this.numbersLayer.setAttribute("aria-hidden", "true");
     this.lettersLayer.className = "staff-letters";
     this.lettersLayer.setAttribute("aria-hidden", "true");
     this.barMark.className = "bar-mark";
@@ -191,6 +198,13 @@ export class NotationView {
     if (on === this.staffLetters) return;
     this.staffLetters = on;
     this.draw();
+  }
+
+  /** Number the notes 1, 2, 3… above the staff, the order an answer is entered in. */
+  setNumbers(on: boolean): void {
+    if (on === this.numbers) return;
+    this.numbers = on;
+    this.drawNumbers();
   }
 
   /** Toggle showing played notes on the staff. */
@@ -400,17 +414,18 @@ export class NotationView {
       this.drawBarMark();
       this.drawPlayed();
       this.drawHolds();
+      this.drawNumbers();
       if (this.keyCircle) this.root.append(this.keyCircle);
       return;
     }
 
     // Short phrases fill the panel too aggressively; ease 1–3 bars down a bit.
     const bars = this.exercise?.bars.length ?? 4;
-    const shortPhraseScale = bars <= 3 ? 0.8 : 1;
+    const shortPhraseScale = bars <= 3 && !this.numbers ? 0.8 : 1;
     // Letter margins scale with the music, so they widen the width being fitted.
     const gutterW = this.staffLetters ? LETTER_GUTTER_UNITS * 10 * 2 : 0;
     const zoom =
-      Math.min(MAX_ZOOM, availW / (size.width + gutterW), availH / size.height) * shortPhraseScale;
+      Math.min(this.numbers ? NUMBERED_MAX_ZOOM : MAX_ZOOM, availW / (size.width + gutterW), availH / size.height) * shortPhraseScale;
     this.osmd.Zoom = Math.max(zoom, 0.5);
     this.root.style.width = `${Math.min(size.width * this.osmd.Zoom, availW)}px`;
     this.osmd.render();
@@ -421,7 +436,35 @@ export class NotationView {
     this.drawBarMark();
     this.drawPlayed();
     this.drawHolds();
+    this.drawNumbers();
     if (this.keyCircle) this.root.append(this.keyCircle);
+  }
+
+  /** Writes each note's number just above it, centred on its notehead. */
+  private drawNumbers(): void {
+    const layer = this.numbersLayer;
+    layer.replaceChildren();
+    if (!this.numbers) {
+      layer.remove();
+      return;
+    }
+    const origin = this.root.getBoundingClientRect();
+    const unit = 10 * this.osmd.Zoom;
+    this.graphicalNotes.forEach((note, i) => {
+      // The SVG backend's notes have their own group; the type only knows the base class.
+      const group = (note as GraphicalNote & { getSVGGElement?(): SVGGElement }).getSVGGElement?.();
+      if (!group) return;
+      const head = group.querySelector(".vf-notehead")?.getBoundingClientRect() ?? group.getBoundingClientRect();
+      const top = Math.min(head.top, group.getBoundingClientRect().top);
+      const label = document.createElement("span");
+      label.className = "note-number";
+      label.textContent = String(i + 1);
+      label.style.left = `${head.left + head.width / 2 - origin.left}px`;
+      label.style.top = `${top - origin.top - 0.4 * unit}px`;
+      label.style.fontSize = `${1.15 * unit}px`;
+      layer.append(label);
+    });
+    this.root.append(layer);
   }
 
   /** Places the bar wash over the marked bar's staff, a little above and below the lines. */

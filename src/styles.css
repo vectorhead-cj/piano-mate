@@ -22,6 +22,7 @@
   --late: #c07828;
   --wrong: #c45c5c;
   --hint: #3a6ea8;
+  --cards: #5a63c8;
   --key-white-top: #ffffff;
   --key-white: #fbfcfe;
   --key-white-pressed: #e4eaf1;
@@ -74,6 +75,7 @@
     --late: #e6a55a;
     --wrong: #e57b7b;
     --hint: #6fa3dd;
+    --cards: #929aee;
     --key-white-top: #e2e7ec;
     --key-white: #c9d0d8;
     --key-white-pressed: #aeb8c3;
@@ -118,6 +120,7 @@
   --late: #e6a55a;
   --wrong: #e57b7b;
   --hint: #6fa3dd;
+  --cards: #929aee;
   --key-white-top: #e2e7ec;
   --key-white: #c9d0d8;
   --key-white-pressed: #aeb8c3;
@@ -956,7 +959,8 @@ dialog.midi-debug::backdrop {
 }
 
 /* OSMD mounts into #notation; sized to the music so the sheet can flex-center it. */
-#notation {
+#notation,
+.flashcard-notation {
   position: relative;
   flex: 0 0 auto;
   max-width: 100%;
@@ -1011,7 +1015,8 @@ dialog.midi-debug::backdrop {
 }
 
 /* Played notes in free play; drawn behind the music by NotationView (#notation isolates the stack). */
-#notation {
+#notation,
+.flashcard-notation {
   isolation: isolate;
 }
 
@@ -1093,7 +1098,9 @@ dialog.midi-debug::backdrop {
 }
 
 #notation > svg,
-#notation > canvas {
+#notation > canvas,
+.flashcard-notation > svg,
+.flashcard-notation > canvas {
   display: block;
 }
 
@@ -2557,23 +2564,51 @@ dialog.account-dialog::backdrop {
 
 .activity-column {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column-reverse;
+  gap: 1px;
   width: 100%;
   height: 72px;
   border-radius: 4px;
   background: var(--track-bg);
 }
 
+/* Phrases at the foot of the day's column, flashcards stacked on top in their own colour. */
 .activity-bar {
   display: block;
+  flex: none;
   width: 100%;
   min-height: 3px;
   border-radius: 4px;
   background: var(--accent);
 }
 
-.activity-day[data-empty] .activity-bar {
-  min-height: 0;
+.activity-bar.cards {
+  background: var(--cards);
+}
+
+.activity-bar[data-none] {
+  display: none;
+}
+
+.activity-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.activity-legend > span::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.activity-legend > .cards::before {
+  background: var(--cards);
 }
 
 .activity-weekday {
@@ -3010,4 +3045,262 @@ dialog.account-dialog::backdrop {
   border: 2px solid var(--accent);
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Flashcards: one numbered bar and a keyboard to answer on. The staff, panel and keys are the
+   practice screen's; these are the status line, the actions, and the numbers. */
+.flashcard-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 8px 16px;
+  border: 1px solid var(--surface-edge);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--surface-top), var(--surface));
+  box-shadow: var(--shadow-soft);
+}
+
+.flashcard-concept {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.flashcard-kind {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--on-accent);
+  background: var(--hint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.flashcard-kind[data-kind="learning"] {
+  background: var(--late);
+}
+
+.flashcard-kind[data-kind="review"] {
+  background: var(--correct);
+}
+
+.flashcard-counts {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.flashcard-counts > [data-kind="new"] {
+  color: var(--hint);
+}
+
+.flashcard-counts > [data-kind="learning"] {
+  color: var(--late);
+}
+
+.flashcard-counts > [data-kind="review"] {
+  color: var(--correct);
+}
+
+/* Each note's place in the bar, above it; drawn by NotationView. */
+.note-numbers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.note-number {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  color: var(--cards);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.flashcard-feedback {
+  min-height: 1.4em;
+  margin: 0;
+  padding: 4px 16px 12px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+.flashcard-feedback[data-outcome="correct"] {
+  color: var(--correct);
+}
+
+.flashcard-feedback[data-outcome="wrong"] {
+  color: var(--wrong);
+}
+
+.flashcard-feedback[data-outcome="unknown"] {
+  color: var(--hint);
+}
+
+.flashcard-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.flashcard-actions button {
+  flex: 1;
+  min-height: 52px;
+  font-size: 1rem;
+}
+
+.flashcard-actions .btn-primary {
+  flex: 1.4;
+}
+
+.flashcard-actions button:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* "I don't know" is a way out, not the thing to reach for: quieter than Answer. */
+.flashcard-actions .btn-primary[data-mode="unknown"] {
+  border: 1px solid var(--surface-edge);
+  color: var(--ink);
+  background: var(--control-bg);
+  box-shadow: none;
+}
+
+.flashcard-message {
+  display: none;
+}
+
+.flashcards[data-state="empty"] .flashcard-message,
+.flashcards[data-state="done"] .flashcard-message {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.flashcard-message p {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--muted);
+}
+
+.flashcard-message .flashcard-message-title {
+  color: var(--ink);
+  font-family: Fraunces, "Times New Roman", serif;
+  font-size: 1.3rem;
+  font-weight: 650;
+}
+
+.flashcards[data-state="empty"] .notation-sheet,
+.flashcards[data-state="done"] .notation-sheet,
+.flashcards[data-state="empty"] .flashcard-feedback,
+.flashcards[data-state="done"] .flashcard-feedback,
+.flashcards[data-state="empty"] .flashcard-keys,
+.flashcards[data-state="done"] .flashcard-keys,
+.flashcards[data-state="empty"] [data-flashcard-secondary],
+.flashcards[data-state="done"] [data-flashcard-secondary] {
+  display: none;
+}
+
+/* The answer's place on a key, and how it went once marked. */
+.key.white {
+  position: relative;
+}
+
+.key .badge {
+  position: absolute;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--cards);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 35%, transparent);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.key.white .badge {
+  bottom: 14px;
+}
+
+.key.black .badge {
+  bottom: 10px;
+  width: 1.5em;
+  height: 1.5em;
+  font-size: 0.85rem;
+}
+
+.key[data-mark="correct"] .badge {
+  background: var(--correct);
+}
+
+.key[data-mark="missed"] .badge {
+  background: var(--hint);
+}
+
+.key[data-mark="wrong"] .badge {
+  background: var(--wrong);
+}
+
+.key.white[data-mark="correct"] {
+  background: color-mix(in srgb, var(--correct) 35%, var(--key-white));
+}
+
+.key.white[data-mark="missed"] {
+  background: color-mix(in srgb, var(--hint) 30%, var(--key-white));
+}
+
+.key.white[data-mark="wrong"] {
+  background: color-mix(in srgb, var(--wrong) 40%, var(--key-white));
+}
+
+@media (max-width: 480px) {
+  .flashcard-status {
+    padding: 8px 12px;
+  }
+
+  .flashcard-concept {
+    font-size: 0.92rem;
+  }
+}
+
+.home-cards-due {
+  margin: 0;
+  color: var(--cards);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.key.black[data-mark="correct"] {
+  background: color-mix(in srgb, var(--correct) 55%, var(--key-black-pressed));
+}
+
+.key.black[data-mark="missed"] {
+  background: color-mix(in srgb, var(--hint) 55%, var(--key-black-pressed));
+}
+
+.key.black[data-mark="wrong"] {
+  background: color-mix(in srgb, var(--wrong) 60%, var(--key-black-pressed));
 }
