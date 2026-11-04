@@ -377,6 +377,7 @@ export class PieceMode {
     const piece = parsePiece(record.xml);
     // Before v0.1.75 there was no fingering setting, and fingerings were drawn.
     record.settings.fingerings ??= true;
+    record.settings.highlightPlayed ??= false;
     record.openedAt = Date.now();
     await this.library!.put(record);
     this.open = { record, piece, phrases: phrasesOf(record.phraseStarts, piece.measures.length) };
@@ -609,6 +610,7 @@ export class PieceMode {
         toggle("Synth plays the other hand", settings.otherHand, (otherHand) => update({ otherHand })),
         toggle("Metronome through each pass", settings.metronome, (metronome) => update({ metronome })),
         toggle("Show fingering", settings.fingerings, (fingerings) => update({ fingerings })),
+        toggle("Light the staff for keys you play", settings.highlightPlayed, (highlightPlayed) => update({ highlightPlayed })),
       ),
     );
   }
@@ -812,6 +814,14 @@ export class PieceMode {
       this.save();
       view.setFingerings(fingerings.checked);
     });
+    view.setHighlightPlayed(record.settings.highlightPlayed);
+    const highlight = h("input", { type: "checkbox" });
+    highlight.checked = record.settings.highlightPlayed;
+    highlight.addEventListener("change", () => {
+      record.settings.highlightPlayed = highlight.checked;
+      this.save();
+      view.setHighlightPlayed(highlight.checked);
+    });
     this.scroller = scroller;
 
     const hotState = h("div", { class: "hot-state", "aria-live": "polite" }, this.hotText());
@@ -841,6 +851,7 @@ export class PieceMode {
             { class: "piece-options" },
             h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
             h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
+            h("label", { class: "toggle piece-other" }, highlight, h("span", {}, "Light played keys")),
           ),
         ),
       ),
@@ -931,6 +942,7 @@ export class PieceMode {
     if (hot) hot.dataset.hot = String(this.looping);
     const state = page?.querySelector<HTMLElement>(".hot-state");
     if (state) state.textContent = this.hotText();
+    this.view?.setFreePlay(!this.looping);
   }
 
   private startPass(): void {
@@ -996,6 +1008,7 @@ export class PieceMode {
       if (event.kind === "on") this.toggle();
       return;
     }
+    this.view?.setPlayed(event.pitch, event.kind === "on");
     if (event.kind !== "on") return;
     if (this.deps.soundMidiKeys()) this.deps.synth.play(event.pitch, event.velocity);
     const pass = this.pass;

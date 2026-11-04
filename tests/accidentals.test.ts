@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spellInKey } from "../src/music/accidentals";
-import { keyById } from "../src/music/keys";
+import { inScale, keyById } from "../src/music/keys";
 
 describe("spellInKey", () => {
   const spell = (midi: number, key: string) => {
@@ -29,5 +29,20 @@ describe("spellInKey", () => {
   it("keeps the written octave across B#/C and Cb/B", () => {
     expect(spell(60, "C#")).toBe("B#3 -");
     expect(spell(59, "Cb")).toBe("Cb4 -");
+  });
+});
+
+describe("inScale", () => {
+  it("takes a major key's seven notes and no others", () => {
+    expect([60, 62, 64, 65, 67, 69, 71].every((midi) => inScale(midi, keyById("C")))).toBe(true);
+    expect([61, 63, 66, 68, 70].some((midi) => inScale(midi, keyById("C")))).toBe(false);
+    expect(inScale(66, keyById("G"))).toBe(true);
+    expect(inScale(65, keyById("G"))).toBe(false);
+  });
+
+  it("lets a minor key borrow its raised sixth and seventh", () => {
+    expect(inScale(68, keyById("Am"))).toBe(true);
+    expect(inScale(66, keyById("Am"))).toBe(true);
+    expect(inScale(61, keyById("Am"))).toBe(false);
   });
 });

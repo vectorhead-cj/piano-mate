@@ -1,4 +1,7 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
+import { spellInKey } from "../music/accidentals";
+import { inScale, KEYS, MINOR_KEYS, type KeyInfo } from "../music/keys";
+import { staffStep } from "../music/pitch";
 import type { Hand, Piece } from "./piece";
 
 export type NoteMark = "pending" | "current" | "correct" | "late" | "wrong";
@@ -26,6 +29,38 @@ const HALFTONE_TO_MIDI = 12;
 const BAR_PAD_UNITS = 3;
 /** Notes look about this big at zoom 1 on a laptop; phones and tablets scale with their width. */
 const BASE_WIDTH_PX = 1000;
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const RELEASE_FADE_MS = 150;
+/** Played notes further out than this many ledger lines aren't marked. */
+const MAX_LEDGERS = 4;
+/** The note each clef sign sits on: G4, F3, C4. */
+const CLEF_NOTES: Record<string, { letter: "G" | "F" | "C"; octave: number }> = {
+  G: { letter: "G", octave: 4 },
+  F: { letter: "F", octave: 3 },
+  C: { letter: "C", octave: 4 },
+};
+
+/** Staff step of a clef's bottom line, from its sign and line ("G2" → E4, "F4" → G2). */
+function bottomLineStep(clef: string): number {
+  const note = CLEF_NOTES[clef[0]] ?? CLEF_NOTES.G;
+  const line = Number(clef.slice(1)) || 2;
+  return staffStep({ ...note, alter: 0 }) - 2 * (line - 1);
+}
+
+function keyOf(fifths: number, mode: "major" | "minor"): KeyInfo {
+  return (mode === "minor" ? MINOR_KEYS : KEYS).find((k) => k.signature === fifths) ?? KEYS[0];
+}
+
+/** A staff as drawn in one bar, in CSS pixels from the top left of the score. */
+interface StaffBox {
+  measure: number;
+  staff: number;
+  left: number;
+  right: number;
+  /** The bottom line. */
+  bottom: number;
+}
 
 function readColors(): Record<NoteMark, string> {
   const style = getComputedStyle(document.documentElement);
@@ -55,6 +90,13 @@ export class PieceScoreView {
   /** Drawn notes by Piece.notes index. */
   private drawn = new Map<number, GraphicalNote[]>();
   private boxes: BarBox[] = [];
+  private staffBoxes: StaffBox[] = [];
+  /** Played keys show as lit staff lines and spaces, behind the music; only in free play. */
+  private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
+  private highlightPlayed = false;
+  private freePlay = true;
+  private readonly held = new Set<number>();
+  private readonly fading = new Map<number, number>();
   private piece: Piece | null = null;
   private firstMeasure = 0;
   private colors = readColors();
@@ -78,7 +120,9 @@ export class PieceScoreView {
     this.sheet.className = "piece-sheet";
     this.overlay.className = "piece-overlay";
     this.overlay.setAttribute("aria-hidden", "true");
-    root.replaceChildren(this.sheet, this.overlay);
+    this.playedLayer.setAttribute("class", "piece-played");
+    this.playedLayer.setAttribute("aria-hidden", "true");
+    root.replaceChildren(this.playedLayer, this.sheet, this.overlay);
     this.osmd = new OpenSheetMusicDisplay(this.sheet, {
       backend: "svg",
       autoResize: false,
@@ -121,6 +165,36 @@ export class PieceScoreView {
     this.draw();
   }
 
+  /** Toggle lighting the staff for played keys. */
+  setHighlightPlayed(on: boolean): void {
+    if (on === this.highlightPlayed) return;
+    this.highlightPlayed = on;
+    this.drawPlayed();
+  }
+
+  /** Played keys light the staff only while no pass is being graded. */
+  setFreePlay(on: boolean): void {
+    if (on === this.freePlay) return;
+    this.freePlay = on;
+    this.drawPlayed();
+  }
+
+  setPlayed(pitch: number, down: boolean): void {
+    clearTimeout(this.fading.get(pitch));
+    this.fading.delete(pitch);
+    if (down) this.held.add(pitch);
+    else if (this.held.delete(pitch)) {
+      this.fading.set(
+        pitch,
+        window.setTimeout(() => {
+          this.fading.delete(pitch);
+          this.drawPlayed();
+        }, RELEASE_FADE_MS),
+      );
+    }
+    this.drawPlayed();
+  }
+
   /** Draws `xml` (a whole piece, or the bars from `firstMeasure` on) and forgets earlier colours. */
   async show(xml: string, piece: Piece, firstMeasure = 0): Promise<void> {
     const generation = ++this.generation;
@@ -144,6 +218,7 @@ export class PieceScoreView {
     this.osmd.render();
     this.collect();
     this.drawMarks();
+    this.drawPlayed();
   }
 
   setMark(noteIndices: readonly number[], mark: NoteMark): void {
@@ -204,10 +279,19 @@ export class PieceScoreView {
     piece.notes.forEach((note, i) => byKey.set(`${note.grace ? "g" : ""}${note.measure}|${note.hand}|${note.offset}|${note.midi}`, i));
     this.drawn = new Map();
     this.boxes = [];
+    this.staffBoxes = [];
     this.osmd.GraphicSheet.MeasureList.forEach((staves, j) => {
       const measure = this.firstMeasure + j;
       staves.forEach((graphical, staff) => {
         if (!graphical) return;
+        const shape = graphical.PositionAndShape;
+        this.staffBoxes.push({
+          measure,
+          staff,
+          left: (shape.AbsolutePosition.x + shape.BorderLeft) * unit,
+          right: (shape.AbsolutePosition.x + shape.BorderRight) * unit,
+          bottom: (shape.AbsolutePosition.y + 4) * unit,
+        });
         const hand: Hand = staff === 1 ? "left" : "right";
         for (const entry of graphical.staffEntries) {
           const offset = Math.round(entry.relInMeasureTimestamp.RealValue * 4 * 9600) / 9600;
@@ -231,6 +315,52 @@ export class PieceScoreView {
       const y1 = (bottom.PositionAndShape.AbsolutePosition.y + 4 + BAR_PAD_UNITS) * unit;
       this.boxes.push({ measure, left, top: y0, width: right - left, height: y1 - y0 });
     });
+  }
+
+  /** Each played key as a thickened line or tinted space across the bars: yellow in the bar's scale, red outside it. */
+  private drawPlayed(): void {
+    const layer = this.playedLayer;
+    layer.replaceChildren();
+    const piece = this.piece;
+    if (!this.highlightPlayed || !this.freePlay || !piece || !this.osmd.Sheet) return;
+    const unit = 10 * this.osmd.Zoom;
+    const add = (parent: Element, tag: string, attrs: Record<string, string | number>, className: string) => {
+      const node = document.createElementNS(SVG_NS, tag);
+      for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+      node.setAttribute("class", className);
+      parent.append(node);
+    };
+    const pitches = [...this.held, ...this.fading.keys()];
+    const lowest = -2 * MAX_LEDGERS;
+    const highest = 8 + 2 * MAX_LEDGERS;
+    const staves = new Map<number, StaffBox[]>();
+    for (const box of this.staffBoxes) staves.set(box.measure, [...(staves.get(box.measure) ?? []), box]);
+    for (const [measure, boxes] of staves) {
+      const info = piece.measures[measure];
+      if (!info) continue;
+      const key = keyOf(info.fifths, info.mode);
+      for (const pitch of pitches) {
+        const spelling = spellInKey(pitch, key).spelling;
+        // The staff the note sits nearest, the upper one when it's as near to both.
+        const places = boxes.map((box) => {
+          const position = staffStep(spelling) - bottomLineStep(box.staff === 1 ? info.clefs.left : info.clefs.right);
+          return { box, position, distance: Math.max(0, -position, position - 8) };
+        });
+        const best = places.reduce((a, b) => (b.distance < a.distance ? b : a));
+        const { box, position } = best;
+        if (position < lowest || position > highest) continue;
+        const y = (at: number) => box.bottom - (at * unit) / 2;
+        const tone = `${this.held.has(pitch) ? "played-note" : "played-note fading"}${inScale(pitch, key) ? "" : " off-scale"}`;
+        const group = document.createElementNS(SVG_NS, "g");
+        group.setAttribute("class", tone);
+        layer.append(group);
+        const span = { x1: box.left, x2: box.right };
+        for (let line = -2; line > position; line -= 2) add(group, "line", { ...span, y1: y(line), y2: y(line) }, "played-ledger");
+        for (let line = 10; line < position; line += 2) add(group, "line", { ...span, y1: y(line), y2: y(line) }, "played-ledger");
+        if (position % 2 === 0) add(group, "line", { ...span, y1: y(position), y2: y(position) }, "played-line");
+        else add(group, "rect", { x: box.left, y: y(position) - unit / 2, width: box.right - box.left, height: unit }, "played-space");
+      }
+    }
   }
 
   private drawMarks(): void {

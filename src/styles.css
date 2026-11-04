@@ -1026,10 +1026,6 @@ dialog.midi-debug::backdrop {
   pointer-events: none;
 }
 
-.scratch-line {
-  stroke: var(--ink);
-}
-
 .played-line {
   stroke: var(--played);
   stroke-width: 4.5px;
@@ -1048,18 +1044,14 @@ dialog.midi-debug::backdrop {
   opacity: 0.5;
 }
 
-.ghost-ledger {
-  stroke: var(--played);
-  stroke-width: 1.5px;
+/* Outside the key's scale: red, as a wrong note is. */
+.off-scale .played-line,
+.off-scale .played-ledger {
+  stroke: var(--wrong);
 }
 
-.ghost-head {
-  fill: var(--played);
-}
-
-.ghost-accidental {
-  fill: none;
-  stroke: var(--played);
+.off-scale .played-space {
+  fill: var(--wrong);
 }
 
 /* Hold trails under the staff; drawn by NotationView. */
@@ -2951,6 +2943,20 @@ dialog.account-dialog::backdrop {
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Played keys light the staff behind the music: the sheet is raised above this layer. */
+.piece-played {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.piece-sheet {
+  position: relative;
 }
 
 .piece-overlay {

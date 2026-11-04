@@ -1,3 +1,4 @@
+import { midiOf, pitchClass } from "./pitch";
 import type { AccidentalFrequency, Alter, Letter } from "./types";
 
 /** Letter order on the staff (same as pitch.LETTERS). */
@@ -125,3 +126,14 @@ export const ACCIDENTAL_FREQUENCY_LABELS: Record<AccidentalFrequency, string> = 
   medium: "medium",
   common: "common",
 };
+
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+/** Natural minor, with the raised sixth and seventh that melodic and harmonic minor borrow. */
+const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 9, 10, 11];
+
+/** Whether a note belongs to the key's scale, whatever octave it's in. */
+export function inScale(midi: number, key: KeyInfo): boolean {
+  const tonic = pitchClass(midiOf({ letter: key.tonic, alter: key.alters[key.tonic], octave: 0 }));
+  const degrees = key.mode === "minor" ? MINOR_SCALE : MAJOR_SCALE;
+  return degrees.includes(pitchClass(midi - tonic));
+}

@@ -1,6 +1,6 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
-import { spellInKey, type AccidentalSymbol } from "../music/accidentals";
-import { keyById, signatureLetters } from "../music/keys";
+import { spellInKey } from "../music/accidentals";
+import { inScale, keyById, signatureLetters } from "../music/keys";
 import { exerciseToMusicXml } from "../music/musicXml";
 import { staffStep } from "../music/pitch";
 import { BEATS } from "../music/rhythms";
@@ -78,13 +78,7 @@ const BOTTOM_LINE_STEP: Record<Clef, number> = {
   treble: staffStep({ letter: "E", alter: 0, octave: 4 }),
   bass: staffStep({ letter: "G", alter: 0, octave: 2 }),
 };
-/** A short empty bar after the final barline where played notes are written out, in staff spaces. */
-const SCRATCH_GAP_UNITS = 1;
-const SCRATCH_BAR_UNITS = 6;
-const GHOST_GUTTER_UNITS = SCRATCH_GAP_UNITS + SCRATCH_BAR_UNITS;
-/** Where the written-out notehead sits in the scratch bar, leaving room for accidentals before it. */
-const GHOST_X_UNITS = 3.6;
-/** Played notes further out than this many ledger lines get an arrow instead. */
+/** Played notes further out than this many ledger lines aren't marked. */
 const MAX_LEDGERS = 4;
 const RELEASE_FADE_MS = 150;
 /** The hold lane sits this far below the staff's bottom line, or its lowest note, in staff spaces. */
@@ -103,16 +97,6 @@ const KEY_CIRCLE_RY_UNITS = 3.5;
 const EMPTY_KEY_CIRCLE_PAD_UNITS = 0.7;
 const EMPTY_KEY_CIRCLE_RY_UNITS = 2.8;
 const SVG_NS = "http://www.w3.org/2000/svg";
-/**
- * Accidentals as strokes in staff spaces, centred on the note's line or space (y down):
- * thin uprights, and thick bars or bowl.
- */
-const ACCIDENTAL_STROKES: Record<AccidentalSymbol, { thin: string; thick: string }> = {
-  "#": { thin: "M-0.22 -1.3 V1.5 M0.22 -1.5 V1.3", thick: "M-0.5 -0.25 L0.5 -0.55 M-0.5 0.55 L0.5 0.25" },
-  b: { thin: "M-0.3 -2 V0.55", thick: "M-0.3 0.5 C0.6 -0.05 0.55 -0.75 -0.3 -0.15" },
-  n: { thin: "M-0.25 -1.4 V0.55 M0.25 -0.55 V1.4", thick: "M-0.25 -0.2 L0.25 -0.4 M-0.25 0.4 L0.25 0.2" },
-};
-
 /**
  * Renders phrases via MusicXML → OpenSheetMusicDisplay (standard web engraving stack).
  * Note states are applied with GraphicalNote.setColor without a full re-render.
@@ -143,7 +127,6 @@ export class NotationView {
    * Notehead and accidental column of each played key, kept from press to release, so a
    * note pushed aside by a close neighbour doesn't jump when the neighbour is let go.
    */
-  private readonly columns = new Map<number, { head: number; sign: number }>();
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   private readonly holds = new Map<number, HoldMark>();
   /** Signatures to circle once the phrase being loaded is drawn. */
@@ -190,7 +173,6 @@ export class NotationView {
     clearTimeout(this.wrongFlashTimer);
     this.exercise = exercise;
     this.markedBar = null;
-    this.columns.clear();
     this.holds.clear();
     this.states = exercise.bars.flat().map(() => "pending");
     this.options = options;
@@ -211,11 +193,11 @@ export class NotationView {
     this.draw();
   }
 
-  /** Toggle showing played notes on the staff; it reserves room after the music, so it re-lays out. */
+  /** Toggle showing played notes on the staff. */
   setHighlightPlayed(on: boolean): void {
     if (on === this.highlightPlayed) return;
     this.highlightPlayed = on;
-    this.draw();
+    this.drawPlayed();
   }
 
   /** Played notes only show in free play, never while an attempt is graded. */
@@ -426,9 +408,7 @@ export class NotationView {
     const bars = this.exercise?.bars.length ?? 4;
     const shortPhraseScale = bars <= 3 ? 0.8 : 1;
     // Letter margins scale with the music, so they widen the width being fitted.
-    // The played-note column sits after the music, but the music stays centred, so reserve it both sides.
-    const gutterW =
-      (this.staffLetters ? LETTER_GUTTER_UNITS * 10 * 2 : 0) + (this.highlightPlayed ? GHOST_GUTTER_UNITS * 10 * 2 : 0);
+    const gutterW = this.staffLetters ? LETTER_GUTTER_UNITS * 10 * 2 : 0;
     const zoom =
       Math.min(MAX_ZOOM, availW / (size.width + gutterW), availH / size.height) * shortPhraseScale;
     this.osmd.Zoom = Math.max(zoom, 0.5);
@@ -511,10 +491,9 @@ export class NotationView {
   }
 
   /**
-   * In free play, a short empty bar follows the music. Each played note thickens its staff
-   * line or tints its space across the staff and that bar (ledger notes get faint ledger
-   * lines out to them), lights its margin letter, and is written in the bar as the key
-   * would spell it, accidental included. Drawn behind the music.
+   * In free play, each played note thickens its staff line or tints its space across the
+   * staff (ledger notes get faint ledger lines out to them), and lights its margin letter.
+   * Yellow for a note in the key's scale, red for one outside it. Drawn behind the music.
    */
   private drawPlayed(): void {
     const layer = this.playedLayer;
@@ -528,33 +507,10 @@ export class NotationView {
     const key = keyById(exercise.key);
     const bottomStep = BOTTOM_LINE_STEP[exercise.clef];
     const pitches = [...this.held, ...this.fading.keys()];
-    for (const pitch of this.columns.keys()) if (!pitches.includes(pitch)) this.columns.delete(pitch);
     const notes = pitches.map((pitch) => {
       const { spelling, accidental } = spellInKey(pitch, key);
-      return { pitch, spelling, position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch) };
+      return { pitch, spelling, position: staffStep(spelling) - bottomStep, accidental, fading: !this.held.has(pitch), inScale: inScale(pitch, key) };
     });
-    // A newly pressed key takes the first column free of close neighbours: seconds sit side by
-    // side, and accidentals close together step left, as engravers do.
-    for (const note of notes) {
-      if (this.columns.has(note.pitch)) continue;
-      const placed = notes.filter((other) => this.columns.has(other.pitch));
-      const free = (taken: number[]) => {
-        let column = 0;
-        while (taken.includes(column)) column++;
-        return column;
-      };
-      const head = free(
-        placed.filter((other) => Math.abs(other.position - note.position) <= 1).map((other) => this.columns.get(other.pitch)!.head),
-      );
-      const sign = note.accidental
-        ? free(
-            placed
-              .filter((other) => other.accidental && Math.abs(other.position - note.position) < 6)
-              .map((other) => this.columns.get(other.pitch)!.sign),
-          )
-        : 0;
-      this.columns.set(note.pitch, { head, sign });
-    }
     for (const label of this.lettersLayer.querySelectorAll<HTMLElement>(".staff-letter")) {
       if (notes.some((note) => String(note.position) === label.dataset.step)) label.classList.add("lit");
     }
@@ -590,63 +546,20 @@ export class NotationView {
           if (right <= left) continue;
           const bottom = (first.AbsolutePosition.y + 4) * unit;
           const y = (position: number) => bottom - (position * unit) / 2;
-          // After the right-hand letters, when they're shown.
-          const scratchLeft = right + ((this.staffLetters ? LETTER_GUTTER_UNITS : 0) + SCRATCH_GAP_UNITS) * unit;
-          const scratchRight = scratchLeft + SCRATCH_BAR_UNITS * unit;
-          const ghostX = scratchLeft + GHOST_X_UNITS * unit;
           const lowest = -2 * MAX_LEDGERS;
           const highest = 8 + 2 * MAX_LEDGERS;
-          // Across the music and across the scratch bar.
-          const spans = [
-            [left, right],
-            [scratchLeft, scratchRight],
-          ];
-
-          for (let line = 0; line <= 8; line += 2) {
-            add(layer, "line", { x1: scratchLeft, x2: scratchRight, y1: y(line), y2: y(line), "stroke-width": 0.1 * unit }, "scratch-line");
-          }
 
           for (const note of notes) {
-            const group = add(layer, "g", {}, note.fading ? "played-note fading" : "played-note");
             const { position } = note;
-            if (position < lowest || position > highest) {
-              const up = position > highest;
-              const tip = y(up ? highest + 2 : lowest - 2);
-              const base = tip + (up ? 1 : -1) * unit;
-              add(group, "path", { d: `M${ghostX - 0.6 * unit} ${base} L${ghostX} ${tip} L${ghostX + 0.6 * unit} ${base} Z` }, "ghost-head");
-              continue;
-            }
-            const { head, sign } = this.columns.get(note.pitch)!;
-            const cx = ghostX + head * 1.2 * unit;
-            const ledgers: number[] = [];
-            for (let line = -2; line >= position; line -= 2) ledgers.push(line);
-            for (let line = 10; line <= position; line += 2) ledgers.push(line);
-            for (const line of ledgers) {
-              if (line !== position) {
-                for (const [x1, x2] of spans) add(group, "line", { x1, x2, y1: y(line), y2: y(line) }, "played-ledger");
-              }
-              add(group, "line", { x1: cx - 1.1 * unit, x2: cx + 1.1 * unit, y1: y(line), y2: y(line) }, "ghost-ledger");
-            }
-            for (const [x1, x2] of spans) {
-              if (position % 2 === 0) {
-                add(group, "line", { x1, x2, y1: y(position), y2: y(position) }, "played-line");
-              } else {
-                add(group, "rect", { x: x1, y: y(position) - unit / 2, width: x2 - x1, height: unit }, "played-space");
-              }
-            }
-
-            add(
-              group,
-              "ellipse",
-              { cx, cy: y(position), rx: 0.62 * unit, ry: 0.44 * unit, transform: `rotate(-20 ${cx} ${y(position)})` },
-              "ghost-head",
-            );
-            if (note.accidental) {
-              const x = ghostX - 1.5 * unit - sign * 1.1 * unit;
-              const glyph = add(group, "g", { transform: `translate(${x} ${y(position)}) scale(${unit})` }, "ghost-accidental");
-              const strokes = ACCIDENTAL_STROKES[note.accidental];
-              add(glyph, "path", { d: strokes.thin, "stroke-width": 0.12 }, "");
-              add(glyph, "path", { d: strokes.thick, "stroke-width": 0.28 }, "");
+            if (position < lowest || position > highest) continue;
+            const tone = `${note.fading ? "played-note fading" : "played-note"}${note.inScale ? "" : " off-scale"}`;
+            const group = add(layer, "g", {}, tone);
+            for (let line = -2; line > position; line -= 2) add(group, "line", { x1: left, x2: right, y1: y(line), y2: y(line) }, "played-ledger");
+            for (let line = 10; line < position; line += 2) add(group, "line", { x1: left, x2: right, y1: y(line), y2: y(line) }, "played-ledger");
+            if (position % 2 === 0) {
+              add(group, "line", { x1: left, x2: right, y1: y(position), y2: y(position) }, "played-line");
+            } else {
+              add(group, "rect", { x: left, y: y(position) - unit / 2, width: right - left, height: unit }, "played-space");
             }
           }
         }

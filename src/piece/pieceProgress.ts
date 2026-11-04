@@ -26,12 +26,14 @@ export interface PieceSettings {
   metronome: boolean;
   /** The score's fingering numbers are drawn. */
   fingerings: boolean;
+  /** Keys played in free play light the staff, yellow in the key's scale and red outside it. */
+  highlightPlayed: boolean;
 }
 
 export const DEFAULT_TEMPO = 80;
 
 export function defaultSettings(tempo = DEFAULT_TEMPO): PieceSettings {
-  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowShare: 0.6, otherHand: true, metronome: true, fingerings: true };
+  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowShare: 0.6, otherHand: true, metronome: true, fingerings: true, highlightPlayed: false };
 }
 
 export const PLAN_LABELS: Record<Plan, string> = { "slow-first": "Slow first, then standard", standard: "Standard tempo directly" };
