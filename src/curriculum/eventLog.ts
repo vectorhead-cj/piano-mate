@@ -2,12 +2,26 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentUser, supabase } from "../account";
 import type { PracticeEvent } from "./events";
 
+export type EventType = PracticeEvent["type"];
+
+/**
+ * Which events to load: those of these types. Loading only what a screen needs keeps startup
+ * quick however much of other kinds of practice the log holds.
+ */
+export interface EventQuery<T extends EventType = EventType> {
+  types: readonly T[];
+}
+
 /** Append-only storage for practice events. */
 export interface EventLog {
   /** Where events end up: the player's account, this browser, or nowhere (dev server). */
   readonly storage: "account" | "browser" | "none";
-  load(): Promise<PracticeEvent[]>;
+  load<T extends EventType>(query: EventQuery<T>): Promise<Extract<PracticeEvent, { type: T }>[]>;
   append(event: PracticeEvent): Promise<void>;
+}
+
+function matches(event: PracticeEvent, query: EventQuery): boolean {
+  return query.types.includes(event.type);
 }
 
 const TABLE = "practice_events";
@@ -31,18 +45,20 @@ export class AccountEventLog implements EventLog {
     private readonly userId: string,
   ) {}
 
-  async load(): Promise<PracticeEvent[]> {
+  async load<T extends EventType>(query: EventQuery<T>): Promise<Extract<PracticeEvent, { type: T }>[]> {
     await this.adoptBrowserEvents();
-    const events: PracticeEvent[] = [];
+    const events: Extract<PracticeEvent, { type: T }>[] = [];
     for (let from = 0; ; from += PAGE_SIZE) {
+      // The (user_id, type, at) index serves this.
       const { data, error } = await this.client
         .from(TABLE)
         .select("event")
+        .in("type", [...query.types])
         .order("at")
         .order("id")
         .range(from, from + PAGE_SIZE - 1);
       if (error) throw error;
-      for (const { event } of data) events.push(event as PracticeEvent);
+      for (const { event } of data) events.push(event as Extract<PracticeEvent, { type: T }>);
       if (data.length < PAGE_SIZE) break;
     }
     return events;
@@ -60,11 +76,15 @@ export class AccountEventLog implements EventLog {
     }
   }
 
+  private adopted = false;
+
   /** Practice from before signing in in this browser moves into the account. */
   private async adoptBrowserEvents(): Promise<void> {
+    if (this.adopted) return;
     const events = readBrowserEvents();
     for (let i = 0; i < events.length; i += UPLOAD_BATCH) await this.insert(events.slice(i, i + UPLOAD_BATCH));
     if (events.length > 0) localStorage.removeItem(STORAGE_KEY);
+    this.adopted = true;
   }
 
   private async insert(events: PracticeEvent[]): Promise<void> {
@@ -92,28 +112,29 @@ function readBrowserEvents(): PracticeEvent[] {
 /** Events in localStorage, while signed out. */
 export class LocalEventLog implements EventLog {
   readonly storage = "browser";
-  private events: PracticeEvent[] = [];
 
-  async load(): Promise<PracticeEvent[]> {
-    this.events = readBrowserEvents();
-    return [...this.events];
+  async load<T extends EventType>(query: EventQuery<T>): Promise<Extract<PracticeEvent, { type: T }>[]> {
+    return readBrowserEvents().filter((event): event is Extract<PracticeEvent, { type: T }> => matches(event, query));
   }
 
   async append(event: PracticeEvent): Promise<void> {
-    this.events.push(event);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.events));
+    // Read afresh: another screen may have appended since.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...readBrowserEvents(), event]));
   }
 }
 
 /** Keeps events for this page load only, so dev-server practice never mixes with real progress. */
 export class MemoryEventLog implements EventLog {
   readonly storage = "none";
+  private readonly events: PracticeEvent[] = [];
 
-  async load(): Promise<PracticeEvent[]> {
-    return [];
+  async load<T extends EventType>(query: EventQuery<T>): Promise<Extract<PracticeEvent, { type: T }>[]> {
+    return this.events.filter((event): event is Extract<PracticeEvent, { type: T }> => matches(event, query));
   }
 
-  async append(): Promise<void> {}
+  async append(event: PracticeEvent): Promise<void> {
+    this.events.push(event);
+  }
 }
 
 /**

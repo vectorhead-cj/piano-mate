@@ -1,22 +1,23 @@
 import { Metronome } from "../audio/metronome";
 import { SoundQueue, type QueuedNote } from "../audio/soundQueue";
 import type { Synth } from "../audio/synth";
+import type { EventLog } from "../curriculum/eventLog";
+import { newId, type PiecePass } from "../curriculum/events";
 import type { NoteStream } from "../input/noteStream";
 import { midiNoteName } from "../music/pitch";
 import type { NoteEvent } from "../music/types";
 import { pieceFeatures, type FeatureScore, type PieceFeature } from "./features";
-import { openPieceLibrary, pieceId, type PieceLibrary, type PieceRecord } from "./pieceLibrary";
+import { applyPieceEvent, deviceState, openPieceLibrary, setDeviceState, type PieceChange, type PieceEvent, type PieceLibrary, type PieceRecord } from "./pieceLibrary";
 import { parsePiece, PieceError, readScoreFile } from "./parseMusicXml";
 import { playOrder, type HandChoice, type Piece } from "./piece";
 import {
-  defaultSettings,
   FULL_STREAK,
   MISS_CHOICES,
   nextPlace,
   phrasesOf,
   pieceDone,
   PLAN_LABELS,
-  recordPass,
+  projectPieceProgress,
   stepKey,
   stepLabel,
   stepProgress,
@@ -24,8 +25,8 @@ import {
   stepTempo,
   STREAK_CHOICES,
   streakMarks,
-  withStep,
   type Phrase,
+  type PiecePractice,
   type PieceSettings,
   type Place,
   type Plan,
@@ -117,11 +118,13 @@ interface Practice {
   detail: string;
 }
 
-/** An open piece: its record and what's read from its file. */
+/** An open piece: its record, its score and what's read from it, and its practice so far. */
 interface Open {
   record: PieceRecord;
+  xml: string;
   piece: Piece;
   phrases: Phrase[];
+  practice: PiecePractice;
 }
 
 export interface PieceModeDependencies {
@@ -132,6 +135,12 @@ export interface PieceModeDependencies {
   soundMidiKeys: () => boolean;
   /** The MIDI key that starts and stops, as elsewhere in the app. */
   startKey: () => number;
+  /** Where passes are recorded, with the rest of practice. */
+  log: Promise<EventLog>;
+  /** This page load, as practice events record it. */
+  session: string;
+  /** Opens the sign-in dialog: pieces need an account. */
+  signIn: () => void;
 }
 
 /** A pass under way: its grading, and what to undo when it stops. */
@@ -144,6 +153,8 @@ interface Pass {
   slot: number;
   /** When the last note was settled. */
   doneAt?: number;
+  /** Epoch ms the count-in began. */
+  startedAt: number;
 }
 
 /**
@@ -153,8 +164,11 @@ interface Pass {
  */
 export class PieceMode {
   private readonly root: HTMLElement;
-  private library: PieceLibrary | null = null;
-  private persistent = true;
+  /** Null when signed out; undefined until opened. */
+  private library: PieceLibrary | null | undefined = undefined;
+  private log: EventLog | null = null;
+  /** Every piece's passes, oldest first. */
+  private passes: PiecePass[] = [];
   private screen: Screen = { name: "library" };
   private open: Open | null = null;
   private records: PieceRecord[] = [];
@@ -211,10 +225,17 @@ export class PieceMode {
   /** Shows the library. */
   async show(): Promise<void> {
     this.visible = true;
-    if (!this.library) {
-      const opened = await openPieceLibrary();
-      this.library = opened.library;
-      this.persistent = opened.persistent;
+    if (this.library === undefined) {
+      try {
+        const [library, log] = await Promise.all([openPieceLibrary(), this.deps.log]);
+        this.library = library;
+        this.log = log;
+        this.passes = library ? await log.load({ types: ["piece-pass"] }) : [];
+      } catch (error) {
+        console.warn("Could not open the piece library", error);
+        this.notice = { tone: "error", text: "Your pieces couldn't be loaded. Check the connection and reload the page." };
+        this.library = null;
+      }
     }
     await this.go({ name: "library" });
   }
@@ -246,7 +267,14 @@ export class PieceMode {
     this.justPassed = null;
     if (screen.name === "library") {
       this.open = null;
-      this.records = (await this.library?.list()) ?? [];
+      try {
+        const records = (await this.library?.list()) ?? [];
+        const seen = (r: PieceRecord) => Math.max(r.updatedAt, deviceState(r.id).openedAt ?? 0);
+        this.records = records.sort((a, b) => seen(b) - seen(a));
+      } catch (error) {
+        console.warn("Could not list pieces", error);
+        this.notice = { tone: "error", text: "Your pieces couldn't be loaded. Check the connection and try again." };
+      }
     }
     this.render();
   }
@@ -283,10 +311,14 @@ export class PieceMode {
       if (file) void this.importFile(file);
       input.value = "";
     });
+    if (!this.library) {
+      this.renderSignedOut();
+      return;
+    }
     const importButton = button("Import MusicXML", () => input.click(), "btn-primary");
     const list = this.records.map((record) => {
-      const done = pieceDone(record.progress, phrasesOf(record.phraseStarts, record.measureCount), record.settings.plan);
-      const openButton = button("Open", () => void this.openPiece(record.id), "btn-primary");
+      const done = pieceDone(this.practiceOf(record.id).progress, phrasesOf(record.phraseStarts, record.measureCount), record.settings.plan);
+      const openButton = button("Open", () => void this.openPiece(record), "btn-primary");
       const remove = button("Remove", () => void this.removePiece(record), "btn-secondary piece-remove");
       return h(
         "article",
@@ -317,11 +349,56 @@ export class PieceMode {
           { class: "piece-import" },
           importButton,
           input,
-          h("span", { class: "menu-muted" }, this.persistent ? "Or drop a file here. Pieces are kept in this browser." : "Pieces can't be kept in this browser; they last until the page closes."),
+          h("span", { class: "menu-muted" }, this.library.storage === "account" ? "Or drop a file here. Pieces are kept in your account." : "Or drop a file here. The dev server keeps pieces until the page closes."),
         ),
         list.length > 0 ? h("div", { class: "piece-list" }, ...list) : h("p", { class: "menu-muted piece-empty" }, "No pieces yet."),
       ),
     );
+  }
+
+  /** Pieces live in the account, so there's nothing to show without one. */
+  private renderSignedOut(): void {
+    this.root.replaceChildren(
+      h(
+        "div",
+        { class: "pieces-page" },
+        h(
+          "header",
+          { class: "home-intro" },
+          h("h1", { class: "home-title" }, "Pieces"),
+          h("p", { class: "home-lede" }, "Bring your own score as MusicXML, split it into phrases and learn it hand by hand. Pieces are kept in your account, so they follow you to any device."),
+        ),
+        this.noticeElement(),
+        h("div", { class: "piece-import" }, button("Sign in", () => this.deps.signIn(), "btn-primary"), h("span", { class: "menu-muted" }, "Sign in to import and practise pieces.")),
+      ),
+    );
+  }
+
+  /** A piece's progress, folded from its passes. */
+  private practiceOf(pieceId: string): PiecePractice {
+    return projectPieceProgress(this.passes.filter((pass) => pass.pieceId === pieceId));
+  }
+
+  /**
+   * Records a change to the open piece. It shows at once; the write follows in the background,
+   * and if it fails the player is told on the next screen.
+   */
+  private commit(change: PieceChange): void {
+    const open = this.open;
+    if (!open || !this.library) return;
+    const before = open.record;
+    open.record = applyPieceEvent(before, { ...change, v: 1, id: "", at: Date.now(), pieceId: before.id } as PieceEvent);
+    this.library.change(before, change).catch((error) => {
+      console.warn("Could not save the piece", error);
+      this.notice = { tone: "error", text: "A change to this piece couldn't be saved to your account." };
+    });
+  }
+
+  private changeSettings(patch: Partial<PieceSettings>): void {
+    const { settings } = this.open!.record;
+    const next = { ...settings, ...patch };
+    if ((Object.keys(patch) as (keyof PieceSettings)[]).every((key) => settings[key] === next[key])) return;
+    this.commit({ type: "settings-changed", settings: next });
   }
 
   private noticeElement(): HTMLElement | null {
@@ -333,80 +410,73 @@ export class PieceMode {
     try {
       const xml = await readScoreFile(file.name, await file.arrayBuffer());
       const piece = parsePiece(xml);
-      const id = await pieceId(xml);
-      const existing = await this.library!.get(id);
-      if (existing) {
-        this.notice = { tone: "info", text: `${existing.title} is already here; opened it.` };
-        await this.openPiece(id);
-        return;
-      }
-      const now = Date.now();
-      const record: PieceRecord = {
-        id,
+      const { record, existed } = await this.library!.import({
+        xml,
+        fileName: file.name,
         title: piece.title,
         composer: piece.composer,
-        fileName: file.name,
-        xml,
         measureCount: piece.measures.length,
-        addedAt: now,
-        openedAt: now,
-        phraseStarts: [],
-        settings: defaultSettings(piece.tempo),
-        progress: { phrases: {} },
-        introOpen: true,
-        intros: {},
-      };
-      await this.library!.put(record);
+        tempo: piece.tempo,
+      });
+      if (existed) {
+        this.notice = { tone: "info", text: `${record.title} is already here; opened it.` };
+        await this.openPiece(record);
+        return;
+      }
+      setDeviceState(record.id, { openedAt: Date.now(), introOpen: true });
       this.notice = piece.warnings.length > 0 ? { tone: "info", text: piece.warnings.join(" ") } : null;
-      this.open = { record, piece, phrases: phrasesOf([], piece.measures.length) };
+      this.open = { record, xml, piece, phrases: phrasesOf([], piece.measures.length), practice: this.practiceOf(record.id) };
       // Splitting into phrases comes first; the piece page follows.
       await this.go({ name: "phrases" });
     } catch (error) {
       this.notice = {
         tone: "error",
-        text: error instanceof PieceError ? error.message : `${file.name} couldn't be read as MusicXML.`,
+        text: error instanceof PieceError ? error.message : `${file.name} couldn't be read as MusicXML, or couldn't be saved to your account.`,
       };
       if (!(error instanceof PieceError)) console.warn("Import failed", error);
       this.render();
     }
   }
 
-  private async openPiece(id: string): Promise<void> {
-    const record = await this.library!.get(id);
-    if (!record) return;
-    const piece = parsePiece(record.xml);
-    // Before v0.1.75 there was no fingering setting, and fingerings were drawn.
-    record.settings.fingerings ??= true;
-    record.settings.highlightPlayed ??= false;
-    record.openedAt = Date.now();
-    await this.library!.put(record);
-    this.open = { record, piece, phrases: phrasesOf(record.phraseStarts, piece.measures.length) };
+  private async openPiece(record: PieceRecord): Promise<void> {
+    let xml: string;
+    try {
+      xml = await this.library!.score(record);
+    } catch (error) {
+      console.warn("Could not load the score", error);
+      this.notice = { tone: "error", text: `${record.title} couldn't be loaded. Check the connection and try again.` };
+      this.render();
+      return;
+    }
+    const piece = parsePiece(xml);
+    setDeviceState(record.id, { openedAt: Date.now() });
+    this.open = { record, xml, piece, phrases: phrasesOf(record.phraseStarts, piece.measures.length), practice: this.practiceOf(record.id) };
     await this.go({ name: "piece" });
   }
 
   private async removePiece(record: PieceRecord): Promise<void> {
-    if (!confirm(`Remove ${record.title} and its progress from this browser?`)) return;
-    await this.library!.remove(record.id);
-    this.notice = null;
+    if (!confirm(`Remove ${record.title} from your pieces?`)) return;
+    try {
+      await this.library!.change(record, { type: "piece-archived" });
+      this.notice = null;
+    } catch (error) {
+      console.warn("Could not remove the piece", error);
+      this.notice = { tone: "error", text: `${record.title} couldn't be removed. Check the connection and try again.` };
+    }
     await this.go({ name: "library" });
-  }
-
-  private save(): void {
-    if (!this.open) return;
-    const record = this.open.record;
-    void this.library!.put(record).catch((error) => console.warn("Could not save the piece", error));
   }
 
   // ── Piece page ───────────────────────────────────────────────────────────────────
 
   private renderPiece(): void {
-    const { record, piece, phrases } = this.open!;
+    const { record, piece, phrases, practice } = this.open!;
     const { settings } = record;
+    const { progress } = practice;
     const steps = stepsFor(settings.plan);
-    const next = nextPlace(record.progress, phrases, settings.plan);
-    const done = pieceDone(record.progress, phrases, settings.plan);
+    const next = nextPlace(progress, phrases, settings.plan);
+    const done = pieceDone(progress, phrases, settings.plan);
 
-    const introSection = this.introSection(record, piece);
+    const introSection = this.introSection(record, piece, practice);
 
     const header = h("tr", {}, h("th", { scope: "col" }, "Phrase"), ...steps.map((step) => h("th", { scope: "col" }, stepLabel(step, settings.plan))));
     const rows = phrases.map((phrase, p) =>
@@ -414,16 +484,16 @@ export class PieceMode {
         "tr",
         {},
         h("th", { scope: "row" }, `${p + 1} · ${this.barsText(phrase)}`),
-        ...steps.map((step) => h("td", {}, this.stepChip({ kind: "phrase", phrase: p, step }, stepProgress(record.progress, phrase, step), settings.streak, next))),
+        ...steps.map((step) => h("td", {}, this.stepChip({ kind: "phrase", phrase: p, step }, stepProgress(progress, phrase, step), settings.streak, next))),
       ),
     );
     const fullRow = h(
       "tr",
       { class: "piece-full-row" },
       h("th", { scope: "row" }, "Full piece"),
-      h("td", { colspan: String(steps.length) }, this.stepChip({ kind: "full" }, record.progress.full, FULL_STREAK, next), h("span", { class: "menu-muted" }, ` both hands at ♩ = ${settings.tempo}, with repeats, once clean`)),
+      h("td", { colspan: String(steps.length) }, this.stepChip({ kind: "full" }, progress.full, FULL_STREAK, next), h("span", { class: "menu-muted" }, ` both hands at ♩ = ${settings.tempo}, with repeats, once clean`)),
     );
-    const continueButton = button(next.kind === "full" && record.progress.full?.passedAt ? "Play the full piece" : "Continue", () => void this.go({ name: "practice", place: next }), "btn-primary");
+    const continueButton = button(next.kind === "full" && progress.full?.passedAt ? "Play the full piece" : "Continue", () => void this.go({ name: "practice", place: next }), "btn-primary");
 
     this.root.replaceChildren(
       h(
@@ -458,15 +528,15 @@ export class PieceMode {
    * What the piece asks of the player, a card per thing: what it is, an example, and an
    * intro to play where one helps. Open on a new piece; it remembers being folded away.
    */
-  private introSection(record: PieceRecord, piece: Piece): HTMLElement {
+  private introSection(record: PieceRecord, piece: Piece, practice: PiecePractice): HTMLElement {
     const features = pieceFeatures(piece);
     const drills = features.filter((f) => f.drill);
-    const played = drills.filter((f) => record.intros?.[f.id]?.passedAt).length;
+    const played = drills.filter((f) => practice.intros[f.id]?.passedAt).length;
     const pending: { feature: PieceFeature; holder: HTMLElement }[] = [];
     const cards = features.map((feature) => {
       const holder = h("div", { class: "piece-feature-example" });
       if (feature.example) pending.push({ feature, holder });
-      const passed = record.intros?.[feature.id]?.passedAt !== undefined;
+      const passed = practice.intros[feature.id]?.passedAt !== undefined;
       const drill = feature.drill
         ? button(`${passed ? "✓ " : ""}${feature.drill.label}`, () => void this.go({ name: "practice", place: { kind: "intro", feature: feature.id } }), passed ? "btn-secondary piece-intro-play" : "btn-primary piece-intro-play")
         : null;
@@ -488,7 +558,7 @@ export class PieceMode {
       ),
       h("ul", { class: "piece-features" }, ...cards),
     );
-    details.open = record.introOpen ?? !record.introDone;
+    details.open = deviceState(record.id).introOpen ?? true;
     let drawn = false;
     const drawExamples = () => {
       if (drawn || !details.open) return;
@@ -496,8 +566,7 @@ export class PieceMode {
       for (const { feature, holder } of pending) this.drawExample(feature.example!, holder);
     };
     details.addEventListener("toggle", () => {
-      record.introOpen = details.open;
-      this.save();
+      setDeviceState(record.id, { introOpen: details.open });
       drawExamples();
     });
     // Drawn once the section is in the page and has a width.
@@ -507,9 +576,9 @@ export class PieceMode {
 
   /** The music a card shows or drills: some of the piece's bars, or a mini score of its own. */
   private featureMusic(score: FeatureScore): { piece: Piece; xml: string; firstMeasure: number; order: number[] } {
-    const { record, piece } = this.open!;
+    const { xml, piece } = this.open!;
     if (score.kind === "bars") {
-      return { piece, xml: scoreXml(record.xml, score), firstMeasure: score.from, order: barRange(score.from, score.to) };
+      return { piece, xml: scoreXml(xml, score), firstMeasure: score.from, order: barRange(score.from, score.to) };
     }
     let mini = this.miniPieces.get(score.xml);
     if (!mini) {
@@ -548,8 +617,7 @@ export class PieceMode {
 
   private settingsSection(piece: Piece, settings: PieceSettings): HTMLElement {
     const update = (patch: Partial<PieceSettings>) => {
-      Object.assign(this.open!.record.settings, patch);
-      this.save();
+      this.changeSettings(patch);
       this.render();
     };
     const tempoInput = h("input", { type: "number", min: "20", max: "240", step: "1", value: String(settings.tempo), "aria-label": "Standard tempo" });
@@ -570,8 +638,7 @@ export class PieceMode {
       const bpm = Math.round(60_000 / gaps[Math.floor(gaps.length / 2)]);
       if (bpm < 20 || bpm > 240) return;
       tempoInput.value = String(bpm);
-      this.open!.record.settings.tempo = bpm;
-      this.save();
+      this.changeSettings({ tempo: bpm });
       tapLabel.textContent = `♩ = ${bpm} from ${this.taps.length} taps`;
     }, "btn-secondary piece-tap");
 
@@ -620,13 +687,14 @@ export class PieceMode {
   private renderPhrases(): void {
     const open = this.open!;
     const { piece, record } = open;
+    const starts = () => open.record.phraseStarts;
     const count = h("span", { class: "menu-muted" });
     const sheet = h("div", { class: "piece-score piece-score-edit" });
     const scroller = h("div", { class: "piece-scroll" }, sheet);
-    const setStarts = (starts: number[]) => {
-      record.phraseStarts = [...new Set(starts.filter((s) => s > 0 && s < piece.measures.length))].sort((a, b) => a - b);
-      open.phrases = phrasesOf(record.phraseStarts, piece.measures.length);
-      this.save();
+    const setStarts = (wanted: number[]) => {
+      const phraseStarts = [...new Set(wanted.filter((s) => s > 0 && s < piece.measures.length))].sort((a, b) => a - b);
+      if (phraseStarts.join() !== starts().join()) this.commit({ type: "phrases-changed", phraseStarts });
+      open.phrases = phrasesOf(starts(), piece.measures.length);
       view.setBands(open.phrases);
       count.textContent = `${open.phrases.length} phrase${open.phrases.length === 1 ? "" : "s"}`;
     };
@@ -660,9 +728,9 @@ export class PieceMode {
       if (anchor !== at) {
         const from = Math.min(anchor, at);
         const to = Math.max(anchor, at);
-        setStarts([...record.phraseStarts.filter((s) => s <= from || s > to), from, to + 1]);
+        setStarts([...starts().filter((s) => s <= from || s > to), from, to + 1]);
       } else if (anchor > 0) {
-        setStarts(record.phraseStarts.includes(anchor) ? record.phraseStarts.filter((s) => s !== anchor) : [...record.phraseStarts, anchor]);
+        setStarts(starts().includes(anchor) ? starts().filter((s) => s !== anchor) : [...starts(), anchor]);
       }
     });
     sheet.addEventListener("pointercancel", () => {
@@ -696,13 +764,13 @@ export class PieceMode {
         scroller,
       ),
     );
-    void view.show(scoreXml(record.xml), piece).then(() => setStarts(record.phraseStarts));
+    void view.show(scoreXml(open.xml), piece).then(() => setStarts(starts()));
   }
 
   // ── Practice ─────────────────────────────────────────────────────────────────────
 
   private placeOf(place: PracticePlace): Practice {
-    const { piece, record, phrases } = this.open!;
+    const { piece, record, xml, phrases } = this.open!;
     const { settings } = record;
     if (place.kind === "intro") {
       const feature = pieceFeatures(piece).find((f) => f.id === place.feature)!;
@@ -721,7 +789,7 @@ export class PieceMode {
     if (place.kind === "full") {
       return {
         piece,
-        xml: scoreXml(record.xml),
+        xml: scoreXml(xml),
         firstMeasure: 0,
         order: playOrder(piece.measures),
         hand: "both",
@@ -735,7 +803,7 @@ export class PieceMode {
     const phrase = phrases[place.phrase];
     return {
       piece,
-      xml: scoreXml(record.xml, phrase),
+      xml: scoreXml(xml, phrase),
       firstMeasure: phrase.from,
       order: barRange(phrase.from, phrase.to),
       hand: place.step.hand,
@@ -748,14 +816,15 @@ export class PieceMode {
   }
 
   private progressAt(place: PracticePlace): StepProgress | undefined {
-    const { record, phrases } = this.open!;
-    if (place.kind === "intro") return record.intros?.[place.feature];
-    return place.kind === "full" ? record.progress.full : stepProgress(record.progress, phrases[place.phrase], place.step);
+    const { practice, phrases } = this.open!;
+    if (place.kind === "intro") return practice.intros[place.feature];
+    return place.kind === "full" ? practice.progress.full : stepProgress(practice.progress, phrases[place.phrase], place.step);
   }
 
   private renderPractice(place: PracticePlace): void {
     const open = this.open!;
     const { record, phrases } = open;
+    const pieceProgress = open.practice.progress;
     const info = this.placeOf(place);
     const progress = this.progressAt(place);
 
@@ -765,7 +834,7 @@ export class PieceMode {
             "div",
             { class: "piece-steps", role: "group", "aria-label": "Steps" },
             ...stepsFor(record.settings.plan).map((step) => {
-              const sp = stepProgress(record.progress, phrases[place.phrase], step);
+              const sp = stepProgress(pieceProgress, phrases[place.phrase], step);
               const current = stepKey(step) === stepKey(place.step);
               return button(`${sp?.passedAt ? "✓ " : ""}${stepLabel(step, record.settings.plan)}`, () => void this.go({ name: "practice", place: { ...place, step } }), "piece-step", {
                 "aria-pressed": String(current),
@@ -780,11 +849,11 @@ export class PieceMode {
       place.kind === "phrase" && place.phrase < phrases.length - 1
         ? button("Next phrase", () => {
             const target = place.phrase + 1;
-            const step = stepsFor(record.settings.plan).find((s) => !stepProgress(record.progress, phrases[target], s)?.passedAt) ?? place.step;
+            const step = stepsFor(record.settings.plan).find((s) => !stepProgress(pieceProgress, phrases[target], s)?.passedAt) ?? place.step;
             void this.go({ name: "practice", place: { kind: "phrase", phrase: target, step } });
           })
         : null;
-    const afterPass = this.justPassed && place.kind !== "intro" ? nextPlace(record.progress, phrases, record.settings.plan, place) : null;
+    const afterPass = this.justPassed && place.kind !== "intro" ? nextPlace(pieceProgress, phrases, record.settings.plan, place) : null;
     const nextStep =
       place.kind === "intro" && this.justPassed
         ? button("Back to the piece", () => void this.go({ name: "piece" }), "btn-primary")
@@ -796,10 +865,7 @@ export class PieceMode {
     const otherHand = h("input", { type: "checkbox" });
     otherHand.checked = record.settings.otherHand;
     otherHand.disabled = info.hand === "both";
-    otherHand.addEventListener("change", () => {
-      record.settings.otherHand = otherHand.checked;
-      this.save();
-    });
+    otherHand.addEventListener("change", () => this.changeSettings({ otherHand: otherHand.checked }));
 
     const sheet = h("div", { class: "piece-score" });
     const scroller = h("div", { class: "piece-scroll piece-scroll-practice" }, sheet);
@@ -810,16 +876,14 @@ export class PieceMode {
     const fingerings = h("input", { type: "checkbox" });
     fingerings.checked = record.settings.fingerings;
     fingerings.addEventListener("change", () => {
-      record.settings.fingerings = fingerings.checked;
-      this.save();
+      this.changeSettings({ fingerings: fingerings.checked });
       view.setFingerings(fingerings.checked);
     });
     view.setHighlightPlayed(record.settings.highlightPlayed);
     const highlight = h("input", { type: "checkbox" });
     highlight.checked = record.settings.highlightPlayed;
     highlight.addEventListener("change", () => {
-      record.settings.highlightPlayed = highlight.checked;
-      this.save();
+      this.changeSettings({ highlightPlayed: highlight.checked });
       view.setHighlightPlayed(highlight.checked);
     });
     this.scroller = scroller;
@@ -965,7 +1029,7 @@ export class PieceMode {
     if (record.settings.otherHand && info.hand !== "both") {
       this.soundQueue.play(queuedNotes(soundsOf(piece, span.others, info.tempo), session.start!, beatMs, 0.55));
     } else this.soundQueue.stop();
-    const pass: Pass = { session, span, timer: 0, slot: -1 };
+    const pass: Pass = { session, span, timer: 0, slot: -1, startedAt: Date.now() };
     this.pass = pass;
     this.refreshPractice();
     const step = () => {
@@ -1032,12 +1096,32 @@ export class PieceMode {
     const place = this.screen.place;
     const info = this.placeOf(place);
     const result = pass.session.result();
-    const { record, phrases } = this.open;
+    const open = this.open;
     const before = this.progressAt(place);
-    const after = recordPass(before, result.clean, info.streak, info.misses, Date.now());
-    if (place.kind === "intro") record.intros = { ...record.intros, [place.feature]: after };
-    else record.progress = place.kind === "full" ? { ...record.progress, full: after } : withStep(record.progress, phrases[place.phrase], place.step, after);
-    this.save();
+    const phrase = place.kind === "phrase" ? open.phrases[place.phrase] : undefined;
+    const event: PiecePass = {
+      type: "piece-pass",
+      v: 1,
+      id: newId(),
+      at: Date.now(),
+      startedAt: pass.startedAt,
+      session: this.deps.session,
+      pieceId: open.record.id,
+      scoreHash: open.record.scoreHash,
+      place: place.kind === "phrase" ? { kind: "phrase", from: phrase!.from, to: phrase!.to, hand: place.step.hand, speed: place.step.speed } : place,
+      tempo: info.tempo,
+      streak: info.streak,
+      misses: info.misses,
+      clean: result.clean,
+      notes: pass.session.targets.map((_, i) => pass.session.stateOf(i)),
+    };
+    this.passes.push(event);
+    this.log?.append(event).catch((error) => {
+      console.warn("Could not save the pass", error);
+      this.notice = { tone: "error", text: "Practice on this piece couldn't be saved to your account." };
+    });
+    open.practice = this.practiceOf(open.record.id);
+    const after = this.progressAt(place)!;
     const newlyPassed = before?.passedAt === undefined && after.passedAt !== undefined;
     if (newlyPassed) {
       this.looping = false;

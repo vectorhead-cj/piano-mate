@@ -1,4 +1,5 @@
 import { HAND_LABELS, type HandChoice } from "./piece";
+import type { PiecePass } from "../curriculum/events";
 
 /** "Slow first" earns each hand at the slow tempo before the standard one; "standard" goes straight there. */
 export type Plan = "slow-first" | "standard";
@@ -151,4 +152,32 @@ export function pieceDone(progress: PieceProgress, phrases: readonly Phrase[], p
     phrases.reduce((sum, phrase) => sum + steps.filter((s) => stepProgress(progress, phrase, s)?.passedAt).length, 0) +
     (progress.full?.passedAt ? 1 : 0);
   return { passed, total: phrases.length * steps.length + 1 };
+}
+
+/** What a piece's passes add up to: its phrase steps and full piece, and its intro drills by feature id. */
+export interface PiecePractice {
+  progress: PieceProgress;
+  intros: Record<string, StepProgress>;
+}
+
+/**
+ * Folds a piece's passes into its progress, oldest first, each under the streak rule it was
+ * played to. Progress is kept by the bars a phrase spans, so a phrase split later into the
+ * same bars finds it again.
+ */
+export function projectPieceProgress(passes: readonly PiecePass[]): PiecePractice {
+  let progress: PieceProgress = { phrases: {} };
+  const intros: Record<string, StepProgress> = {};
+  for (const pass of [...passes].sort((a, b) => a.at - b.at)) {
+    const { place } = pass;
+    const fold = (before: StepProgress | undefined) => recordPass(before, pass.clean, pass.streak, pass.misses, pass.at);
+    if (place.kind === "intro") intros[place.feature] = fold(intros[place.feature]);
+    else if (place.kind === "full") progress = { ...progress, full: fold(progress.full) };
+    else {
+      const phrase = { from: place.from, to: place.to };
+      const step = { hand: place.hand, speed: place.speed };
+      progress = withStep(progress, phrase, step, fold(stepProgress(progress, phrase, step)));
+    }
+  }
+  return { progress, intros };
 }

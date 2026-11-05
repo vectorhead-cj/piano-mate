@@ -31,7 +31,14 @@ export interface NoteOutcome {
 }
 
 export type PracticeContext =
-  | { kind: "curriculum"; clef: Clef; stageId: string; tier: Tier }
+  | {
+      kind: "curriculum";
+      clef: Clef;
+      stageId: string;
+      /** The stage's definition version (see stageVersion); left out by events from before, which were version 1. */
+      stageVersion?: number;
+      tier: Tier;
+    }
   | { kind: "custom" };
 
 /** "midi" only when every note-on in the phrase came from a MIDI device. */
@@ -87,6 +94,8 @@ export interface IntroCompleted {
   session: string;
   clef: Clef;
   stageId: string;
+  /** As in PracticeContext: left out by events from before versions, which were version 1. */
+  stageVersion?: number;
   skipped: boolean;
 }
 
@@ -104,7 +113,42 @@ export interface TrackStarted {
   stageId: string;
 }
 
-export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted;
+/**
+ * One pass at an imported piece (see src/piece): which bars, hand and tempo, the streak rule it
+ * was played under, and how each note went. A piece's progress is folded from these
+ * (src/piece/pieceProgress.ts projectPieceProgress), never stored.
+ */
+export interface PiecePass {
+  type: "piece-pass";
+  v: 1;
+  id: string;
+  /** Epoch ms the pass was graded. */
+  at: number;
+  /** Epoch ms the pass's count-in began. */
+  startedAt: number;
+  session: string;
+  /** The piece's id (its row in the `pieces` table). */
+  pieceId: string;
+  /** The score the pass was played from, by its hash: a piece may later point at another. */
+  scoreHash: string;
+  /** A phrase step (its bars as measure indices, inclusive), the whole piece, or an intro card's drill. */
+  place:
+    | { kind: "phrase"; from: number; to: number; hand: "left" | "right" | "both"; speed: "slow" | "standard" }
+    | { kind: "full" }
+    | { kind: "intro"; feature: string };
+  tempo: number;
+  /** The streak the step asked for when this was played, and the misses it allowed. */
+  streak: number;
+  misses: number;
+  clean: boolean;
+  /** Each graded note, in the order they fall: "pending" was never played. */
+  notes: ("pending" | "correct" | "late" | "wrong")[];
+}
+
+export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted | PiecePass;
+
+/** What curriculum progress and the activity chart are folded from; ProgressStore loads only these. */
+export const CURRICULUM_EVENT_TYPES = ["phrase-completed", "intro-completed", "track-started"] as const satisfies readonly PracticeEvent["type"][];
 
 const ALTER_TEXT: Record<Alter, string> = { [-1]: "b", 0: "", 1: "#" };
 

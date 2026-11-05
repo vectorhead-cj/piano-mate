@@ -122,11 +122,16 @@ The first version narrows and reshapes the decisions above around learning one p
 
 **Display.** Phrases are drawn as an excerpt of their own bars, with the signatures in force and without repeat signs. The full piece is the whole score, scrolling to the bar being played, with the current bar washed. Half-page turns are not built.
 
-**Storage.** For now in the browser's IndexedDB, keyed by a hash of the MusicXML. The Supabase bucket and `pieces` table of decision 6 come next, so pieces follow the player across devices.
+**Storage.** In the player's account, and only there: importing needs signing in. This settles decision 6, with some changes:
+
+- A piece has an id of its own, made at import, rather than being its file's hash. It points at its score by hash, so importing the same file again finds it, and a corrected file could replace the score without losing the piece's history (a `score-replaced` event; no UI for it yet).
+- The piece is a `pieces` row folded from `piece_events` (`piece-imported`, `phrases-changed`, `settings-changed`, `piece-archived`, ...) by a trigger in the database. Removing a piece archives it.
+- The score is always stored as gzipped MusicXML text, `.mxl` included (unzipped on import), at `scores/<user id>/<hash>.musicxml.gz`.
+- Each pass is a `piece-pass` event in `practice_events`: the bars, hand, speed and tempo, the streak rule in force, whether it was clean and how each note went. Progress is folded from them, never stored.
+- Whether the intro section is unfolded, and when a piece was last opened, stay in the browser.
 
 **Next:**
 
-- Supabase storage and sync.
 - Playable intros: a scale for the key, or a sample bar for a new note value.
 - Hold grading.
 - An on-screen keyboard for single-note steps.

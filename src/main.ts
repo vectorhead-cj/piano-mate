@@ -12,6 +12,7 @@ import {
   MISS_WINDOW,
   STAR_STREAK,
   placedStage,
+  stageVersion,
   stageReviews,
   stageTiers,
   tierMixes,
@@ -216,7 +217,8 @@ async function main(): Promise<void> {
   element("dev-notice").hidden = !import.meta.env.DEV;
   const resultElement = element("phrase-result");
   const banner = new PhraseResultBanner(resultElement);
-  const store = new ProgressStore(openEventLog());
+  const eventLog = openEventLog();
+  const store = new ProgressStore(eventLog);
   const accountDialog = bindAccountDialog(element<HTMLDialogElement>("account-dialog"));
   let account: string | null = null;
   void currentUser()
@@ -364,6 +366,9 @@ async function main(): Promise<void> {
     synth,
     soundMidiKeys: () => soundMidiKeys.checked,
     startKey: () => practice.retryPitch,
+    log: eventLog,
+    session,
+    signIn: () => accountDialog.open(),
   });
   const unlockAllBox = element<HTMLFormElement>("settings").elements.namedItem("unlockAll") as HTMLInputElement;
   try {
@@ -700,7 +705,7 @@ async function main(): Promise<void> {
     milestone = null;
     celebrating = null;
     intro = { clef, stageId, steps, index: 0, replay: store.progress[clef].stages[stageId].introDone, finished: false };
-    context = { kind: "curriculum", clef, stageId, tier: "read" };
+    context = { kind: "curriculum", clef, stageId, stageVersion: stageVersion(stage), tier: "read" };
     practice.holdStrictness = "coach";
     settings = {
       ...customSettings,
@@ -727,8 +732,9 @@ async function main(): Promise<void> {
       showView({ name: "curriculum", selected: { clef, stageId } });
       return;
     }
-    store.record({ type: "intro-completed", v: 1, id: newId(), at: Date.now(), session, clef, stageId, skipped });
-    startStage(clef, stageId, stageTiers(placedStage(stageId)!.stage)[0]);
+    const { stage } = placedStage(stageId)!;
+    store.record({ type: "intro-completed", v: 1, id: newId(), at: Date.now(), session, clef, stageId, stageVersion: stageVersion(stage), skipped });
+    startStage(clef, stageId, stageTiers(stage)[0]);
   }
 
   function stopIntro(): void {
@@ -763,7 +769,7 @@ async function main(): Promise<void> {
     stopIntro();
     milestone = null;
     celebrating = null;
-    context = { kind: "curriculum", clef, stageId, tier };
+    context = { kind: "curriculum", clef, stageId, stageVersion: stageVersion(stage), tier };
     practice.holdStrictness = tier === "fluent" ? "strict" : "coach";
     streakDots.reset(store.progress[clef].stages[stageId].tiers[tier].recent);
     settings = {

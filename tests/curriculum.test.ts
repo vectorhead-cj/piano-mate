@@ -173,6 +173,20 @@ describe("projectProgress", () => {
     expect(progress.bass.stages[first].unlocked).toBe(false);
   });
 
+  it("counts practice only against the stage version it was recorded for", () => {
+    const at = (stageVersion: number | undefined) => () => {
+      const event = phrase(first, "read", true);
+      return { ...event, context: { ...event.context, stageVersion } } as PhraseCompleted;
+    };
+    // Events from before versions were recorded have none: they were version 1.
+    for (const version of [undefined, 1]) {
+      expect(projectProgress([introDone(first), ...repeat(STAR_STREAK, at(version))]).treble.stages[first].stars).toBe(1);
+    }
+    // Practice on another definition of the stage, and its intro, doesn't count for this one.
+    const other = projectProgress([{ ...introDone(first), stageVersion: 2 }, ...repeat(STAR_STREAK, at(2))]).treble.stages[first];
+    expect(other).toMatchObject({ stars: 0, introDone: false });
+  });
+
   it("earns ★ for a streak that has at most one miss in a window", () => {
     const oneMiss = [phrase(first, "read", false), ...repeat(STAR_STREAK - 1, () => phrase(first, "read", true))];
     const stage = projectProgress([introDone(first), ...oneMiss]).treble.stages[first];

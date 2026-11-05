@@ -10,6 +10,7 @@ import {
   placedStage,
   STAR_HITS,
   STAR_STREAK,
+  stageVersionMatches,
   stageTiers,
   TIERS,
   type Tier,
@@ -123,6 +124,8 @@ export function projectProgress(events: readonly PracticeEvent[]): Progress {
   }
   for (const event of ordered) {
     if (event.type !== "phrase-completed" || event.context.kind !== "curriculum" || !countsForProgress(event)) continue;
+    // Practice on an earlier definition of the stage doesn't count for the one it has now.
+    if (!stageVersionMatches(event.context.stageId, event.context.stageVersion)) continue;
     const tier = tiersFor(event.context.clef, event.context.stageId)[event.context.tier];
     if (!tier) continue;
     tier.attempts++;
@@ -223,7 +226,11 @@ export function unlockAll(progress: Progress): Progress {
 
 /** Stages whose intro has been watched or skipped, in either track (notation is the same in both). */
 export function introsSeen(events: readonly PracticeEvent[]): Set<string> {
-  return new Set(events.flatMap((event) => (event.type === "intro-completed" ? [event.stageId] : [])));
+  return new Set(
+    events.flatMap((event) =>
+      event.type === "intro-completed" && stageVersionMatches(event.stageId, event.stageVersion) ? [event.stageId] : [],
+    ),
+  );
 }
 
 /** What a newly recorded phrase changed, for the after-phrase message. */

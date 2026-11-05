@@ -39,10 +39,14 @@ export const MASTERY_ROUNDS = 5;
 
 /**
  * One fixed configuration to practise. The id is what the event log stores, so it must
- * never change once released; everything else may be retuned.
+ * never change once released. Retuning is free (tempos, say), but a change to what the stage
+ * asks (its keys, span, accidentals, rhythm or notation) bumps `version`, and practice
+ * recorded against the earlier version stops counting for it.
  */
 export interface Stage {
   id: string;
+  /** What the definition is up to; 1 when left out. Events record it (see stageVersion). */
+  version?: number;
   keys: readonly string[];
   span: SpanId;
   accidentals: AccidentalFrequency;
@@ -226,6 +230,20 @@ export const PLACED_STAGES: readonly PlacedStage[] = CHAPTERS.flatMap((chapter, 
 
 export function placedStage(stageId: string): PlacedStage | undefined {
   return PLACED_STAGES.find((p) => p.stage.id === stageId);
+}
+
+/** The stage's definition version: 1 unless it says otherwise. */
+export function stageVersion(stage: Stage): number {
+  return stage.version ?? 1;
+}
+
+/**
+ * Whether practice recorded against `stageId` at `version` counts for the stage as it is now.
+ * Events from before versions were recorded have none, and were all of version 1.
+ */
+export function stageVersionMatches(stageId: string, version: number | undefined): boolean {
+  const placed = placedStage(stageId);
+  return placed !== undefined && stageVersion(placed.stage) === (version ?? 1);
 }
 
 /** Keys a stage is the first to use, in its own order; each gets its scale in the stage's intro. */
