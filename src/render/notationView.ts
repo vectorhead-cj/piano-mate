@@ -1,7 +1,7 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
 import { spellInKey } from "../music/accidentals";
-import { inScale, keyById, signatureLetters, type KeyInfo } from "../music/keys";
-import { hitsKeySignature } from "./keySignatureHit";
+import { inScale, keyById, signatureLetters } from "../music/keys";
+import { KeySpeaker, type KeyScaleHandlers } from "./keySpeaker";
 import { exerciseToMusicXml } from "../music/musicXml";
 import { staffStep } from "../music/pitch";
 import { BEATS } from "../music/rhythms";
@@ -114,6 +114,7 @@ export class NotationView {
   private wrongFlashTimer: number | undefined;
   private renderGeneration = 0;
   private ready = false;
+  private keySpeaker: KeySpeaker | null = null;
   private colors = readThemeColors();
   private staffLetters = false;
   private readonly lettersLayer = document.createElement("div");
@@ -177,11 +178,14 @@ export class NotationView {
     this.holdLayer.setAttribute("aria-hidden", "true");
   }
 
-  /** Calls `handler` with the phrase's key when its key signature is clicked. */
-  onKeySignature(handler: (key: KeyInfo) => void): void {
-    this.root.addEventListener("click", (event) => {
-      if (this.exercise && hitsKeySignature(this.root, event)) handler(keyById(this.exercise.key));
-    });
+  /** Adds a speaker button over the key signature that plays the phrase's key. */
+  setKeyScale(handlers: KeyScaleHandlers): void {
+    this.keySpeaker = new KeySpeaker(this.root, handlers);
+    this.placeKeySpeaker();
+  }
+
+  private placeKeySpeaker(): void {
+    if (this.exercise) this.keySpeaker?.place(keyById(this.exercise.key));
   }
 
   show(exercise: Exercise, options: NotationOptions): void {
@@ -423,6 +427,7 @@ export class NotationView {
       this.drawPlayed();
       this.drawHolds();
       this.drawNumbers();
+      this.placeKeySpeaker();
       if (this.keyCircle) this.root.append(this.keyCircle);
       return;
     }
@@ -445,6 +450,7 @@ export class NotationView {
     this.drawPlayed();
     this.drawHolds();
     this.drawNumbers();
+    this.placeKeySpeaker();
     if (this.keyCircle) this.root.append(this.keyCircle);
   }
 

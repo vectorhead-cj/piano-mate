@@ -49,6 +49,7 @@ import { PracticeController, RETRY_PITCH, type PhraseResult } from "./practice/p
 import { DEFAULT_SETTINGS, type Settings } from "./practice/settings";
 import type { Mark } from "./practice/waitSession";
 import { ScalePlayer } from "./audio/scalePlayer";
+import type { KeyInfo } from "./music/keys";
 import { KeyboardView, keyboardRangeFor } from "./render/keyboardView";
 import { NotationView } from "./render/notationView";
 import { bindAccountDialog } from "./ui/accountDialog";
@@ -163,7 +164,8 @@ async function main(): Promise<void> {
   const notationView = new NotationView(notationElement);
   const keyboard = new KeyboardView(keyboardElement);
   const scalePlayer = new ScalePlayer(synth, keyboard);
-  notationView.onKeySignature((key) => scalePlayer.play(key));
+  const keyScale = { play: (key: KeyInfo) => scalePlayer.play(key), preview: (key: KeyInfo | null) => scalePlayer.preview(key) };
+  notationView.setKeyScale(keyScale);
   let onPhraseShown: (() => void) | undefined;
   // Refresh the MusicXML dump whenever a phrase is drawn.
   const notation = {
@@ -375,7 +377,7 @@ async function main(): Promise<void> {
     synth,
     soundMidiKeys: () => soundMidiKeys.checked,
     startKey: () => practice.retryPitch,
-    playScale: (key) => scalePlayer.play(key),
+    keyScale,
     log: eventLog,
     session,
     signIn: () => accountDialog.open(),

@@ -21,6 +21,17 @@ export class ScalePlayer {
     private readonly keyboard: ScaleKeyboard,
   ) {}
 
+  /** Lights the key's scale on the keyboard without sounding it; null (or a played scale ending) clears it. */
+  preview(key: KeyInfo | null): void {
+    if (this.timers.length > 0) return;
+    this.clearLit();
+    if (!key) return;
+    for (const pitch of ascendingScale(key, this.keyboard.visibleRange.lowest)) {
+      this.keyboard.setScaleLit(pitch, true);
+      this.lit.push(pitch);
+    }
+  }
+
   play(key: KeyInfo): void {
     this.stop();
     this.synth.unlock();
@@ -40,6 +51,10 @@ export class ScalePlayer {
   stop(): void {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
+    this.clearLit();
+  }
+
+  private clearLit(): void {
     for (const pitch of this.lit) this.keyboard.setScaleLit(pitch, false);
     this.lit = [];
   }
