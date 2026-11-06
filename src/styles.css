@@ -3155,6 +3155,9 @@ dialog.account-dialog::backdrop {
 }
 
 .flashcard-actions {
+  /* The notation panel is positioned, so its shadow would otherwise paint over the buttons. */
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 0 0 auto;
   gap: 10px;
@@ -3248,6 +3251,20 @@ dialog.account-dialog::backdrop {
 
 .key.white .badge {
   bottom: 14px;
+}
+
+/* The key to find your way by: a quiet name at the top, clear of the black key beside it. */
+.key .landmark {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  color: var(--key-label);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.75;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .key.black .badge {

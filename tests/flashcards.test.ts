@@ -6,7 +6,7 @@ import { projectProgress } from "../src/curriculum/progress";
 import { ProgressStore } from "../src/curriculum/progressStore";
 import { spanLevel } from "../src/curriculum/spans";
 import { ALL_CONCEPTS, CONCEPTS, conceptById, conceptId, unlockedConcepts } from "../src/flashcards/concepts";
-import { CARD_NOTES, generateCard, MAX_WINDOW_KEYS, MIN_WINDOW_KEYS } from "../src/flashcards/cardGenerator";
+import { CARD_NOTES, generateCard, landmarkC, MAX_WINDOW_KEYS, MIN_WINDOW_KEYS } from "../src/flashcards/cardGenerator";
 import { EMPTY_ENTRY, placesByPitch, press } from "../src/flashcards/entry";
 import {
   answer,
@@ -315,6 +315,30 @@ describe("entering an answer", () => {
     const result = press(entry, 67, 4);
     expect(result.change).toBe("full");
     expect(result.entry).toBe(entry);
+  });
+});
+
+describe("landmarkC", () => {
+  it("is middle C when it is drawn", () => {
+    expect(landmarkC({ lowest: 55, highest: 67 })).toBe(60);
+  });
+
+  it("is the nearest C otherwise", () => {
+    expect(landmarkC({ lowest: 62, highest: 77 })).toBe(72);
+    expect(landmarkC({ lowest: 72, highest: 84 })).toBe(72);
+    expect(landmarkC({ lowest: 41, highest: 55 })).toBe(48);
+    expect(landmarkC({ lowest: 36, highest: 48 })).toBe(48);
+  });
+
+  it("names a key the card draws, for every concept", () => {
+    const random = seeded(7);
+    for (const concept of ALL_CONCEPTS) {
+      const { window } = generateCard(concept, MIN_WINDOW_KEYS, random);
+      const c = landmarkC(window);
+      expect(c % 12).toBe(0);
+      expect(c).toBeGreaterThanOrEqual(window.lowest);
+      expect(c).toBeLessThanOrEqual(window.highest);
+    }
   });
 });
 

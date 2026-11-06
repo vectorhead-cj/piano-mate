@@ -111,6 +111,16 @@ export class KeyboardView {
     else key.dataset.mark = mark;
   }
 
+  /** A small name at the top of one key to find your way by; null takes it off. */
+  setLandmark(midi: number | null, text = ""): void {
+    this.root.querySelector(".landmark")?.remove();
+    if (midi === null) return;
+    const landmark = document.createElement("span");
+    landmark.className = "landmark";
+    landmark.textContent = text;
+    this.keys.get(midi)?.append(landmark);
+  }
+
   /** Takes every badge and mark off. */
   clearAnnotations(): void {
     for (const midi of this.keys.keys()) {

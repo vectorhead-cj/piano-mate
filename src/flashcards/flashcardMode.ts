@@ -5,11 +5,11 @@ import type { NoteStream } from "../input/noteStream";
 import { attachScreenInput } from "../input/screenInput";
 import type { Synth } from "../audio/synth";
 import type { Random } from "../music/generator";
-import { isBlackKey } from "../music/pitch";
+import { isBlackKey, midiNoteName } from "../music/pitch";
 import type { NoteSource } from "../music/types";
 import { KeyboardView } from "../render/keyboardView";
 import { NotationView } from "../render/notationView";
-import { generateCard, MIN_WINDOW_KEYS, type Card } from "./cardGenerator";
+import { generateCard, landmarkC, MIN_WINDOW_KEYS, type Card } from "./cardGenerator";
 import { conceptTitle, unlockedConcepts, type Concept } from "./concepts";
 import { EMPTY_ENTRY, placesByPitch, press, type Entry } from "./entry";
 import {
@@ -345,6 +345,8 @@ export class FlashcardMode {
     if (state.kind === "asking") {
       this.notation.show(card.exercise, { showNames: false });
       this.keyboard.setRange(card.window.lowest, card.window.highest);
+      const landmark = landmarkC(card.window);
+      this.keyboard.setLandmark(landmark, midiNoteName(landmark));
       this.say("");
       this.renderEntry();
       return;

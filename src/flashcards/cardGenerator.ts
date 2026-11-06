@@ -1,7 +1,7 @@
 import { spanLevel } from "../curriculum/spans";
 import type { Random } from "../music/generator";
 import { keyAlter, keyById, type KeyInfo } from "../music/keys";
-import { isBlackKey, midiOf, naturalFromStaffStep, staffStep } from "../music/pitch";
+import { isBlackKey, midiOf, naturalFromStaffStep, pitchClass, staffStep } from "../music/pitch";
 import type { Alter, Exercise, Note, Spelling } from "../music/types";
 import type { Concept } from "./concepts";
 
@@ -13,6 +13,7 @@ export const MIN_WINDOW_KEYS = 8;
 export const MAX_WINDOW_KEYS = 15;
 /** Of a card's notes, at most this many are accidentals (a card with accidentals has at least one). */
 const MAX_ACCIDENTALS = 2;
+const MIDDLE_C = 60;
 
 export interface Card {
   concept: Concept;
@@ -25,6 +26,12 @@ export interface Card {
    * the card, so the edges don't say where the notes are. Every note lies inside it.
    */
   window: { lowest: number; highest: number };
+}
+
+/** The C to name on the keys: middle C if it is drawn, else the one nearest it. A window always holds a C. */
+export function landmarkC({ lowest, highest }: Card["window"]): number {
+  if (lowest > MIDDLE_C) return lowest + ((12 - pitchClass(lowest)) % 12);
+  return highest < MIDDLE_C ? highest - pitchClass(highest) : MIDDLE_C;
 }
 
 /** How a note off the key signature may be written: sharps in sharp keys, flats in flat keys. */
