@@ -1,6 +1,7 @@
 import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay";
 import { spellInKey } from "../music/accidentals";
-import { inScale, keyById, signatureLetters } from "../music/keys";
+import { inScale, keyById, signatureLetters, type KeyInfo } from "../music/keys";
+import { hitsKeySignature } from "./keySignatureHit";
 import { exerciseToMusicXml } from "../music/musicXml";
 import { staffStep } from "../music/pitch";
 import { BEATS } from "../music/rhythms";
@@ -174,6 +175,13 @@ export class NotationView {
     this.playedLayer.setAttribute("aria-hidden", "true");
     this.holdLayer.classList.add("hold-layer");
     this.holdLayer.setAttribute("aria-hidden", "true");
+  }
+
+  /** Calls `handler` with the phrase's key when its key signature is clicked. */
+  onKeySignature(handler: (key: KeyInfo) => void): void {
+    this.root.addEventListener("click", (event) => {
+      if (this.exercise && hitsKeySignature(this.root, event)) handler(keyById(this.exercise.key));
+    });
   }
 
   show(exercise: Exercise, options: NotationOptions): void {

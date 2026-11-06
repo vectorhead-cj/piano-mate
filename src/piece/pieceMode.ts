@@ -1,6 +1,7 @@
 import { Metronome } from "../audio/metronome";
 import { SoundQueue, type QueuedNote } from "../audio/soundQueue";
 import type { Synth } from "../audio/synth";
+import type { KeyInfo } from "../music/keys";
 import type { EventLog } from "../curriculum/eventLog";
 import { newId, type PiecePass } from "../curriculum/events";
 import type { NoteStream } from "../input/noteStream";
@@ -139,6 +140,8 @@ export interface PieceModeDependencies {
   log: Promise<EventLog>;
   /** This page load, as practice events record it. */
   session: string;
+  /** Plays a key's scale when its signature is clicked. */
+  playScale: (key: KeyInfo) => void;
   /** Opens the sign-in dialog: pieces need an account. */
   signIn: () => void;
 }
@@ -701,6 +704,7 @@ export class PieceMode {
     const every = (bars: number) => setStarts(Array.from({ length: Math.ceil(piece.measures.length / bars) }, (_, i) => i * bars));
     const view = new PieceScoreView(sheet, undefined, true);
     view.setFingerings(record.settings.fingerings);
+    view.onKeySignature((key) => this.deps.playScale(key));
     this.view = view;
     this.scroller = scroller;
     // Dragging across bars makes them one phrase; a tap on a bar starts a phrase there, or,
@@ -871,6 +875,7 @@ export class PieceMode {
     const scroller = h("div", { class: "piece-scroll piece-scroll-practice" }, sheet);
     const view = new PieceScoreView(sheet, undefined, true);
     view.setFingerings(record.settings.fingerings);
+    view.onKeySignature((key) => this.deps.playScale(key));
     this.view = view;
 
     const fingerings = h("input", { type: "checkbox" });

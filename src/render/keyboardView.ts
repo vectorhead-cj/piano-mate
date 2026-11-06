@@ -82,6 +82,11 @@ export class KeyboardView {
     this.keys.get(midi)?.classList.toggle("hold-guide", on);
   }
 
+  /** Lit as part of a scale being played back. */
+  setScaleLit(midi: number, on: boolean): void {
+    this.keys.get(midi)?.classList.toggle("scale-lit", on);
+  }
+
   /** A number on the key (the place it holds in an answer); null takes it off. */
   setBadge(midi: number, text: string | null): void {
     const key = this.keys.get(midi);

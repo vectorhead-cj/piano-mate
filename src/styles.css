@@ -1185,7 +1185,8 @@ dialog.midi-debug::backdrop {
 /* Pressed keys sink: the lip shrinks and the cast shadow tightens. Shadow lists keep the
    same length as the resting state so they animate instead of jumping. */
 /* Held keys take an accent tint so they read as lit for as long as they're down. */
-.key.white.pressed {
+.key.white.pressed,
+.key.white.scale-lit {
   background: color-mix(in srgb, var(--accent) 30%, var(--key-white-pressed));
   transform: translateY(2px);
   box-shadow:
@@ -1194,7 +1195,8 @@ dialog.midi-debug::backdrop {
     0 1px 2px var(--key-white-shadow);
 }
 
-.key.black.pressed {
+.key.black.pressed,
+.key.black.scale-lit {
   background: color-mix(in srgb, var(--accent) 55%, var(--key-black-pressed));
   transform: translateY(2px);
   box-shadow:

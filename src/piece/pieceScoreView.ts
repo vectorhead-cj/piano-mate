@@ -2,6 +2,7 @@ import { OpenSheetMusicDisplay, type GraphicalNote } from "opensheetmusicdisplay
 import { spellInKey } from "../music/accidentals";
 import { inScale, KEYS, MINOR_KEYS, type KeyInfo } from "../music/keys";
 import { staffStep } from "../music/pitch";
+import { hitsKeySignature } from "../render/keySignatureHit";
 import type { Hand, Piece } from "./piece";
 
 export type NoteMark = "pending" | "current" | "correct" | "late" | "wrong";
@@ -193,6 +194,17 @@ export class PieceScoreView {
       );
     }
     this.drawPlayed();
+  }
+
+  /**
+   * Calls `handler` with the key when a key signature is clicked: the minor key if the piece
+   * says so, otherwise major, as of the first bar drawn.
+   */
+  onKeySignature(handler: (key: KeyInfo) => void): void {
+    this.root.addEventListener("click", (event) => {
+      const info = this.piece?.measures[this.firstMeasure];
+      if (info && hitsKeySignature(this.sheet, event)) handler(keyOf(info.fifths, info.mode));
+    });
   }
 
   /** Draws `xml` (a whole piece, or the bars from `firstMeasure` on) and forgets earlier colours. */
