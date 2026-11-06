@@ -3221,8 +3221,7 @@ dialog.account-dialog::backdrop {
 .flashcards[data-state="done"] .flashcard-feedback,
 .flashcards[data-state="empty"] .flashcard-keys,
 .flashcards[data-state="done"] .flashcard-keys,
-.flashcards[data-state="empty"] [data-flashcard-secondary],
-.flashcards[data-state="done"] [data-flashcard-secondary] {
+.flashcards[data-state="empty"] [data-flashcard-secondary] {
   display: none;
 }
 

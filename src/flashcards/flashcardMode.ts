@@ -28,7 +28,15 @@ import {
 const MIN_KEY_PX = 40;
 /** Milliseconds between the notes when a card's answer is played back. */
 const HEAR_NOTE_MS = 600;
-const KIND_LABELS: Record<NextCard["kind"], string> = { new: "New", learning: "Learning", review: "Review" };
+/** Cards a custom practice can run for, offered when nothing is due. */
+const CUSTOM_COUNTS = [5, 10] as const;
+
+/** What a card on the table is: the scheduler's pick, or a custom practice card (not on the schedule). */
+interface Dealt {
+  concept: Concept;
+  kind: NextCard["kind"] | "custom";
+}
+const KIND_LABELS: Record<Dealt["kind"], string> = { new: "New", learning: "Learning", review: "Review", custom: "Custom" };
 
 /** What the home page says about the flashcards: how many are up, and whether any are unlocked. */
 export interface FlashcardSummary {
@@ -59,8 +67,8 @@ export interface FlashcardDeps {
 type State =
   | { kind: "empty" }
   | { kind: "done"; queue: Queue }
-  | { kind: "asking"; card: Card; next: NextCard; shownAt: number; entry: Entry; sources: Set<NoteSource> }
-  | { kind: "answered"; card: Card; next: NextCard; event: CardAnswered; consequence: string };
+  | { kind: "asking"; card: Card; next: Dealt; shownAt: number; entry: Entry; sources: Set<NoteSource>; left: number }
+  | { kind: "answered"; card: Card; next: Dealt; event: CardAnswered; consequence: string; left: number };
 
 function element<T extends HTMLElement>(root: HTMLElement, selector: string): T {
   const found = root.querySelector<T>(selector);
@@ -94,6 +102,8 @@ export class FlashcardMode {
   private active = false;
   private state: State = { kind: "empty" };
   private hearing: ReturnType<typeof setTimeout>[] = [];
+  /** Custom practice cards still to come after the one on the table. */
+  private customLeft = 0;
 
   constructor(private readonly deps: FlashcardDeps) {
     const { root } = deps;
@@ -135,6 +145,12 @@ export class FlashcardMode {
   /** Works out what is due now and shows it: the next card, or why there isn't one. */
   private advance(): void {
     this.stopHearing();
+    this.customLeft = 0;
+    this.dealNext();
+  }
+
+  /** Brings up the next card, or why there isn't one. */
+  private dealNext(): void {
     const now = this.now();
     const unlocked = unlockedConcepts(this.deps.store.progress, this.deps.store.allUnlocked);
     if (unlocked.length === 0) {
@@ -150,9 +166,37 @@ export class FlashcardMode {
             shownAt: now,
             entry: EMPTY_ENTRY,
             sources: new Set(),
+            left: 0,
           }
         : { kind: "done", queue };
     }
+    this.render();
+  }
+
+  /** Custom practice: `count` cards over the unlocked concepts, at random, outside the schedule. */
+  private startCustom(count: number): void {
+    this.customLeft = count;
+    this.dealCustom();
+  }
+
+  private dealCustom(): void {
+    const unlocked = unlockedConcepts(this.deps.store.progress, this.deps.store.allUnlocked);
+    if (this.customLeft <= 0 || unlocked.length === 0) {
+      this.advance();
+      return;
+    }
+    this.stopHearing();
+    this.customLeft--;
+    const concept = unlocked[Math.floor(this.random() * unlocked.length)];
+    this.state = {
+      kind: "asking",
+      card: this.dealCard(concept),
+      next: { concept, kind: "custom" },
+      shownAt: this.now(),
+      entry: EMPTY_ENTRY,
+      sources: new Set(),
+      left: this.customLeft,
+    };
     this.render();
   }
 
@@ -227,6 +271,8 @@ export class FlashcardMode {
       this.renderButtons();
     } else if (state.kind === "answered") {
       this.hear(state.card);
+    } else if (state.kind === "done") {
+      this.startCustom(CUSTOM_COUNTS[0]);
     }
   }
 
@@ -234,7 +280,8 @@ export class FlashcardMode {
   private onPrimary(): void {
     const state = this.state;
     if (state.kind === "asking") this.answer(state);
-    else if (state.kind === "answered") this.advance();
+    else if (state.kind === "answered") this.customLeft > 0 ? this.dealCustom() : this.advance();
+    else if (state.kind === "done") this.startCustom(CUSTOM_COUNTS[1]);
     else if (state.kind === "empty") this.deps.openCurriculum();
   }
 
@@ -256,9 +303,14 @@ export class FlashcardMode {
       answer: [...state.entry.pressed],
       input: inputKind(state.sources),
     };
-    this.deps.store.record(event);
-    const schedule = scheduleConcepts(this.deps.store.history).get(card.concept.id);
-    this.state = { kind: "answered", card, next: state.next, event, consequence: schedule ? dueText(schedule, at) : "" };
+    // Custom practice is extra: it is not logged, so it neither schedules nor moves a concept.
+    let consequence = "";
+    if (state.next.kind !== "custom") {
+      this.deps.store.record(event);
+      const schedule = scheduleConcepts(this.deps.store.history).get(card.concept.id);
+      consequence = schedule ? dueText(schedule, at) : "";
+    }
+    this.state = { kind: "answered", card, next: state.next, event, consequence, left: state.left };
     this.render();
   }
 
@@ -329,7 +381,11 @@ export class FlashcardMode {
 
   private renderDone(queue: Queue): void {
     const when = queue.nextAt === null ? "" : `The next card comes up ${whenText(this.now(), queue.nextAt)}.`;
-    this.message.append(this.paragraph("All done for now", "flashcard-message-title"), this.paragraph(when || "Nothing is due."));
+    this.message.append(
+      this.paragraph("All done for now", "flashcard-message-title"),
+      this.paragraph(when || "Nothing is due."),
+      this.paragraph("But feel free to do custom practice."),
+    );
     this.say("");
   }
 
@@ -372,7 +428,7 @@ export class FlashcardMode {
         : outcome === "unknown"
           ? "Here is the answer"
           : `${right} of ${hits.length} right`;
-    this.say(`${result} · back ${state.consequence}`);
+    this.say(state.consequence ? `${result} · back ${state.consequence}` : result);
     this.feedback.dataset.outcome = outcome;
   }
 
@@ -400,11 +456,15 @@ export class FlashcardMode {
       this.secondary.disabled = false;
       this.primary.textContent = "Next";
       this.primary.dataset.mode = "next";
+    } else if (state.kind === "done") {
+      this.secondary.textContent = `Custom practice ×${CUSTOM_COUNTS[0]}`;
+      this.secondary.disabled = false;
+      this.primary.textContent = `Custom practice ×${CUSTOM_COUNTS[1]}`;
+      this.primary.dataset.mode = "next";
     } else {
-      this.primary.textContent = state.kind === "empty" ? "Open curriculum" : "Done";
+      this.primary.textContent = "Open curriculum";
       this.primary.dataset.mode = "next";
     }
-    this.primary.hidden = state.kind === "done";
   }
 
   // --- Hearing the answer -----------------------------------------------------------------
