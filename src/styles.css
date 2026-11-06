@@ -2550,9 +2550,8 @@ dialog.account-dialog::backdrop {
 
 .activity-chart {
   display: grid;
-  grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
-  gap: 6px;
+  column-gap: 0;
   padding-top: 4px;
 }
 
@@ -2562,6 +2561,7 @@ dialog.account-dialog::backdrop {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  padding: 0 3px;
 }
 
 .activity-column {
@@ -2619,9 +2619,18 @@ dialog.account-dialog::backdrop {
   line-height: 1;
 }
 
+.activity-weekday[data-weekday="0"],
+.activity-weekday[data-weekday="6"] {
+  font-weight: 700;
+}
+
 .activity-day[data-today] .activity-weekday {
   color: var(--ink);
   font-weight: 700;
+}
+
+.activity-day .activity-weekday[data-weekday="0"] {
+  color: var(--wrong);
 }
 
 /* Pieces: an imported score's library, its page, the phrase editor and practice. The page

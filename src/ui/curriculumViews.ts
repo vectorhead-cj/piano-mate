@@ -133,19 +133,23 @@ function activityCard(activity: readonly DayActivity[]): HTMLElement {
     if (minutes(d) === 0) return `${date}: nothing`;
     return `${date}: ${[d.minutes > 0 && `${minutesText(d.minutes)} of phrases`, d.cardMinutes > 0 && `${minutesText(d.cardMinutes)} of flashcards`].filter(Boolean).join(", ")}`;
   };
-  const bars = activity.map((d, i) => {
+  // A quarter of a day's width between Sunday and Monday.
+  const startsWeek = (i: number) => i > 0 && new Date(activity[i].day).getDay() === 1;
+  const bars = activity.flatMap((d, i) => {
     const date = new Date(d.day);
     const phrases = h("span", { class: "activity-bar", "data-none": d.minutes > 0 ? undefined : "true" });
     phrases.style.height = `${(d.minutes / scale) * 100}%`;
     const cards = h("span", { class: "activity-bar cards", "data-none": d.cardMinutes > 0 ? undefined : "true" });
     cards.style.height = `${(d.cardMinutes / scale) * 100}%`;
-    return h(
+    const day = h(
       "span",
       { class: "activity-day", title: dayLabel(d), "data-today": i === activity.length - 1 ? "true" : undefined, "data-empty": minutes(d) > 0 ? undefined : "true" },
       h("span", { class: "activity-column" }, phrases, cards),
-      h("span", { class: "activity-weekday", "aria-hidden": "true" }, date.toLocaleDateString(undefined, { weekday: "narrow" })),
+      h("span", { class: "activity-weekday", "data-weekday": String(date.getDay()), "aria-hidden": "true" }, date.toLocaleDateString(undefined, { weekday: "narrow" })),
     );
+    return startsWeek(i) ? [h("span", { class: "activity-week-gap", "aria-hidden": "true" }), day] : [day];
   });
+  const columns = activity.map((_, i) => `${startsWeek(i) ? "0.25fr " : ""}1fr`).join(" ");
   const summary =
     daysPlayed === 0
       ? `Nothing played in the last ${activity.length} days`
@@ -153,10 +157,10 @@ function activityCard(activity: readonly DayActivity[]): HTMLElement {
   return h(
     "article",
     { class: "menu-card home-activity" },
-    h("div", { class: "home-activity-head" }, h("h2", { class: "menu-card-title" }, "Practice"), h("span", { class: "menu-muted" }, summary)),
+    h("div", { class: "home-activity-head" }, h("h2", { class: "menu-card-title" }, "Recent practice"), h("span", { class: "menu-muted" }, summary)),
     h(
       "div",
-      { class: "activity-chart", role: "img", "aria-label": `Minutes per day. ${activity.map(dayLabel).join(". ")}` },
+      { class: "activity-chart", style: `grid-template-columns: ${columns}`, role: "img", "aria-label": `Minutes per day. ${activity.map(dayLabel).join(". ")}` },
       ...bars,
     ),
     h("div", { class: "activity-legend", "aria-hidden": "true" }, h("span", {}, "Phrases"), h("span", { class: "cards" }, "Flashcards")),
