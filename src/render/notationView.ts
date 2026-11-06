@@ -176,6 +176,15 @@ export class NotationView {
     this.playedLayer.setAttribute("aria-hidden", "true");
     this.holdLayer.classList.add("hold-layer");
     this.holdLayer.setAttribute("aria-hidden", "true");
+    // Every view follows the theme itself: one built before the stored choice was applied (the
+    // flashcards') would otherwise keep drawing in the other theme's ink.
+    const onTheme = () => this.refreshTheme();
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onTheme);
+    new MutationObserver(onTheme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-app-theme"],
+    });
+    onTheme();
   }
 
   /** Adds a speaker button over the key signature that plays the phrase's key. */
