@@ -5,11 +5,12 @@ import type { NoteStream } from "../input/noteStream";
 import { attachScreenInput } from "../input/screenInput";
 import type { Synth } from "../audio/synth";
 import type { Random } from "../music/generator";
+import { isBlackKey } from "../music/pitch";
 import type { NoteSource } from "../music/types";
 import { KeyboardView } from "../render/keyboardView";
 import { NotationView } from "../render/notationView";
-import { generateCard, type Card } from "./cardGenerator";
-import { conceptTitle, unlockedConcepts } from "./concepts";
+import { generateCard, MIN_WINDOW_KEYS, type Card } from "./cardGenerator";
+import { conceptTitle, unlockedConcepts, type Concept } from "./concepts";
 import { EMPTY_ENTRY, placesByPitch, press, type Entry } from "./entry";
 import {
   buildQueue,
@@ -115,6 +116,7 @@ export class FlashcardMode {
     this.primary.addEventListener("click", () => this.onPrimary());
     document.addEventListener("keydown", (event) => this.onKey(event));
     new ResizeObserver(() => this.active && this.notation.draw()).observe(element(root, ".notation-sheet"));
+    new ResizeObserver(() => this.refitCard()).observe(this.keyboardElement);
   }
 
   /** The view has been shown: bring up the next card. */
@@ -143,7 +145,7 @@ export class FlashcardMode {
       this.state = next
         ? {
             kind: "asking",
-            card: generateCard(next.concept, Math.floor(this.keyboardElement.clientWidth / MIN_KEY_PX), this.random),
+            card: this.dealCard(next.concept),
             next,
             shownAt: now,
             entry: EMPTY_ENTRY,
@@ -151,6 +153,27 @@ export class FlashcardMode {
           }
         : { kind: "done", queue };
     }
+    this.render();
+  }
+
+  /** Measured on the view: the keyboard itself isn't laid out until there is a card to show. */
+  private keysThatFit(): number {
+    return Math.floor(this.deps.root.clientWidth / MIN_KEY_PX);
+  }
+
+  private dealCard(concept: Concept): Card {
+    return generateCard(concept, this.keysThatFit(), this.random);
+  }
+
+  /** The screen got narrower (a phone turned upright): a card not yet started is dealt again to fit. */
+  private refitCard(): void {
+    const { state } = this;
+    if (!this.active || state.kind !== "asking" || state.entry.pressed.length > 0) return;
+    const { lowest, highest } = state.card.window;
+    let keys = 0;
+    for (let midi = lowest; midi <= highest; midi++) if (!isBlackKey(midi)) keys++;
+    if (keys <= Math.max(MIN_WINDOW_KEYS, this.keysThatFit())) return;
+    state.card = this.dealCard(state.card.concept);
     this.render();
   }
 
