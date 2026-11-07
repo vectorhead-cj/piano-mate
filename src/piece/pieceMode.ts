@@ -198,6 +198,8 @@ export class PieceMode {
   private taps: number[] = [];
   /** Listening: the marks and cursor still to move with the music. */
   private soundTimers: number[] = [];
+  /** The Listen playback is sounding; its button reads Stop. */
+  private listening = false;
   /** The synth's notes still to sound: the other hand, or all of it when listening. */
   private readonly soundQueue: SoundQueue;
 
@@ -870,7 +872,7 @@ export class PieceMode {
         : afterPass && !samePlace(afterPass, place)
           ? button(`Next: ${this.placeName(afterPass)}`, () => void this.go({ name: "practice", place: afterPass }), "btn-primary")
           : null;
-    const listen = button("Listen", () => this.listen(), "btn-secondary piece-listen");
+    const listen = button(this.listening ? "Stop" : "Listen", () => (this.listening ? this.stopListening() : this.listen()), "btn-secondary piece-listen");
 
     const otherHand = h("input", { type: "checkbox" });
     otherHand.checked = record.settings.otherHand;
@@ -965,6 +967,7 @@ export class PieceMode {
   private listen(): void {
     if (this.screen.name !== "practice" || !this.view) return;
     this.stop();
+    this.listening = true;
     this.refreshPractice();
     this.deps.synth.unlock();
     const info = this.placeOf(this.screen.place);
@@ -990,7 +993,17 @@ export class PieceMode {
         if (this.scroller) view.scrollToBar(measure, this.scroller);
       }),
     );
-    at(span.length, () => view.setCursor(null));
+    at(span.length, () => {
+      view.setCursor(null);
+      this.listening = false;
+      this.refreshPractice();
+    });
+  }
+
+  /** The Stop button: silences Listen and puts the score back as it was. */
+  private stopListening(): void {
+    this.stop();
+    this.refreshPractice();
   }
 
   /** The notation panel's tag: live while passes run, otherwise how to start. */
@@ -1040,6 +1053,8 @@ export class PieceMode {
     const page = this.root.querySelector(".piece-practice");
     const start = page?.querySelector<HTMLButtonElement>(".piece-start");
     if (start) start.textContent = this.looping ? "Stop" : "Start";
+    const listen = page?.querySelector<HTMLButtonElement>(".piece-listen");
+    if (listen) listen.textContent = this.listening ? "Stop" : "Listen";
     const hot = page?.querySelector<HTMLElement>(".notation-panel");
     if (hot) hot.dataset.hot = String(this.looping);
     const state = page?.querySelector<HTMLElement>(".hot-state");
@@ -1196,6 +1211,8 @@ export class PieceMode {
   }
 
   private stop(): void {
+    if (this.listening) this.view?.clearMarks();
+    this.listening = false;
     this.looping = false;
     clearTimeout(this.nextPassTimer);
     this.clearPass();
