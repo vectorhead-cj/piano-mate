@@ -70,6 +70,21 @@ function readColors(): Record<NoteMark, string> {
   return colors;
 }
 
+/** Drawn notes that sound together in one staff, in CSS pixels from the top left of the score. */
+interface Column {
+  staff: StaffBox;
+  x: number;
+  notes: { midi: number; x: number; y: number }[];
+}
+
+/** Staff spaces around a staff that still count as on it for the pointer. */
+const HOVER_PAD_UNITS = 2;
+/** Half the width of a notehead, and of its height, in staff spaces. */
+const HEAD_HALF_WIDTH_UNITS = 0.8;
+const HEAD_HALF_HEIGHT_UNITS = 0.6;
+/** How far from a column's centre the pointer still picks it, in staff spaces. */
+const COLUMN_REACH_UNITS = 2;
+
 /** A bar's place on the drawn page, in CSS pixels from the top left of the score. */
 export interface BarBox {
   measure: number;
@@ -92,6 +107,7 @@ export class PieceScoreView {
   private drawn = new Map<number, GraphicalNote[]>();
   private boxes: BarBox[] = [];
   private staffBoxes: StaffBox[] = [];
+  private columns: Column[] = [];
   /** Played keys show as lit staff lines and spaces, behind the music; only in free play. */
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   private highlightPlayed = false;
@@ -274,6 +290,29 @@ export class PieceScoreView {
     return hit?.measure ?? null;
   }
 
+  /**
+   * The pitches under a point on the screen: the one note if it's on a notehead, otherwise every
+   * note sounding with the nearest one along the staff it's over; null away from any.
+   */
+  pitchesAt(clientX: number, clientY: number): number[] | null {
+    const origin = this.sheet.getBoundingClientRect();
+    const x = clientX - origin.left;
+    const y = clientY - origin.top;
+    const unit = 10 * this.osmd.Zoom;
+    const over = this.staffBoxes.filter(
+      (s) => x >= s.left && x <= s.right && y >= s.bottom - (4 + HOVER_PAD_UNITS) * unit && y <= s.bottom + HOVER_PAD_UNITS * unit,
+    );
+    let best: { column: Column; distance: number } | null = null;
+    for (const column of this.columns) {
+      if (!over.includes(column.staff)) continue;
+      const head = column.notes.find((n) => Math.abs(x - n.x) <= HEAD_HALF_WIDTH_UNITS * unit && Math.abs(y - n.y) <= HEAD_HALF_HEIGHT_UNITS * unit);
+      if (head) return [head.midi];
+      const distance = Math.abs(x - column.x);
+      if (distance <= COLUMN_REACH_UNITS * unit && (!best || distance < best.distance)) best = { column, distance };
+    }
+    return best ? best.column.notes.map((n) => n.midi) : null;
+  }
+
   barBox(measure: number): BarBox | undefined {
     return this.boxes.find((b) => b.measure === measure);
   }
@@ -297,6 +336,7 @@ export class PieceScoreView {
     this.drawn = new Map();
     this.boxes = [];
     this.staffBoxes = [];
+    this.columns = [];
     this.osmd.GraphicSheet.MeasureList.forEach((staves, j) => {
       const measure = this.firstMeasure + j;
       staves.forEach((graphical, staff) => {
@@ -310,7 +350,9 @@ export class PieceScoreView {
           bottom: (shape.AbsolutePosition.y + 4) * unit,
         });
         const hand: Hand = staff === 1 ? "left" : "right";
+        const staffBox = this.staffBoxes[this.staffBoxes.length - 1];
         for (const entry of graphical.staffEntries) {
+          const column: Column = { staff: staffBox, x: entry.PositionAndShape.AbsolutePosition.x * unit, notes: [] };
           const offset = Math.round(entry.relInMeasureTimestamp.RealValue * 4 * 9600) / 9600;
           for (const voice of entry.graphicalVoiceEntries) {
             const grace = voice.parentVoiceEntry.IsGrace ? "g" : "";
@@ -319,8 +361,11 @@ export class PieceScoreView {
               const index = byKey.get(`${grace}${measure}|${hand}|${offset}|${note.sourceNote.halfTone + HALFTONE_TO_MIDI}`);
               if (index === undefined) continue;
               this.drawn.set(index, [...(this.drawn.get(index) ?? []), note]);
+              const at = note.PositionAndShape.AbsolutePosition;
+              column.notes.push({ midi: piece.notes[index].midi, x: at.x * unit, y: at.y * unit });
             }
           }
+          if (column.notes.length > 0) this.columns.push(column);
         }
       });
       const top = staves[0];

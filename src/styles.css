@@ -1135,8 +1135,14 @@ dialog.midi-debug::backdrop {
 }
 
 /* A third of the full height, for players reading from the score rather than the keys. */
-:root[data-keyboard-height="small"] .keyboard {
+:root[data-keyboard-height="small"] .keyboard,
+:root[data-keyboard-height="hidden"] .keyboard {
   height: clamp(43px, 10dvh, 84px);
+}
+
+/* Hidden applies to pieces, where the music is read from the score; other views keep the small keys. */
+:root[data-keyboard-height="hidden"] .app[data-view="pieces"] .keyboard-area {
+  display: none;
 }
 
 .key {
@@ -1214,6 +1220,15 @@ dialog.midi-debug::backdrop {
 .key.white.flash-wrong,
 .key.black.flash-wrong {
   background: var(--wrong);
+}
+
+/* Under the mouse in a piece's score: the key, or the chord, the pointer is on. */
+.key.white.hover-lit {
+  background: color-mix(in srgb, var(--accent) 30%, var(--key-white-pressed));
+}
+
+.key.black.hover-lit {
+  background: color-mix(in srgb, var(--accent) 55%, var(--key-black-pressed));
 }
 
 /* Hold guide: lit for as long as the note should be held. */

@@ -1,10 +1,12 @@
 import { Metronome } from "../audio/metronome";
 import { SoundQueue, type QueuedNote } from "../audio/soundQueue";
 import type { Synth } from "../audio/synth";
+import { KeyboardView, keyboardRangeFor } from "../render/keyboardView";
 import type { KeyScaleHandlers } from "../render/keySpeaker";
 import type { EventLog } from "../curriculum/eventLog";
 import { newId, type PiecePass } from "../curriculum/events";
 import type { NoteStream } from "../input/noteStream";
+import { attachScreenInput } from "../input/screenInput";
 import { midiNoteName } from "../music/pitch";
 import type { NoteEvent } from "../music/types";
 import { pieceFeatures, type FeatureScore, type PieceFeature } from "./features";
@@ -181,6 +183,8 @@ export class PieceMode {
   private visible = false;
   private view: PieceScoreView | null = null;
   private scroller: HTMLElement | null = null;
+  /** The practice screen's on-screen keys: they follow MIDI, light under the mouse on the score, and play when clicked. */
+  private keyboard: KeyboardView | null = null;
   private readonly metronome: Metronome;
   /** Practising: passes follow one another until stopped or the step is passed. */
   private looping = false;
@@ -287,6 +291,7 @@ export class PieceMode {
   private render(): void {
     const scrolled = this.root.dataset.screen === this.screen.name ? this.root.scrollTop : 0;
     this.view = null;
+    this.keyboard = null;
     this.examples = [];
     this.scroller = null;
     this.root.dataset.screen = this.screen.name;
@@ -886,6 +891,16 @@ export class PieceMode {
       view.setFingerings(fingerings.checked);
     });
     view.setHighlightPlayed(this.deps.highlightPlayed());
+    sheet.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      this.keyboard?.setHover(view.pitchesAt(event.clientX, event.clientY) ?? []);
+    });
+    sheet.addEventListener("pointerleave", () => this.keyboard?.setHover([]));
+    const keys = h("div", { class: "keyboard" });
+    keys.addEventListener("pointerdown", () => this.deps.synth.unlock(), { capture: true });
+    attachScreenInput(keys, this.deps.stream);
+    const keyArea = h("section", { class: "keyboard-area", "aria-label": "Keyboard" }, keys);
+    this.keyboard = new KeyboardView(keys);
     this.scroller = scroller;
 
     const hotState = h("div", { class: "hot-state", "aria-live": "polite" }, this.hotText());
@@ -919,7 +934,19 @@ export class PieceMode {
         ),
       ),
     );
+    this.root.querySelector(".piece-practice")!.append(keyArea);
+    this.fitKeyboard(info.piece);
     void view.show(info.xml, info.piece, info.firstMeasure);
+  }
+
+  /** Draws keys over the piece's whole range, at least as many octaves as fit the width. */
+  private fitKeyboard(piece: Piece): void {
+    const keyboard = this.keyboard;
+    if (!keyboard) return;
+    const pitches = piece.notes.filter((n) => !n.grace).map((n) => n.midi);
+    if (pitches.length === 0) return;
+    const { lowest, highest } = keyboardRangeFor(Math.min(...pitches), Math.max(...pitches), this.root.clientWidth);
+    keyboard.setRange(lowest, highest);
   }
 
   /** Plays the music through with the cursor and notes following, both hands, at the step's tempo. */
@@ -1066,7 +1093,16 @@ export class PieceMode {
   }
 
   private onNote(event: NoteEvent): void {
-    if (!this.visible || event.source !== "midi") return;
+    if (!this.visible) return;
+    this.keyboard?.setPressed(event.pitch, event.kind === "on");
+    if (event.source === "screen") {
+      // Clicked keys sound and light the staff, but only a real keyboard is graded.
+      this.view?.setHighlightPlayed(this.deps.highlightPlayed());
+      this.view?.setPlayed(event.pitch, event.kind === "on");
+      if (event.kind === "on") this.deps.synth.play(event.pitch, event.velocity);
+      return;
+    }
+    if (event.source !== "midi") return;
     if (event.pitch === this.deps.startKey()) {
       if (event.kind === "on") this.toggle();
       return;

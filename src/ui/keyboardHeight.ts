@@ -1,11 +1,12 @@
-export type KeyboardHeight = "large" | "small";
+export type KeyboardHeight = "large" | "small" | "hidden";
 
 const STORAGE_KEY = "piano-mate.keyboardHeight";
-const CHOICES: readonly KeyboardHeight[] = ["large", "small"];
+const CHOICES: readonly KeyboardHeight[] = ["large", "small", "hidden"];
 
 /**
- * Wires the Large / Small keyboard radios. Small sets data-keyboard-height on <html>, which
- * styles.css uses to shrink the on-screen keyboard and give the music the space.
+ * Wires the Large / Small / Hidden keyboard radios. Small sets data-keyboard-height on <html>, which
+ * styles.css uses to shrink the on-screen keyboard and give the music the space. Hidden removes it in piece
+ * practice only; elsewhere it looks like Small.
  */
 export function bindKeyboardHeight(form: HTMLFormElement): void {
   const radios = form.elements.namedItem("keyboardHeight") as RadioNodeList;

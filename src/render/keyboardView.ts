@@ -87,6 +87,11 @@ export class KeyboardView {
     this.keys.get(midi)?.classList.toggle("scale-lit", on);
   }
 
+  /** Keys lit while the pointer is on notes in the score; an empty list clears them. */
+  setHover(midis: readonly number[]): void {
+    for (const [midi, key] of this.keys) key.classList.toggle("hover-lit", midis.includes(midi));
+  }
+
   /** A number on the key (the place it holds in an answer); null takes it off. */
   setBadge(midi: number, text: string | null): void {
     const key = this.keys.get(midi);
