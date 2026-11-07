@@ -896,6 +896,18 @@ export class PieceMode {
       this.keyboard?.setHover(view.pitchesAt(event.clientX, event.clientY) ?? []);
     });
     sheet.addEventListener("pointerleave", () => this.keyboard?.setHover([]));
+    // Clicking the highlighted notes plays them together; a pass being graded stays quiet.
+    sheet.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const pitches = view.pitchesAt(event.clientX, event.clientY);
+      if (!pitches || this.looping) return;
+      this.deps.synth.unlock();
+      for (const pitch of pitches) this.deps.synth.play(pitch);
+      if (event.pointerType === "touch") {
+        this.keyboard?.setHover(pitches);
+        window.setTimeout(() => this.keyboard?.setHover([]), 400);
+      }
+    });
     const keys = h("div", { class: "keyboard" });
     keys.addEventListener("pointerdown", () => this.deps.synth.unlock(), { capture: true });
     attachScreenInput(keys, this.deps.stream);
