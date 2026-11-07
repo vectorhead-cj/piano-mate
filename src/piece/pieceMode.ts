@@ -134,6 +134,8 @@ export interface PieceModeDependencies {
   synth: Synth;
   /** MIDI keys sound through the synth (the display setting). */
   soundMidiKeys: () => boolean;
+  /** Played keys light the staff in free play (the display setting). */
+  highlightPlayed: () => boolean;
   /** The MIDI key that starts and stops, as elsewhere in the app. */
   startKey: () => number;
   /** Where passes are recorded, with the rest of practice. */
@@ -680,7 +682,6 @@ export class PieceMode {
         toggle("Synth plays the other hand", settings.otherHand, (otherHand) => update({ otherHand })),
         toggle("Metronome through each pass", settings.metronome, (metronome) => update({ metronome })),
         toggle("Show fingering", settings.fingerings, (fingerings) => update({ fingerings })),
-        toggle("Light the staff for keys you play", settings.highlightPlayed, (highlightPlayed) => update({ highlightPlayed })),
       ),
     );
   }
@@ -884,13 +885,7 @@ export class PieceMode {
       this.changeSettings({ fingerings: fingerings.checked });
       view.setFingerings(fingerings.checked);
     });
-    view.setHighlightPlayed(record.settings.highlightPlayed);
-    const highlight = h("input", { type: "checkbox" });
-    highlight.checked = record.settings.highlightPlayed;
-    highlight.addEventListener("change", () => {
-      this.changeSettings({ highlightPlayed: highlight.checked });
-      view.setHighlightPlayed(highlight.checked);
-    });
+    view.setHighlightPlayed(this.deps.highlightPlayed());
     this.scroller = scroller;
 
     const hotState = h("div", { class: "hot-state", "aria-live": "polite" }, this.hotText());
@@ -920,7 +915,6 @@ export class PieceMode {
             { class: "piece-options" },
             h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
             h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
-            h("label", { class: "toggle piece-other" }, highlight, h("span", {}, "Light played keys")),
           ),
         ),
       ),
@@ -1077,6 +1071,7 @@ export class PieceMode {
       if (event.kind === "on") this.toggle();
       return;
     }
+    this.view?.setHighlightPlayed(this.deps.highlightPlayed());
     this.view?.setPlayed(event.pitch, event.kind === "on");
     if (event.kind !== "on") return;
     if (this.deps.soundMidiKeys()) this.deps.synth.play(event.pitch, event.velocity);

@@ -376,6 +376,7 @@ async function main(): Promise<void> {
     stream,
     synth,
     soundMidiKeys: () => soundMidiKeys.checked,
+    highlightPlayed: () => highlightPlayed.checked,
     startKey: () => practice.retryPitch,
     keyScale,
     log: eventLog,

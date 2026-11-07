@@ -2658,9 +2658,13 @@ dialog.account-dialog::backdrop {
   padding-bottom: 0;
 }
 
-.pieces[data-screen="phrases"],
-.pieces[data-screen="practice"] {
+.pieces[data-screen="phrases"] {
   overflow: hidden;
+}
+
+/* Not clipped: the hot panel's 2px ring sits outside its box, flush with this one's edges. */
+.pieces[data-screen="practice"] {
+  overflow: visible;
 }
 
 .piece-import {
