@@ -109,7 +109,8 @@ export function playSpan(piece: Piece, order: readonly number[], hand: HandChoic
   let at = 0;
   order.forEach((measure, slot) => {
     slotStarts.push(at);
-    const restruck = (heldByMeasure.get(measure) ?? []).filter((held) => slot === 0 || order[slot - 1] !== held.from);
+    // A tie within the bar is always held on; one from an earlier bar only if the span just played that bar.
+    const restruck = (heldByMeasure.get(measure) ?? []).filter((held) => held.from !== measure && (slot === 0 || order[slot - 1] !== held.from));
     const pressed = [...(byMeasure.get(measure) ?? []), ...restruck.map((held) => held.index)].sort((a, b) => a - b);
     for (const index of pressed) {
       const note = piece.notes[index];

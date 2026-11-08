@@ -143,6 +143,15 @@ describe("PieceSession", () => {
     expect(playSpan(tied, [0, 1], "right").targets.map((t) => t.notes)).toEqual([[0, 1], [2]]);
   });
 
+  it("holds a tie within the span's first bar on", () => {
+    const tied: Piece = {
+      ...piece(),
+      notes: [n("right", 72, 0, 2, { tieNext: 1 }), n("right", 72, 2, 1, { tiedFrom: true }), n("right", 74, 3, 1)],
+    };
+    expect(playSpan(tied, [0], "right").targets.map((t) => t.notes)).toEqual([[0, 1], [2]]);
+    expect(playSpan(tied, [0, 0], "right").targets.map((t) => t.notes)).toEqual([[0, 1], [2], [0, 1], [2]]);
+  });
+
   it("doesn't grade a trill, and lets its keys be played any way", () => {
     const trilled: Piece = {
       ...piece(),
