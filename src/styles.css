@@ -263,6 +263,11 @@ body::before {
   width: 100%;
 }
 
+/* The piece practice screen uses the full-width stage, like practice elsewhere. */
+.app[data-view="pieces"]:has(.piece-practice) .topbar {
+  max-width: none;
+}
+
 /* Logo lockup: three keys (the first lit), a hairline, then the script name. */
 .brand-name {
   position: relative;
