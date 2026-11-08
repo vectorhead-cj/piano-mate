@@ -348,8 +348,10 @@ async function main(): Promise<void> {
         if (rhythm) renderDots(dotsOf("rhythm"), rhythm, "Rhythm");
       },
     },
+    // Listen is started and stopped by clicking; the start key and Space only drive practice.
+    startKeyBlocked: () => player.playing,
     onHotChange(hot) {
-      // Going hot from the MIDI start key interrupts a playback; it also means staying put.
+      // Starting practice (by its button) interrupts a playback; it also means staying put.
       if (hot) {
         player.stop();
         closeMilestone();
@@ -1039,8 +1041,8 @@ async function main(): Promise<void> {
     // Leave Space alone where it already means something (a focused button clicks itself).
     if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
     event.preventDefault();
+    if (player.playing) return;
     synth.unlock();
-    player.stop();
     practice.toggleHot();
   });
   slowDown.addEventListener("click", () => {

@@ -106,6 +106,8 @@ export interface PracticeDependencies {
   random?: Random;
   /** Fired when practice goes hot (attempts graded) or cold (free play). */
   onHotChange?: (hot: boolean) => void;
+  /** True while a playback owns the keys: the start key and Space then leave it alone. */
+  startKeyBlocked?: () => boolean;
   onPhraseComplete?: (result: PhraseResult) => void;
   onRetryChange?: (state: RetryState) => void;
   /** Every key pressed or released (not the start/stop key), hot or cold. */
@@ -194,7 +196,7 @@ export class PracticeController {
         return;
       }
       if (event.source === "midi" && event.pitch === this.retryPitch) {
-        if (event.kind === "on") this.toggleHot();
+        if (event.kind === "on" && !deps.startKeyBlocked?.()) this.toggleHot();
         return;
       }
       // Sound first, before any DOM/VexFlow work — heavy sync work in the same

@@ -214,7 +214,8 @@ export class PieceMode {
       if (!this.visible || this.screen.name !== "practice" || event.code !== "Space" || event.repeat) return;
       if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
       event.preventDefault();
-      this.toggle();
+      // Listen is started and stopped by clicking; Space only drives practice.
+      if (!this.listening) this.toggle();
     });
     new ResizeObserver(() => {
       this.view?.draw();
@@ -1133,7 +1134,7 @@ export class PieceMode {
     }
     if (event.source !== "midi") return;
     if (event.pitch === this.deps.startKey()) {
-      if (event.kind === "on") this.toggle();
+      if (event.kind === "on" && !this.listening) this.toggle();
       return;
     }
     this.view?.setHighlightPlayed(this.deps.highlightPlayed());
