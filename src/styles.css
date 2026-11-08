@@ -244,6 +244,25 @@ body::before {
   gap: 12px;
 }
 
+/* On the narrower pages the header buttons line up with the content below, not the window. */
+.app[data-view="home"] .topbar {
+  max-width: 880px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.app[data-view="curriculum"] .topbar {
+  max-width: 760px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.app[data-view="pieces"] .topbar {
+  max-width: 980px;
+  margin-inline: auto;
+  width: 100%;
+}
+
 /* Logo lockup: three keys (the first lit), a hairline, then the script name. */
 .brand-name {
   position: relative;
