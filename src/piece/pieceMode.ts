@@ -235,6 +235,19 @@ export class PieceMode {
     this.metronome = new Metronome({ click: (accent, bell) => deps.synth.click(accent, bell) });
     this.soundQueue = new SoundQueue(deps.synth);
     deps.stream.subscribe((event) => this.onNote(event));
+    // Full width gives long scores more measures per line; it only differs from the menu's width on a wide window.
+    const widthToggle = document.getElementById("piece-width");
+    const showWidth = () => {
+      const wide = pieceWide();
+      widthToggle?.setAttribute("aria-pressed", String(wide));
+      widthToggle?.setAttribute("aria-label", wide ? "Narrow" : "Widen");
+    };
+    showWidth();
+    widthToggle?.addEventListener("click", () => {
+      setPieceWide(!pieceWide());
+      showWidth();
+      if (this.screen.name === "practice") this.fitKeyboard(this.placeOf(this.screen.place).piece);
+    });
     document.addEventListener("keydown", (event) => {
       if (this.visible && this.screen.name === "practice" && event.key === "Escape" && this.focus) {
         this.setFocus(null);
@@ -860,7 +873,8 @@ export class PieceMode {
       streak: settings.streak,
       misses: settings.misses,
       title: `Phrase ${place.phrase + 1} of ${phrases.length} · ${this.barsText(phrase)}`,
-      detail: `${stepLabel(place.step, settings.plan)} · ♩ = ${stepTempo(settings, place.step.speed)}`,
+      // The step is already shown by the selected chip above.
+      detail: `♩ = ${stepTempo(settings, place.step.speed)}`,
     };
   }
 
@@ -896,14 +910,6 @@ export class PieceMode {
             }),
           )
         : null;
-
-    // Full width gives long scores more measures per line; it only differs from the menu's width on a wide window.
-    const widthToggle = button(pieceWide() ? "Narrow" : "Widen", () => {
-      setPieceWide(!pieceWide());
-      widthToggle.textContent = pieceWide() ? "Narrow" : "Widen";
-      widthToggle.setAttribute("aria-pressed", String(pieceWide()));
-      this.fitKeyboard(info.piece);
-    }, "btn-secondary piece-width", { "aria-pressed": String(pieceWide()), title: "Switch between the menu's width and the full window" });
 
     const startButton = button(this.looping ? "Stop" : "Start", () => this.toggle(), "btn-secondary piece-start");
     const nextPhrase =
@@ -1014,7 +1020,7 @@ export class PieceMode {
           "div",
           { class: "practice-bar" },
           h("div", { class: "practice-bar-title" }, h("span", { class: "practice-bar-name" }, info.title), h("span", { class: "practice-bar-number" }, `${record.title} · ${info.detail}`)),
-          h("div", { class: "practice-bar-tools" }, chips, widthToggle),
+          chips,
         ),
         h(
           "div",

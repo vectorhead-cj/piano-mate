@@ -284,18 +284,26 @@ body::before {
   max-width: none;
 }
 
-.practice-bar-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
 /* Below this the window is no wider than the menu, so there is nothing to widen. */
 @media (max-width: 1060px) {
-  .piece-width {
-    display: none;
+  #piece-width {
+    display: none !important;
   }
+}
+
+/* The width toggle sits beside the settings button, and only while a piece is being practised. */
+#piece-width {
+  display: none;
+}
+
+.app[data-view="pieces"]:has(.piece-practice) #piece-width {
+  display: grid;
+}
+
+#piece-width[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--surface-edge));
+  background: color-mix(in srgb, var(--accent) 14%, var(--control-bg));
 }
 
 /* Logo lockup: three keys (the first lit), a hairline, then the script name. */
@@ -2197,8 +2205,9 @@ dialog.account-dialog::backdrop {
 
 .practice-bar-title {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
 }
 
