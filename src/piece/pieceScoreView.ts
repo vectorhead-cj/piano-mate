@@ -74,6 +74,8 @@ function readColors(): Record<NoteMark, string> {
 interface Column {
   staff: StaffBox;
   x: number;
+  /** Quarter beats from its bar's start. */
+  offset: number;
   notes: { midi: number; x: number; y: number }[];
 }
 
@@ -82,6 +84,15 @@ const HOVER_PAD_UNITS = 2;
 /** Half the width of a notehead, and of its height, in staff spaces. */
 const HEAD_HALF_WIDTH_UNITS = 0.8;
 const HEAD_HALF_HEIGHT_UNITS = 0.6;
+/** How far left of a column's notes a focus highlight starts, in staff spaces. */
+const FOCUS_PAD_UNITS = 1.4;
+
+/** A place in the music: a bar, by measure index, and quarter beats into it. */
+export interface MusicPoint {
+  measure: number;
+  offset: number;
+}
+
 /** How far from a column's centre the pointer still picks it, in staff spaces. */
 const COLUMN_REACH_UNITS = 2;
 
@@ -123,6 +134,8 @@ export class PieceScoreView {
   /** Phrases shaded in turn and numbered, with bars being picked out over them. */
   private bands: { from: number; to: number }[] = [];
   private selection: { from: number; to: number } | null = null;
+  /** Notes picked out for focus practice, first and last column, both included. */
+  private focus: { from: MusicPoint; to: MusicPoint } | null = null;
   /** The bar being played. */
   private cursor: number | null = null;
 
@@ -274,6 +287,25 @@ export class PieceScoreView {
     this.drawMarks();
   }
 
+  /** Marks notes for focus practice, from one column to another, both included; null clears it. */
+  setFocus(focus: { from: MusicPoint; to: MusicPoint } | null): void {
+    this.focus = focus && (before(focus.to, focus.from) ? { from: focus.to, to: focus.from } : focus);
+    this.drawMarks();
+  }
+
+  /** The note column nearest a point on the screen, in the bar under it; null away from the bars. */
+  columnAt(clientX: number, clientY: number): MusicPoint | null {
+    const measure = this.barAt(clientX, clientY);
+    if (measure === null) return null;
+    const x = clientX - this.sheet.getBoundingClientRect().left;
+    let best: Column | null = null;
+    for (const column of this.columns) {
+      if (column.staff.measure !== measure) continue;
+      if (!best || Math.abs(x - column.x) < Math.abs(x - best.x)) best = column;
+    }
+    return best && { measure, offset: best.offset };
+  }
+
   /** Washes the bar being played; null clears it. */
   setCursor(measure: number | null): void {
     if (measure === this.cursor) return;
@@ -352,8 +384,8 @@ export class PieceScoreView {
         const hand: Hand = staff === 1 ? "left" : "right";
         const staffBox = this.staffBoxes[this.staffBoxes.length - 1];
         for (const entry of graphical.staffEntries) {
-          const column: Column = { staff: staffBox, x: entry.PositionAndShape.AbsolutePosition.x * unit, notes: [] };
           const offset = Math.round(entry.relInMeasureTimestamp.RealValue * 4 * 9600) / 9600;
+          const column: Column = { staff: staffBox, x: entry.PositionAndShape.AbsolutePosition.x * unit, offset, notes: [] };
           for (const voice of entry.graphicalVoiceEntries) {
             const grace = voice.parentVoiceEntry.IsGrace ? "g" : "";
             for (const note of voice.notes) {
@@ -425,6 +457,27 @@ export class PieceScoreView {
     }
   }
 
+  /** The part of a bar inside the focus: from just before its first column to just before the column after its last. */
+  private focusBox(box: BarBox): BarBox | null {
+    const focus = this.focus;
+    if (!focus || box.measure < focus.from.measure || box.measure > focus.to.measure) return null;
+    const pad = FOCUS_PAD_UNITS * 10 * this.osmd.Zoom;
+    const xs = (pick: (offset: number) => boolean) =>
+      this.columns.filter((c) => c.staff.measure === box.measure && pick(c.offset)).map((c) => c.x);
+    let left = box.left;
+    if (box.measure === focus.from.measure) {
+      const at = xs((o) => o === focus.from.offset);
+      if (at.length > 0) left = Math.max(box.left, Math.min(...at) - pad);
+    }
+    let right = box.left + box.width;
+    if (box.measure === focus.to.measure) {
+      const after = xs((o) => o > focus.to.offset);
+      if (after.length > 0) right = Math.min(...after) - pad;
+    }
+    if (right <= left) return null;
+    return { ...box, left, width: right - left };
+  }
+
   private drawMarks(): void {
     this.overlay.replaceChildren();
     const place = (className: string, box: BarBox) => {
@@ -435,6 +488,7 @@ export class PieceScoreView {
       return node;
     };
     const within = (range: { from: number; to: number } | null, measure: number) => range !== null && measure >= range.from && measure <= range.to;
+    const focusBoxes: BarBox[] = [];
     for (const box of this.boxes) {
       const band = this.bands.findIndex((b) => within(b, box.measure));
       if (band >= 0) {
@@ -446,7 +500,17 @@ export class PieceScoreView {
         }
       }
       if (within(this.selection, box.measure)) place("piece-bar-selected", box);
+      const focus = this.focusBox(box);
+      // Bars side by side on a line make one highlight.
+      const last = focusBoxes[focusBoxes.length - 1];
+      if (focus && last && last.top === focus.top && Math.abs(last.left + last.width - focus.left) < 1) last.width = focus.left + focus.width - last.left;
+      else if (focus) focusBoxes.push(focus);
       if (box.measure === this.cursor) place("piece-bar-active", box);
     }
+    for (const box of focusBoxes) place("piece-focus", box);
   }
+}
+
+function before(a: MusicPoint, b: MusicPoint): boolean {
+  return a.measure < b.measure || (a.measure === b.measure && a.offset < b.offset);
 }

@@ -35,11 +35,11 @@ import {
   type Plan,
   type StepProgress,
 } from "./pieceProgress";
-import { PieceScoreView, type NoteMark } from "./pieceScoreView";
+import { PieceScoreView, type MusicPoint, type NoteMark } from "./pieceScoreView";
 import { PieceSession } from "./pieceSession";
 import { scoreXml } from "./scoreXml";
 import { soundsOf, type Sound } from "./sounding";
-import { barRange, playSpan, type PlaySpan } from "./targets";
+import { barRange, clipSpan, onsets, playSpan, type PlaySpan } from "./targets";
 
 /** Rest between one pass and the next one's count-in. */
 const PASS_GAP_MS = 1500;
@@ -155,7 +155,8 @@ export interface PieceModeDependencies {
 /** A pass under way: its grading, and what to undo when it stops. */
 interface Pass {
   session: PieceSession;
-  span: PlaySpan;
+  /** Its bars, or the notes picked out in focus mode, timed from `origin` quarter beats into the place's span. */
+  span: PlaySpan & { origin: number };
   /** The clock that closes missed notes and moves the cursor. */
   timer: number;
   /** The bar slot the cursor is in. */
@@ -202,6 +203,10 @@ export class PieceMode {
   private soundTimers: number[] = [];
   /** The Listen playback is sounding; its button reads Stop. */
   private listening = false;
+  /** Focus mode: drags on the score pick out notes, and practice repeats only those. */
+  private focusMode = false;
+  /** The notes picked out, first and last column, and the phrase they're in. */
+  private focus: { phrase: number; from: MusicPoint; to: MusicPoint } | null = null;
   /** The synth's notes still to sound: the other hand, or all of it when listening. */
   private readonly soundQueue: SoundQueue;
 
@@ -211,6 +216,10 @@ export class PieceMode {
     this.soundQueue = new SoundQueue(deps.synth);
     deps.stream.subscribe((event) => this.onNote(event));
     document.addEventListener("keydown", (event) => {
+      if (this.visible && this.screen.name === "practice" && event.key === "Escape" && this.focus) {
+        this.setFocus(null);
+        return;
+      }
       if (!this.visible || this.screen.name !== "practice" || event.code !== "Space" || event.repeat) return;
       if ((event.target as Element).closest("button, input, select, textarea, [contenteditable]")) return;
       event.preventDefault();
@@ -842,6 +851,9 @@ export class PieceMode {
     const pieceProgress = open.practice.progress;
     const info = this.placeOf(place);
     const progress = this.progressAt(place);
+    // A focus belongs to its phrase: it stays across the phrase's steps, and goes with another.
+    if (place.kind !== "phrase") this.focusMode = false;
+    if (this.focus && (place.kind !== "phrase" || this.focus.phrase !== place.phrase)) this.focus = null;
 
     const chips =
       place.kind === "phrase"
@@ -882,7 +894,17 @@ export class PieceMode {
     otherHand.disabled = info.hand === "both";
     otherHand.addEventListener("change", () => this.changeSettings({ otherHand: otherHand.checked }));
 
-    const sheet = h("div", { class: "piece-score" });
+    const focusInput = h("input", { type: "checkbox" });
+    focusInput.checked = this.focusMode;
+    focusInput.addEventListener("change", () => {
+      this.focusMode = focusInput.checked;
+      sheet.classList.toggle("piece-score-focus", this.focusMode);
+      if (!this.focusMode) this.setFocus(null);
+      else this.refreshPractice();
+    });
+    const focusToggle = place.kind === "phrase" ? h("label", { class: "toggle piece-other" }, focusInput, h("span", {}, "Focus")) : null;
+
+    const sheet = h("div", { class: `piece-score${this.focusMode ? " piece-score-focus" : ""}` });
     const scroller = h("div", { class: "piece-scroll piece-scroll-practice" }, sheet);
     const view = new PieceScoreView(sheet, undefined, true);
     view.setFingerings(record.settings.fingerings);
@@ -901,9 +923,37 @@ export class PieceMode {
       this.keyboard?.setHover(view.pitchesAt(event.clientX, event.clientY) ?? []);
     });
     sheet.addEventListener("pointerleave", () => this.keyboard?.setHover([]));
+    // In focus mode, dragging across the notes picks out the ones to repeat, a column at a time.
+    let drag: { anchor: MusicPoint; pointer: number } | null = null;
+    sheet.addEventListener("pointerdown", (event) => {
+      if (!this.focusMode || place.kind !== "phrase" || (event.pointerType === "mouse" && event.button !== 0)) return;
+      const point = view.columnAt(event.clientX, event.clientY);
+      if (!point) return;
+      event.stopImmediatePropagation();
+      drag = { anchor: point, pointer: event.pointerId };
+      sheet.setPointerCapture(event.pointerId);
+      view.setFocus({ from: point, to: point });
+    });
+    sheet.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointer) return;
+      const point = view.columnAt(event.clientX, event.clientY);
+      if (point) view.setFocus({ from: drag.anchor, to: point });
+    });
+    const endDrag = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.pointer || place.kind !== "phrase") return;
+      const point = view.columnAt(event.clientX, event.clientY);
+      const anchor = drag.anchor;
+      drag = null;
+      const to = point ?? this.focus?.to ?? anchor;
+      const [from, last] = beatsOf(info, anchor) <= beatsOf(info, to) ? [anchor, to] : [to, anchor];
+      this.setFocus({ phrase: place.phrase, from, to: last });
+    };
+    sheet.addEventListener("pointerup", endDrag);
+    sheet.addEventListener("pointercancel", endDrag);
     // Clicking the highlighted notes plays them together; a pass being graded stays quiet.
     sheet.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (this.focusMode) return;
       const pitches = view.pitchesAt(event.clientX, event.clientY);
       if (!pitches || this.looping) return;
       this.deps.synth.unlock();
@@ -947,13 +997,43 @@ export class PieceMode {
             { class: "piece-options" },
             h("label", { class: "toggle piece-other" }, otherHand, h("span", {}, info.hand === "both" ? "Both hands are yours" : `Synth plays the ${info.hand === "left" ? "right" : "left"} hand`)),
             h("label", { class: "toggle piece-other" }, fingerings, h("span", {}, "Fingering")),
+            focusToggle,
           ),
         ),
       ),
     );
     this.root.querySelector(".piece-practice")!.append(keyArea);
     this.fitKeyboard(info.piece);
-    void view.show(info.xml, info.piece, info.firstMeasure);
+    void view.show(info.xml, info.piece, info.firstMeasure).then(() => {
+      if (this.view === view && this.focus) view.setFocus(this.focus);
+    });
+  }
+
+  /** Picks out notes to repeat, or clears them; the next pass plays just those. */
+  private setFocus(focus: { phrase: number; from: MusicPoint; to: MusicPoint } | null): void {
+    this.focus = focus;
+    this.view?.setFocus(focus);
+    if (this.listening) this.stopListening();
+    this.refreshPractice();
+  }
+
+  /**
+   * The span a practice place plays for a hand: its bars, or, with notes picked out in focus
+   * mode, from the first picked column up to the next note after the last.
+   */
+  private spanOf(info: Practice, hand: HandChoice): PlaySpan & { origin: number } {
+    const span = playSpan(info.piece, info.order, hand);
+    const focus = this.focusMode && this.screen.name === "practice" && this.screen.place.kind === "phrase" ? this.focus : null;
+    if (!focus) return { ...span, origin: 0 };
+    const from = beatsOf(info, focus.from);
+    const last = beatsOf(info, focus.to);
+    const to = onsets(span).find((t) => t > last + 1e-9) ?? span.length;
+    return clipSpan(span, from, to);
+  }
+
+  /** Practising picked-out notes rather than the phrase: passes are drills and don't count to its streak. */
+  private get focused(): boolean {
+    return this.focusMode && this.focus !== null && this.screen.name === "practice" && this.screen.place.kind === "phrase";
   }
 
   /** Draws keys over the piece's whole range, at least as many octaves as fit the width. */
@@ -974,8 +1054,9 @@ export class PieceMode {
     this.refreshPractice();
     this.deps.synth.unlock();
     const info = this.placeOf(this.screen.place);
-    const span = playSpan(info.piece, info.order, "both");
+    const span = this.spanOf(info, "both");
     const beatMs = 60_000 / info.tempo;
+    // Focused notes may start part way into a beat; they come in where they fall after it.
     const start = performance.now() + 300;
     const view = this.view;
     view.clearMarks();
@@ -1011,7 +1092,9 @@ export class PieceMode {
 
   /** The notation panel's tag: live while passes run, otherwise how to start. */
   private hotText(): string {
-    return this.looping ? "● Live" : `Free play · ${midiNoteName(this.deps.startKey())} or Space to start`;
+    if (this.looping) return `● Live${this.focused ? " · Focus" : ""}`;
+    const mode = !this.focusMode ? "Free play" : this.focus ? "Focus" : "Focus: drag across the notes to repeat";
+    return `${mode} · ${midiNoteName(this.deps.startKey())} or Space to start`;
   }
 
   /** The streak as the curriculum draws it: clean passes out of what's needed, and what that takes. */
@@ -1071,13 +1154,15 @@ export class PieceMode {
     const info = this.placeOf(place);
     const { record } = this.open;
     const { piece } = info;
-    const span = playSpan(piece, info.order, info.hand);
-    const beats = piece.measures[info.order[0]].beats;
-    const session = new PieceSession(span, info.tempo, beats);
+    const span = this.spanOf(info, info.hand);
+    const beats = piece.measures[span.order[0] ?? info.order[0]].beats;
+    // A bar's count-in, and when focused notes start mid-bar, the beats of it before them, so the clicks keep the bar's accents.
+    const countIn = beats + Math.max(0, -(span.slotStarts[0] ?? 0));
+    const session = new PieceSession(span, info.tempo, countIn);
     const now = performance.now();
     session.arm(now);
     const beatMs = 60_000 / info.tempo;
-    this.metronome.start(info.tempo, record.settings.metronome ? beats + Math.ceil(span.length) : beats, now, beats);
+    this.metronome.start(info.tempo, record.settings.metronome ? countIn + Math.ceil(span.length) : countIn, now, beats);
     this.view.clearMarks();
     // The other hand of the pass before may still be sounding out; this one takes over.
     for (const timer of this.soundTimers) clearTimeout(timer);
@@ -1165,6 +1250,7 @@ export class PieceMode {
     const open = this.open;
     const before = this.progressAt(place);
     const phrase = place.kind === "phrase" ? open.phrases[place.phrase] : undefined;
+    const focus = this.focused && this.focus ? { from: beatsOf(info, this.focus.from), to: pass.span.origin + pass.span.length } : null;
     const event: PiecePass = {
       type: "piece-pass",
       v: 1,
@@ -1174,7 +1260,12 @@ export class PieceMode {
       session: this.deps.session,
       pieceId: open.record.id,
       scoreHash: open.record.scoreHash,
-      place: place.kind === "phrase" ? { kind: "phrase", from: phrase!.from, to: phrase!.to, hand: place.step.hand, speed: place.step.speed } : place,
+      place:
+        place.kind === "phrase"
+          ? focus
+            ? { kind: "focus", bars: { from: phrase!.from, to: phrase!.to }, hand: place.step.hand, speed: place.step.speed, beats: focus }
+            : { kind: "phrase", from: phrase!.from, to: phrase!.to, hand: place.step.hand, speed: place.step.speed }
+          : place,
       tempo: info.tempo,
       streak: info.streak,
       misses: info.misses,
@@ -1188,6 +1279,12 @@ export class PieceMode {
       this.notice = { tone: "error", text: "Practice on this piece couldn't be saved to your account." };
     });
     open.practice = this.practiceOf(open.record.id);
+    if (focus) {
+      // A focus drill: just the next pass, the streak as it was.
+      this.refreshPractice();
+      if (this.looping) this.nextPassTimer = window.setTimeout(() => this.looping && this.startPass(), PASS_GAP_MS);
+      return;
+    }
     const after = this.progressAt(place)!;
     const newlyPassed = before?.passedAt === undefined && after.passedAt !== undefined;
     if (newlyPassed) {
@@ -1242,4 +1339,12 @@ function samePlace(a: PracticePlace, b: PracticePlace): boolean {
   if (a.kind === "intro" || b.kind === "intro") return a.kind === "intro" && b.kind === "intro" && a.feature === b.feature;
   if (a.kind === "full" || b.kind === "full") return a.kind === b.kind;
   return a.phrase === b.phrase && stepKey(a.step) === stepKey(b.step);
+}
+
+/** Quarter beats from the start of a practice place's span to a place in its music. */
+function beatsOf(info: Practice, point: MusicPoint): number {
+  const slot = info.order.indexOf(point.measure);
+  let at = 0;
+  for (let i = 0; i < slot; i++) at += info.piece.measures[info.order[i]].length;
+  return at + point.offset;
 }

@@ -24,6 +24,12 @@ describe("projectPieceProgress", () => {
     expect(stepProgress(later, { from: 0, to: 3 }, { hand: "left", speed: "slow" })!.passedAt).toBeDefined();
   });
 
+  it("leaves focus drills out of the step they're picked from", () => {
+    const focus = { kind: "focus", bars: { from: 0, to: 3 }, hand: "left", speed: "slow", beats: { from: 2, to: 5.5 } } as const;
+    const { progress } = projectPieceProgress([pass(focus, true, 1), pass(focus, true, 1)]);
+    expect(stepProgress(progress, { from: 0, to: 3 }, { hand: "left", speed: "slow" })).toBeUndefined();
+  });
+
   it("keeps progress by bars, intros by feature, and the full piece apart", () => {
     const { progress, intros } = projectPieceProgress([pass(leftSlow, true, 1), pass({ kind: "intro", feature: "ties" }, true, 1), pass({ kind: "full" }, false, 1)]);
     // Another phrase over other bars has none of it.

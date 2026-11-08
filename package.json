@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "version:next": "node scripts/version.mjs",
     "test:watch": "vitest",
     "corpus:setup": "python3 -m venv tools/corpus/.venv && tools/corpus/.venv/bin/pip install -r tools/corpus/requirements.txt",
     "corpus:extract": "tools/corpus/.venv/bin/python -I tools/corpus/extract.py",

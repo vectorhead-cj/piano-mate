@@ -136,3 +136,46 @@ export function playSpan(piece: Piece, order: readonly number[], hand: HandChoic
     leeway,
   };
 }
+
+/** Where a target begins sounding: with its grace notes, if it has any. */
+export function onsetOf(target: Target): number {
+  return target.due - (target.graces?.lead ?? 0);
+}
+
+/** Every time a note in the span starts, either hand, graded or not, in order and once each. */
+export function onsets(span: PlaySpan): number[] {
+  const times = [...span.targets, ...span.others, ...span.ungraded].map(onsetOf);
+  return [...new Set(times)].sort((a, b) => a - b);
+}
+
+/**
+ * Part of a span, for focus practice: the notes starting from `from` up to `to` quarter beats
+ * into it. Times are moved to count from `origin`, `from` rounded down to the beat, so the
+ * count-in and metronome still fall on the beats; the first note may come part way into one.
+ * Notes held past `to` are cut off there, and bars it doesn't reach are dropped from `order`.
+ */
+export function clipSpan(span: PlaySpan, from: number, to: number): PlaySpan & { origin: number } {
+  const origin = Math.floor(from + 1e-9);
+  const keep = (list: readonly Target[]) =>
+    list
+      .filter((t) => onsetOf(t) >= from - 1e-9 && onsetOf(t) < to - 1e-9)
+      .map((t) => ({ ...t, due: t.due - origin, length: Math.min(t.length, to - t.due) }));
+  const slots = span.order.map((_, slot) => slot).filter((slot) => {
+    const end = span.slotStarts[slot + 1] ?? span.length;
+    return end > from + 1e-9 && span.slotStarts[slot] < to - 1e-9;
+  });
+  const first = slots[0] ?? 0;
+  const renumber = (list: Target[]) => list.map((t) => ({ ...t, slot: t.slot - first }));
+  return {
+    origin,
+    order: slots.map((slot) => span.order[slot]),
+    slotStarts: slots.map((slot) => span.slotStarts[slot] - origin),
+    length: to - origin,
+    targets: renumber(keep(span.targets)),
+    others: renumber(keep(span.others)),
+    ungraded: renumber(keep(span.ungraded)),
+    leeway: span.leeway
+      .filter((l) => l.to > from - 1e-9 && l.from < to - 1e-9)
+      .map((l) => ({ pitches: l.pitches, from: Math.max(l.from, from) - origin, to: Math.min(l.to, to) - origin })),
+  };
+}

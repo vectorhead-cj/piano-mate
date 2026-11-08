@@ -132,9 +132,20 @@ export interface PiecePass {
   pieceId: string;
   /** The score the pass was played from, by its hash: a piece may later point at another. */
   scoreHash: string;
-  /** A phrase step (its bars as measure indices, inclusive), the whole piece, or an intro card's drill. */
+  /**
+   * A phrase step (its bars as measure indices, inclusive), the whole piece, or an intro card's
+   * drill; or a focus drill on notes picked out of a phrase step, from `beats.from` up to
+   * `beats.to` quarter beats into the phrase, which counts as practice but not to the step.
+   */
   place:
     | { kind: "phrase"; from: number; to: number; hand: "left" | "right" | "both"; speed: "slow" | "standard" }
+    | {
+        kind: "focus";
+        bars: { from: number; to: number };
+        hand: "left" | "right" | "both";
+        speed: "slow" | "standard";
+        beats: { from: number; to: number };
+      }
     | { kind: "full" }
     | { kind: "intro"; feature: string };
   tempo: number;

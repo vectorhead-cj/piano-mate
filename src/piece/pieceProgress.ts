@@ -171,6 +171,7 @@ export function projectPieceProgress(passes: readonly PiecePass[]): PiecePractic
   for (const pass of [...passes].sort((a, b) => a.at - b.at)) {
     const { place } = pass;
     const fold = (before: StepProgress | undefined) => recordPass(before, pass.clean, pass.streak, pass.misses, pass.at);
+    if (place.kind === "focus") continue;
     if (place.kind === "intro") intros[place.feature] = fold(intros[place.feature]);
     else if (place.kind === "full") progress = { ...progress, full: fold(progress.full) };
     else {

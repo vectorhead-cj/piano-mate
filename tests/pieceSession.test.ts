@@ -12,7 +12,7 @@ import {
   type PieceProgress,
 } from "../src/piece/pieceProgress";
 import { PieceSession } from "../src/piece/pieceSession";
-import { barRange, playSpan } from "../src/piece/targets";
+import { barRange, clipSpan, onsets, playSpan } from "../src/piece/targets";
 
 const BAR: PieceMeasure = { label: "1", start: 0, length: 4, beats: 4, time: "4/4", fifths: 0, mode: "major", repeatStart: false, repeatEnd: false, jump: false, clefs: { right: "G2", left: "F4" } };
 
@@ -205,5 +205,51 @@ describe("piece curriculum", () => {
   it("plays slow at a share of the standard tempo", () => {
     expect(stepTempo(defaultSettings(60), "slow")).toBe(36);
     expect(stepTempo(defaultSettings(60), "standard")).toBe(60);
+  });
+});
+
+describe("clipSpan", () => {
+  it("keeps the notes starting in the focus, timed from the beat it starts in", () => {
+    const span = playSpan(piece(), barRange(0, 1), "right");
+    // Beat 2 of bar 1 up to the next note after beat 3: notes at 1, 2 and 3.
+    const clipped = clipSpan(span, 1, 4);
+    expect(clipped.origin).toBe(1);
+    expect(clipped.targets.map((t) => [t.pitch, t.due])).toEqual([
+      [74, 0],
+      [76, 1],
+      [77, 2],
+    ]);
+    expect(clipped.length).toBe(3);
+    expect(clipped.order).toEqual([0]);
+    // The bar starts a beat before the focus does: the count-in makes that up.
+    expect(clipped.slotStarts).toEqual([-1]);
+  });
+
+  it("starts part way into a beat, cuts held notes at the end, and clips the other hand", () => {
+    const quick: Piece = { ...piece(), notes: [n("right", 72, 0.5, 0.5), n("right", 74, 1, 3), n("left", 48, 0, 2)] };
+    const span = playSpan(quick, [0], "right");
+    expect(onsets(span)).toEqual([0, 0.5, 1]);
+    const clipped = clipSpan(span, 0.5, 2);
+    expect(clipped.origin).toBe(0);
+    expect(clipped.targets.map((t) => [t.pitch, t.due, t.length])).toEqual([
+      [72, 0.5, 0.5],
+      [74, 1, 1],
+    ]);
+    // The left hand's chord starts before the focus, so it isn't played.
+    expect(clipped.others).toEqual([]);
+  });
+
+  it("can run across a barline, renumbering the bars it takes", () => {
+    const span = playSpan(piece(), barRange(0, 1), "right");
+    const clipped = clipSpan(span, 3, 8);
+    expect(clipped.order).toEqual([0, 1]);
+    expect(clipped.targets.map((t) => [t.pitch, t.due, t.slot])).toEqual([
+      [77, 0, 0],
+      [79, 1, 1],
+    ]);
+    const s = new PieceSession(clipped, 60, 4 + 3);
+    s.arm(0);
+    s.targets.forEach((t) => s.play(t.pitch, 7000 + t.due * 1000));
+    expect(s.result().clean).toBe(true);
   });
 });

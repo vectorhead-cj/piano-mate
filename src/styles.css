@@ -3533,3 +3533,20 @@ dialog.account-dialog::backdrop {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* Focus practice: the notes picked out to repeat, part of a bar or across several. */
+.piece-focus {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+}
+
+.piece-score-focus {
+  cursor: crosshair;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
