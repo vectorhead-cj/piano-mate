@@ -1,6 +1,7 @@
 import "./styles.css";
 import { PhrasePlayer } from "./audio/phrasePlayer";
 import { Synth } from "./audio/synth";
+import { KeyboardSink, readStoredSoundOutput, readStoredVolume, storeSoundOutput, storeVolume, type SoundOutput } from "./audio/keyboardSink";
 import { NoteStream } from "./input/noteStream";
 import { MidiInput } from "./input/midiInput";
 import { attachScreenInput } from "./input/screenInput";
@@ -209,6 +210,34 @@ async function main(): Promise<void> {
     if (viewsReady) renderView();
   });
   element("midi-toggle").addEventListener("click", () => synth.unlock());
+  // Play on the MIDI keyboard's own sound engine when asked; the choice is remembered.
+  synth.keyboard = new KeyboardSink(() => late.midi?.outputs() ?? []);
+  {
+    const form = element<HTMLFormElement>("settings");
+    const radios = form.elements.namedItem("soundOutput") as RadioNodeList;
+    const volumeRow = element("keyboard-volume-row");
+    const volume = form.elements.namedItem("keyboardVolume") as HTMLInputElement;
+    synth.keyboard.volume = readStoredVolume();
+    volume.value = String(Math.round(synth.keyboard.volume * 100));
+    synth.output = readStoredSoundOutput();
+    radios.value = synth.output;
+    // The volume only matters when notes go to the keyboard.
+    volumeRow.hidden = synth.output === "computer";
+    form.addEventListener("change", (event) => {
+      const target = event.target as HTMLInputElement;
+      if (target.name === "keyboardVolume") {
+        synth.keyboard!.volume = Number(target.value) / 100;
+        storeVolume(synth.keyboard!.volume);
+        return;
+      }
+      if (target.name !== "soundOutput") return;
+      synth.output = target.value as SoundOutput;
+      storeSoundOutput(synth.output);
+      volumeRow.hidden = synth.output === "computer";
+      // Asking for the keyboard is a user gesture, so it can also prompt for MIDI access.
+      if (synth.output !== "computer") void late.midi?.connect();
+    });
+  }
   // Unlock on the same gesture as the keypress so the first note isn't waiting on resume.
   keyboardElement.addEventListener("pointerdown", () => synth.unlock(), { capture: true });
 

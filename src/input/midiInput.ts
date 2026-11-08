@@ -78,6 +78,12 @@ export class MidiInput {
     }
   }
 
+  /** Output ports with a device behind them, for sending notes to a keyboard. */
+  outputs(): MIDIOutput[] {
+    if (!this.access) return [];
+    return [...this.access.outputs.values()].filter((output) => output.state === "connected");
+  }
+
   /** Every input port the browser reports, connected or not. */
   ports(): MidiPortInfo[] {
     if (!this.access) return [];

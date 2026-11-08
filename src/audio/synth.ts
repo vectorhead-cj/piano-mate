@@ -1,3 +1,5 @@
+import { KeyboardSink, type SoundOutput } from "./keyboardSink";
+
 const PEAK_GAIN = 0.3;
 const DECAY_SECONDS = 1.5;
 /** Held notes settle to this share of the peak, then release over RELEASE_SECONDS. */
@@ -13,6 +15,9 @@ const BELL_CLICK_GAIN = 1.2;
 
 /** A short plucked tone. Placeholder until we swap in piano samples. */
 export class Synth {
+  /** Where notes go; the keyboard sink only sounds when a MIDI output is connected. */
+  output: SoundOutput = "computer";
+  keyboard: KeyboardSink | null = null;
   private context: AudioContext | null = null;
   /** In-flight resume so concurrent play/click/unlock share one unlock attempt. */
   private unlocking: Promise<AudioContext | null> | null = null;
@@ -31,6 +36,9 @@ export class Synth {
    *   the audio clock, so notes scheduled a little ahead keep exact time.
    */
   play(pitch: number, velocity = 0.8, holdSeconds?: number, at?: number): void {
+    if (this.output !== "computer") this.keyboard?.play(pitch, velocity, holdSeconds, at);
+    // Keyboard-only still falls back to the speakers when no keyboard is connected.
+    if (this.output === "keyboard" && this.keyboard?.available) return;
     const running = this.runningContext();
     if (running) {
       this.scheduleNote(running, pitch, velocity, holdSeconds, at);
@@ -44,6 +52,7 @@ export class Synth {
 
   /** Calls off notes scheduled ahead that haven't started yet; ones sounding ring on. */
   cancelPending(): void {
+    this.keyboard?.cancelPending();
     const now = this.context?.currentTime ?? 0;
     for (const { oscillator, gain, start } of this.pending) {
       if (start <= now) continue;

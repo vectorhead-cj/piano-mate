@@ -83,6 +83,18 @@
                     <label><input type="radio" name="keyboardHeight" value="hidden" /><span>Hidden</span></label>
                   </div>
                 </div>
+                <div class="field" role="radiogroup" aria-labelledby="sound-output-caption">
+                  <span class="field-caption" id="sound-output-caption">Play sound on</span>
+                  <div class="segmented">
+                    <label><input type="radio" name="soundOutput" value="computer" checked /><span>Computer</span></label>
+                    <label><input type="radio" name="soundOutput" value="keyboard" /><span>Keyboard</span></label>
+                    <label><input type="radio" name="soundOutput" value="both" /><span>Both</span></label>
+                  </div>
+                  <label class="segmented-extra" id="keyboard-volume-row" hidden>
+                    <span>Keyboard volume</span>
+                    <input type="range" name="keyboardVolume" min="20" max="150" step="5" value="100" />
+                  </label>
+                </div>
                 <label class="toggle">
                   <input type="checkbox" name="namesOnNotes" />
                   <span>Names on notes</span>

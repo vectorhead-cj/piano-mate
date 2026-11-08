@@ -488,6 +488,28 @@ body::before {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
+/* A control tied to a segmented group, drawn on the same shaded track just below it. */
+.segmented-extra {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 3px 12px;
+  border-radius: 9px;
+  background: var(--track-bg);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.segmented-extra input[type="range"] {
+  width: 110px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 /* Display settings popover. */
 .btn-icon {
   display: grid;
@@ -530,7 +552,7 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: max-content;
+  width: 360px;
   max-width: calc(100vw - 44px);
   padding: 14px 16px;
   border: 1px solid var(--surface-edge);
