@@ -501,6 +501,14 @@ export class PieceScoreView {
       }
       if (within(this.selection, box.measure)) place("piece-bar-selected", box);
       const focus = this.focusBox(box);
+      // The beats of the first and last bars outside the focus are count-in clicks: dashed.
+      if (focus && box.measure === this.focus!.from.measure && focus.left - box.left > 4) {
+        place("piece-focus-count", { ...box, width: focus.left - box.left });
+      }
+      const focusRight = focus ? focus.left + focus.width : 0;
+      if (focus && box.measure === this.focus!.to.measure && box.left + box.width - focusRight > 4) {
+        place("piece-focus-count", { ...box, left: focusRight, width: box.left + box.width - focusRight });
+      }
       // Bars side by side on a line make one highlight.
       const last = focusBoxes[focusBoxes.length - 1];
       if (focus && last && last.top === focus.top && Math.abs(last.left + last.width - focus.left) < 1) last.width = focus.left + focus.width - last.left;

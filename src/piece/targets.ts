@@ -150,12 +150,11 @@ export function onsets(span: PlaySpan): number[] {
 
 /**
  * Part of a span, for focus practice: the notes starting from `from` up to `to` quarter beats
- * into it. Times are moved to count from `origin`, `from` rounded down to the beat, so the
- * count-in and metronome still fall on the beats; the first note may come part way into one.
+ * into it. Times are moved to count from `origin`, by default `from` rounded down to the beat, so
+ * the count-in and metronome still fall on the beats; the first note may come part way into one.
  * Notes held past `to` are cut off there, and bars it doesn't reach are dropped from `order`.
  */
-export function clipSpan(span: PlaySpan, from: number, to: number): PlaySpan & { origin: number } {
-  const origin = Math.floor(from + 1e-9);
+export function clipSpan(span: PlaySpan, from: number, to: number, origin = Math.floor(from + 1e-9)): PlaySpan & { origin: number } {
   const keep = (list: readonly Target[]) =>
     list
       .filter((t) => onsetOf(t) >= from - 1e-9 && onsetOf(t) < to - 1e-9)

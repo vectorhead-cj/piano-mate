@@ -39,6 +39,7 @@ import { PieceScoreView, type MusicPoint, type NoteMark } from "./pieceScoreView
 import { PieceSession } from "./pieceSession";
 import { scoreXml } from "./scoreXml";
 import { soundsOf, type Sound } from "./sounding";
+import { focusPlan, type FocusPlan } from "./focusLoop";
 import { barRange, clipSpan, onsets, playSpan, type PlaySpan } from "./targets";
 
 /** Rest between one pass and the next one's count-in. */
@@ -153,6 +154,20 @@ export interface PieceModeDependencies {
 }
 
 /** A pass under way: its grading, and what to undo when it stops. */
+/** The focus loop running: its plan, the span it's cut from, and where it is. */
+interface FocusRun {
+  plan: FocusPlan;
+  info: Practice;
+  /** The phrase's span for the hand practised, cut down to the focus each time round. */
+  full: PlaySpan;
+  beatMs: number;
+  /** performance.now() when the first time round starts, after any count-in bar. */
+  loopStart: number;
+  round: number;
+  timer: number;
+  clickTimers: number[];
+}
+
 interface Pass {
   session: PieceSession;
   /** Its bars, or the notes picked out in focus mode, timed from `origin` quarter beats into the place's span. */
@@ -207,6 +222,10 @@ export class PieceMode {
   private focusMode = false;
   /** The notes picked out, first and last column, and the phrase they're in. */
   private focus: { phrase: number; from: MusicPoint; to: MusicPoint } | null = null;
+  /** Clean times round the focus loop in a row, and the most so far; kept only while focusing. */
+  private focusStreak = { current: 0, best: 0 };
+  /** The focus loop while it runs. */
+  private focusRun: FocusRun | null = null;
   /** The synth's notes still to sound: the other hand, or all of it when listening. */
   private readonly soundQueue: SoundQueue;
 
@@ -854,6 +873,7 @@ export class PieceMode {
     // A focus belongs to its phrase: it stays across the phrase's steps, and goes with another.
     if (place.kind !== "phrase") this.focusMode = false;
     if (this.focus && (place.kind !== "phrase" || this.focus.phrase !== place.phrase)) this.focus = null;
+    this.focusStreak = { current: 0, best: 0 };
 
     const chips =
       place.kind === "phrase"
@@ -984,7 +1004,7 @@ export class PieceMode {
         h(
           "div",
           { class: "status-row" },
-          h("section", { class: "phrase-score", "aria-label": "Score" }, this.streakStat(progress, info)),
+          h("section", { class: "phrase-score", "aria-label": "Score", "data-focus": String(this.focused) }, this.streakStat(progress, info), this.focusStat()),
           h("section", { class: "transport", "aria-label": "Phrase controls" }, listen, nextPhrase, nextStep, startButton),
         ),
         h(
@@ -992,6 +1012,7 @@ export class PieceMode {
           { class: "notation-panel", "data-hot": String(this.looping), "aria-label": "Notation" },
           hotState,
           h("div", { class: "notation-sheet" }, scroller),
+          h("div", { class: "focus-strip", "aria-label": "Focus loop clicks" }),
           h(
             "div",
             { class: "piece-options" },
@@ -1007,14 +1028,164 @@ export class PieceMode {
     void view.show(info.xml, info.piece, info.firstMeasure).then(() => {
       if (this.view === view && this.focus) view.setFocus(this.focus);
     });
+    this.drawFocusStrip();
   }
 
   /** Picks out notes to repeat, or clears them; the next pass plays just those. */
   private setFocus(focus: { phrase: number; from: MusicPoint; to: MusicPoint } | null): void {
     this.focus = focus;
     this.view?.setFocus(focus);
+    this.focusStreak = { current: 0, best: 0 };
     if (this.listening) this.stopListening();
+    // The loop's shape changes with the notes: start again from a count-in.
+    if (this.focusRun) this.stop();
     this.refreshPractice();
+  }
+
+  /** The focus loop for the notes picked out now; null without any. */
+  private currentPlan(): { plan: FocusPlan; info: Practice } | null {
+    if (!this.focused || this.screen.name !== "practice") return null;
+    const info = this.placeOf(this.screen.place);
+    const span = playSpan(info.piece, info.order, "both");
+    const from = beatsOf(info, this.focus!.from);
+    const last = beatsOf(info, this.focus!.to);
+    const to = onsets(span).find((t) => t > last + 1e-9) ?? span.length;
+    return { plan: focusPlan(info.piece, info.order, from, to), info };
+  }
+
+  /** The focus streak, apart from the step's: it's kept only while focusing and isn't saved. */
+  private focusStat(): HTMLElement {
+    const { current, best } = this.focusStreak;
+    return h(
+      "div",
+      { class: "score-stat score-focus", hidden: !this.focused, title: "Clean times round the focus loop in a row. Practice only: it isn't saved and doesn't count to the step's streak." },
+      h("span", { class: "score-label" }, "Focus"),
+      h("span", { class: "score-count" }, String(current)),
+      h("span", { class: "score-caption" }, `in a row${best > current ? ` · best ${best}` : ""} · not saved`),
+    );
+  }
+
+  private refreshFocusStat(): void {
+    const section = this.root.querySelector<HTMLElement>(".phrase-score");
+    if (!section) return;
+    section.dataset.focus = String(this.focused);
+    section.querySelector(".score-focus")?.replaceWith(this.focusStat());
+  }
+
+  /**
+   * The loop's clicks as a row of dots under the score: count-in clicks hollow and numbered,
+   * beats with notes to play filled, those counting in the next repeat dashed.
+   */
+  private drawFocusStrip(): void {
+    const strip = this.root.querySelector<HTMLElement>(".focus-strip");
+    if (!strip) return;
+    const current = this.currentPlan();
+    strip.hidden = current === null;
+    if (!current) return;
+    const { plan } = current;
+    const group = (label: string, clicks: FocusPlan["clicks"], className: string) => {
+      const bars: HTMLElement[] = [];
+      let number = 0;
+      for (const click of clicks) {
+        if (click.accent || bars.length === 0) bars.push(h("span", { class: "focus-bar" }));
+        number = click.accent ? 1 : number + 1;
+        bars[bars.length - 1].append(h("span", { class: `focus-click focus-click-${click.kind}`, "data-at": String(click.at) }, click.kind === "play" ? "" : String(number)));
+      }
+      return h("span", { class: `focus-group ${className}` }, h("span", { class: "focus-group-label" }, label), ...bars);
+    };
+    strip.replaceChildren(
+      ...(plan.intro.length > 0 ? [group("First time", plan.intro, "focus-intro")] : []),
+      group(plan.extra > 0 ? "Loop · a bar added to count in" : "Loop", plan.clicks, "focus-loop"),
+      h("span", { class: "focus-repeat", "aria-hidden": "true" }, "↻"),
+    );
+  }
+
+  /** Lights the click being heard on the strip. */
+  private lightFocusClick(at: number | null): void {
+    const strip = this.root.querySelector<HTMLElement>(".focus-strip");
+    if (!strip) return;
+    for (const node of strip.querySelectorAll<HTMLElement>(".focus-click")) {
+      const now = at !== null && Number(node.dataset.at) === at && node.closest(at < 0 ? ".focus-intro" : ".focus-loop") !== null;
+      node.toggleAttribute("data-now", now);
+    }
+  }
+
+  /**
+   * Focus practice: the picked-out notes round and round with the click going on throughout.
+   * Each time round is graded on its own, marking the notes, and adds to the focus streak.
+   */
+  private startFocus(): void {
+    const current = this.currentPlan();
+    if (!current || !this.open || !this.view) return;
+    const { plan, info } = current;
+    const { record } = this.open;
+    const beatMs = 60_000 / info.tempo;
+    const begin = performance.now() + 150;
+    const loopStart = begin + (plan.intro.length > 0 ? -plan.intro[0].at * beatMs : 0);
+    const run: FocusRun = { plan, info, full: playSpan(info.piece, info.order, info.hand), beatMs, loopStart, round: -1, timer: 0, clickTimers: [] };
+    this.focusRun = run;
+    const click = (at: number, accent: boolean) =>
+      run.clickTimers.push(window.setTimeout(() => this.deps.synth.click(accent, plan.beatsPerBar !== 4), Math.max(0, at - performance.now())));
+    const scheduleRound = (round: number) => {
+      const start = loopStart + round * plan.length * beatMs;
+      for (const c of plan.clicks) click(start + c.at * beatMs, c.accent);
+    };
+    for (const c of plan.intro) click(loopStart + c.at * beatMs, c.accent);
+    scheduleRound(0);
+    this.view.clearMarks();
+    const beginRound = (round: number) => {
+      const time = performance.now();
+      const before = this.pass;
+      if (before) {
+        for (const index of before.session.tick(time)) this.mark(index, "wrong");
+        const clean = before.session.result().clean;
+        const streak = clean ? this.focusStreak.current + 1 : 0;
+        this.focusStreak = { current: streak, best: Math.max(this.focusStreak.best, streak) };
+        this.refreshFocusStat();
+        this.view?.clearMarks();
+      }
+      run.round = round;
+      // The round after this one is clicked in now, so the click never waits on the timer.
+      scheduleRound(round + 1);
+      const start = loopStart + round * plan.length * beatMs;
+      const span = { ...clipSpan(run.full, plan.from, plan.to, plan.origin), length: plan.length };
+      const session = new PieceSession(span, info.tempo, 0);
+      session.arm(start);
+      if (record.settings.otherHand && info.hand !== "both") {
+        this.soundQueue.play(queuedNotes(soundsOf(info.piece, span.others, info.tempo), start, beatMs, 0.55));
+      }
+      this.pass = { session, span, timer: 0, slot: -1, startedAt: Date.now() };
+    };
+    // A round starts half way through the clicks between the last note and the next first one,
+    // so the one before has had its last notes' windows close and the next's haven't opened.
+    const gap = plan.length - (plan.to - plan.origin) + (plan.from - plan.origin);
+    // Measured from the next round's start: before it when its first note comes early in the bar.
+    const handover = (plan.from - plan.origin - gap / 2) * beatMs;
+    beginRound(0);
+    run.timer = window.setInterval(() => {
+      if (this.focusRun !== run) return;
+      const time = performance.now();
+      const pass = this.pass;
+      if (pass) {
+        for (const index of pass.session.tick(time)) this.mark(index, "wrong");
+        this.follow(pass, time);
+      }
+      const beat = (time - loopStart) / beatMs;
+      const into = beat < 0 ? beat : beat - Math.floor(beat / plan.length) * plan.length;
+      const clicks = beat < 0 ? plan.intro : plan.clicks;
+      const heard = [...clicks].reverse().find((c) => c.at <= into + 1e-6);
+      this.lightFocusClick(heard ? heard.at : null);
+      if (time >= loopStart + (run.round + 1) * plan.length * beatMs + handover) beginRound(run.round + 1);
+    }, TICK_MS);
+  }
+
+  private stopFocus(): void {
+    const run = this.focusRun;
+    if (!run) return;
+    clearInterval(run.timer);
+    for (const timer of run.clickTimers) clearTimeout(timer);
+    this.focusRun = null;
+    this.lightFocusClick(null);
   }
 
   /**
@@ -1127,8 +1298,9 @@ export class PieceMode {
       this.stop();
       } else {
       this.looping = true;
-        this.justPassed = null;
-      this.startPass();
+      this.justPassed = null;
+      if (this.focused) this.startFocus();
+      else this.startPass();
     }
     this.refreshPractice();
   }
@@ -1146,6 +1318,8 @@ export class PieceMode {
     const state = page?.querySelector<HTMLElement>(".hot-state");
     if (state) state.textContent = this.hotText();
     this.view?.setFreePlay(!this.looping);
+    this.drawFocusStrip();
+    this.refreshFocusStat();
   }
 
   private startPass(): void {
@@ -1154,10 +1328,9 @@ export class PieceMode {
     const info = this.placeOf(place);
     const { record } = this.open;
     const { piece } = info;
-    const span = this.spanOf(info, info.hand);
-    const beats = piece.measures[span.order[0] ?? info.order[0]].beats;
-    // A bar's count-in, and when focused notes start mid-bar, the beats of it before them, so the clicks keep the bar's accents.
-    const countIn = beats + Math.max(0, -(span.slotStarts[0] ?? 0));
+    const span = { ...playSpan(piece, info.order, info.hand), origin: 0 };
+    const beats = piece.measures[info.order[0]].beats;
+    const countIn = beats;
     const session = new PieceSession(span, info.tempo, countIn);
     const now = performance.now();
     session.arm(now);
@@ -1250,7 +1423,6 @@ export class PieceMode {
     const open = this.open;
     const before = this.progressAt(place);
     const phrase = place.kind === "phrase" ? open.phrases[place.phrase] : undefined;
-    const focus = this.focused && this.focus ? { from: beatsOf(info, this.focus.from), to: pass.span.origin + pass.span.length } : null;
     const event: PiecePass = {
       type: "piece-pass",
       v: 1,
@@ -1260,12 +1432,7 @@ export class PieceMode {
       session: this.deps.session,
       pieceId: open.record.id,
       scoreHash: open.record.scoreHash,
-      place:
-        place.kind === "phrase"
-          ? focus
-            ? { kind: "focus", bars: { from: phrase!.from, to: phrase!.to }, hand: place.step.hand, speed: place.step.speed, beats: focus }
-            : { kind: "phrase", from: phrase!.from, to: phrase!.to, hand: place.step.hand, speed: place.step.speed }
-          : place,
+      place: place.kind === "phrase" ? { kind: "phrase", from: phrase!.from, to: phrase!.to, hand: place.step.hand, speed: place.step.speed } : place,
       tempo: info.tempo,
       streak: info.streak,
       misses: info.misses,
@@ -1279,12 +1446,6 @@ export class PieceMode {
       this.notice = { tone: "error", text: "Practice on this piece couldn't be saved to your account." };
     });
     open.practice = this.practiceOf(open.record.id);
-    if (focus) {
-      // A focus drill: just the next pass, the streak as it was.
-      this.refreshPractice();
-      if (this.looping) this.nextPassTimer = window.setTimeout(() => this.looping && this.startPass(), PASS_GAP_MS);
-      return;
-    }
     const after = this.progressAt(place)!;
     const newlyPassed = before?.passedAt === undefined && after.passedAt !== undefined;
     if (newlyPassed) {
@@ -1312,7 +1473,8 @@ export class PieceMode {
   }
 
   private stop(): void {
-    if (this.listening) this.view?.clearMarks();
+    if (this.listening || this.focusRun) this.view?.clearMarks();
+    this.stopFocus();
     this.listening = false;
     this.looping = false;
     clearTimeout(this.nextPassTimer);
