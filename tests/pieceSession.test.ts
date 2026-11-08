@@ -3,6 +3,7 @@ import type { Piece, PieceMeasure, PieceNote } from "../src/piece/piece";
 import {
   defaultSettings,
   nextPlace,
+  normalizeSettings,
   phrasesOf,
   recordPass,
   stepsFor,
@@ -202,9 +203,16 @@ describe("piece curriculum", () => {
     expect(nextPlace(progress, phrases, "standard")).toEqual({ kind: "full" });
   });
 
-  it("plays slow at a share of the standard tempo", () => {
+  it("starts slow at 60% of the standard tempo, then plays whatever slow tempo is set", () => {
     expect(stepTempo(defaultSettings(60), "slow")).toBe(36);
     expect(stepTempo(defaultSettings(60), "standard")).toBe(60);
+    expect(stepTempo({ ...defaultSettings(60), slowTempo: 44 }, "slow")).toBe(44);
+  });
+
+  it("turns a stored slow share into a slow tempo", () => {
+    expect(normalizeSettings({ tempo: 100, slowShare: 0.5 } as never).slowTempo).toBe(50);
+    expect(normalizeSettings({ tempo: 100, slowTempo: 42 }).slowTempo).toBe(42);
+    expect(normalizeSettings({ tempo: 100 }).slowTempo).toBe(60);
   });
 });
 

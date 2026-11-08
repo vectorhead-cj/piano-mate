@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentUser, supabase } from "../account";
 import { newId } from "../curriculum/events";
-import { defaultSettings, type PieceSettings } from "./pieceProgress";
+import { defaultSettings, normalizeSettings, type PieceSettings } from "./pieceProgress";
 
 /**
  * An imported piece as it stands now: the fold of its events (applyPieceEvent here, and
@@ -61,7 +61,7 @@ export function applyPieceEvent(record: PieceRecord | undefined, event: PieceEve
   if (event.type === "piece-imported") {
     if (record) throw new Error(`Piece ${event.pieceId} already exists`);
     const { title, composer, fileName, scoreHash, scorePath, measureCount, phraseStarts, settings } = event;
-    return { id: event.pieceId, title, composer, fileName, scoreHash, scorePath, measureCount, phraseStarts, settings, createdAt: event.at, updatedAt: event.at };
+    return { id: event.pieceId, title, composer, fileName, scoreHash, scorePath, measureCount, phraseStarts, settings: normalizeSettings(settings), createdAt: event.at, updatedAt: event.at };
   }
   if (!record || record.archivedAt !== undefined) throw new Error(`No such piece: ${event.pieceId}`);
   const next = { ...record, updatedAt: Math.max(record.updatedAt, event.at) };
@@ -71,7 +71,7 @@ export function applyPieceEvent(record: PieceRecord | undefined, event: PieceEve
     case "phrases-changed":
       return { ...next, phraseStarts: event.phraseStarts };
     case "settings-changed":
-      return { ...next, settings: event.settings };
+      return { ...next, settings: normalizeSettings(event.settings) };
     case "score-replaced":
       return { ...next, scoreHash: event.scoreHash, scorePath: event.scorePath, measureCount: event.measureCount, fileName: event.fileName ?? record.fileName };
     case "piece-archived":
@@ -145,7 +145,7 @@ function fromRow(row: PieceRow): PieceRecord {
     measureCount: row.measure_count,
     phraseStarts: row.phrase_starts,
     // Settings added later fall back to their defaults.
-    settings: { ...defaultSettings(), ...row.settings },
+    settings: normalizeSettings(row.settings),
     createdAt: Date.parse(row.created_at),
     updatedAt: Date.parse(row.updated_at),
   };

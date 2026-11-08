@@ -19,8 +19,8 @@ export interface PieceSettings {
   misses: number;
   /** The standard tempo, quarter beats per minute: the file's own until changed. */
   tempo: number;
-  /** The slow tempo as a share of the standard one. */
-  slowShare: number;
+  /** The slow tempo, quarter beats per minute: what "slow" means for this piece. */
+  slowTempo: number;
   /** The synth plays the hand not being practised. */
   otherHand: boolean;
   /** Clicks through each pass, not just the count-in. */
@@ -32,9 +32,28 @@ export interface PieceSettings {
 }
 
 export const DEFAULT_TEMPO = 80;
+export const MIN_TEMPO = 20;
+export const MAX_TEMPO = 240;
+/** The slow tempo a piece starts with, as a share of its standard one. */
+const DEFAULT_SLOW_SHARE = 0.6;
 
 export function defaultSettings(tempo = DEFAULT_TEMPO): PieceSettings {
-  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowShare: 0.6, otherHand: true, metronome: true, fingerings: true, highlightPlayed: false };
+  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowTempo: slowTempoFor(tempo), otherHand: true, metronome: true, fingerings: true, highlightPlayed: false };
+}
+
+function slowTempoFor(tempo: number, share = DEFAULT_SLOW_SHARE): number {
+  return Math.max(MIN_TEMPO, Math.round(tempo * share));
+}
+
+/**
+ * Settings as stored, which may predate later fields: missing ones take their defaults, and a
+ * slow tempo kept as a share of the standard one (`slowShare`) becomes a tempo of its own.
+ */
+export function normalizeSettings(stored: Partial<PieceSettings> & { slowShare?: number }): PieceSettings {
+  const { slowShare, ...rest } = stored;
+  const base = defaultSettings(rest.tempo);
+  const slowTempo = rest.slowTempo ?? (slowShare !== undefined ? slowTempoFor(base.tempo, slowShare) : base.slowTempo);
+  return { ...base, ...rest, slowTempo };
 }
 
 export const PLAN_LABELS: Record<Plan, string> = { "slow-first": "Slow first, then standard", standard: "Standard tempo directly" };
@@ -56,7 +75,7 @@ export function stepLabel(step: Step, plan: Plan): string {
 }
 
 export function stepTempo(settings: PieceSettings, speed: Speed): number {
-  return speed === "slow" ? Math.max(20, Math.round(settings.tempo * settings.slowShare)) : settings.tempo;
+  return speed === "slow" ? Math.max(MIN_TEMPO, Math.round(settings.slowTempo)) : settings.tempo;
 }
 
 /** A phrase: written bars from..to, measure indices inclusive. */

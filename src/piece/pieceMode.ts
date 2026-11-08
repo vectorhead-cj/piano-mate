@@ -26,6 +26,8 @@ import {
   stepProgress,
   stepsFor,
   stepTempo,
+  MIN_TEMPO,
+  MAX_TEMPO,
   STREAK_CHOICES,
   streakMarks,
   type Phrase,
@@ -54,7 +56,6 @@ const MIN_HOLD_SECONDS = 0.04;
 const DETACHED = 0.9;
 /** Taps further apart than this start a new tap-tempo count. */
 const TAP_RESET_MS = 2500;
-const SLOW_SHARES = [0.4, 0.5, 0.6, 0.7, 0.8] as const;
 /** Size of the examples on the intro cards. */
 const EXAMPLE_ZOOM = 0.7;
 const ACCEPT = ".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml";
@@ -213,7 +214,6 @@ export class PieceMode {
   private readonly miniPieces = new Map<string, Piece>();
   /** The example scores on the piece page, kept so a resize redraws them. */
   private examples: PieceScoreView[] = [];
-  private taps: number[] = [];
   /** Listening: the marks and cursor still to move with the music. */
   private soundTimers: number[] = [];
   /** The Listen playback is sounding; its button reads Stop. */
@@ -663,27 +663,33 @@ export class PieceMode {
       this.changeSettings(patch);
       this.render();
     };
-    const tempoInput = h("input", { type: "number", min: "20", max: "240", step: "1", value: String(settings.tempo), "aria-label": "Standard tempo" });
-    tempoInput.addEventListener("change", () => {
-      const value = Math.round(Number(tempoInput.value));
-      if (value >= 20 && value <= 240) update({ tempo: value });
-    });
-    const tapLabel = h("span", { class: "menu-muted" }, piece.tempo ? `The score says ♩ = ${Math.round(piece.tempo)}.` : "The score gives no tempo: tap it in.");
-    const tap = button("Tap", () => {
-      const now = performance.now();
-      if (this.taps.length > 0 && now - this.taps[this.taps.length - 1] > TAP_RESET_MS) this.taps = [];
-      this.taps.push(now);
-      if (this.taps.length < 3) {
-        tapLabel.textContent = `Keep tapping the beat… (${this.taps.length})`;
-        return;
-      }
-      const gaps = this.taps.slice(1).map((t, i) => t - this.taps[i]).sort((a, b) => a - b);
-      const bpm = Math.round(60_000 / gaps[Math.floor(gaps.length / 2)]);
-      if (bpm < 20 || bpm > 240) return;
-      tempoInput.value = String(bpm);
-      this.changeSettings({ tempo: bpm });
-      tapLabel.textContent = `♩ = ${bpm} from ${this.taps.length} taps`;
-    }, "btn-secondary piece-tap");
+    const tempoField = (caption: string, key: "tempo" | "slowTempo", note: string) => {
+      const input = h("input", { type: "number", min: String(MIN_TEMPO), max: String(MAX_TEMPO), step: "1", value: String(settings[key]), "aria-label": caption });
+      input.addEventListener("change", () => {
+        const value = Math.round(Number(input.value));
+        if (value >= MIN_TEMPO && value <= MAX_TEMPO) update({ [key]: value });
+      });
+      const label = h("span", { class: "menu-muted" }, note);
+      let taps: number[] = [];
+      const tap = button("Tap", () => {
+        const now = performance.now();
+        if (taps.length > 0 && now - taps[taps.length - 1] > TAP_RESET_MS) taps = [];
+        taps.push(now);
+        if (taps.length < 3) {
+          label.textContent = `Keep tapping the beat… (${taps.length})`;
+          return;
+        }
+        const gaps = taps.slice(1).map((t, i) => t - taps[i]).sort((a, b) => a - b);
+        const bpm = Math.round(60_000 / gaps[Math.floor(gaps.length / 2)]);
+        if (bpm < MIN_TEMPO || bpm > MAX_TEMPO) return;
+        input.value = String(bpm);
+        this.changeSettings({ [key]: bpm });
+        label.textContent = `♩ = ${bpm} from ${taps.length} taps`;
+      }, "btn-secondary piece-tap");
+      return { field: h("label", { class: "piece-field" }, h("span", { class: "field-caption" }, caption), h("span", { class: "piece-tempo" }, input, tap)), label };
+    };
+    const standard = tempoField("Standard tempo ♩", "tempo", piece.tempo ? `The score says ♩ = ${Math.round(piece.tempo)}.` : "The score gives no tempo: tap it in.");
+    const slow = tempoField("Slow tempo ♩", "slowTempo", `Slow practice plays at ♩ = ${settings.slowTempo}, ${Math.round((settings.slowTempo / settings.tempo) * 100)}% of standard.`);
 
     const toggle = (label: string, checked: boolean, onChange: (on: boolean) => void) => {
       const box = h("input", { type: "checkbox" });
@@ -707,13 +713,11 @@ export class PieceMode {
           MISS_CHOICES.filter((n) => n < settings.streak).map((n) => ({ value: n, label: n === 0 ? "None" : `${n} per ${settings.streak}` })),
           (misses) => update({ misses }),
         ),
-        h("label", { class: "piece-field" }, h("span", { class: "field-caption" }, "Standard tempo ♩"), h("span", { class: "piece-tempo" }, tempoInput, tap)),
-        settings.plan === "slow-first" &&
-          select("Slow tempo", settings.slowShare, SLOW_SHARES.map((share) => ({ value: share, label: `${Math.round(share * 100)}% · ♩ = ${stepTempo({ ...settings, slowShare: share }, "slow")}` })), (slowShare) =>
-            update({ slowShare }),
-          ),
+        standard.field,
+        settings.plan === "slow-first" && slow.field,
       ),
-      tapLabel,
+      standard.label,
+      settings.plan === "slow-first" && slow.label,
       h(
         "div",
         { class: "piece-toggles" },
