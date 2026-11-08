@@ -169,11 +169,11 @@ export class PieceScoreView {
       ...(compact && { drawingParameters: "compacttight" }),
     });
     if (compact && zoom === undefined) {
-      // As the curriculum's staff: room kept for ledger lines (C4 below the staff).
+      // Room for ledger lines (C4 below the staff) and for fingering numbers above and below it.
       const rules = this.osmd.EngravingRules;
-      rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 2.5);
-      rules.PageTopMargin = Math.max(rules.PageTopMargin, 1.5);
-      rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 1.5);
+      rules.PageBottomMargin = Math.max(rules.PageBottomMargin, 4);
+      rules.PageTopMargin = Math.max(rules.PageTopMargin, 3.5);
+      rules.PageTopMarginNarrow = Math.max(rules.PageTopMarginNarrow, 3.5);
     } else if (zoom !== undefined) {
       // A small example sits snug in its card: just room for ledger lines and the bar numbers.
       const rules = this.osmd.EngravingRules;
