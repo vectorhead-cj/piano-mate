@@ -21,6 +21,10 @@ A phone-friendly drill: one bar of four quarter notes, numbered 1–4, and the o
 - **Storage:** answers are `card-answered` events in the same log as practice. The schedule is folded from them, so nothing extra is stored and no migration is needed. Flashcards never touch curriculum stars, and screen-keyboard play stays out of progress as before.
 - The home page's activity chart shows flashcard minutes in their own colour.
 
+## Credits
+
+Piano sound: [Salamander Grand Piano](https://sfzinstruments.github.io/pianos/salamander/) by Alexander Holm, licensed [CC-BY 3.0](https://creativecommons.org/licenses/by/3.0/). The samples in `public/piano/` are the mp3 versions hosted by Tone.js, one every minor third from A0 to C8; the app repitches the nearest one for each note.
+
 ## Deploy
 
 Pushing to `master` runs `.github/workflows/deploy.yml`, which tests, builds and publishes to GitHub Pages.

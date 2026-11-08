@@ -13,7 +13,25 @@ const CLICK_SECONDS = 0.04;
 const BELL_CLICK_SECONDS = 0.07;
 const BELL_CLICK_GAIN = 1.2;
 
-/** A short plucked tone. Placeholder until we swap in piano samples. */
+/** Salamander Grand Piano samples (public/piano), one every minor third: C, D#, F#, A. */
+const SAMPLE_NOTES: [string, number][] = [["C", 0], ["Ds", 3], ["Fs", 6], ["A", 9]];
+const SAMPLE_GAIN = 0.7;
+/** Unheld notes ring out naturally, faded after this long. */
+const SAMPLE_RING_SECONDS = 6;
+
+function samplePitches(): { name: string; pitch: number }[] {
+  const out: { name: string; pitch: number }[] = [];
+  for (let octave = 0; octave <= 8; octave++) {
+    for (const [name, semitone] of SAMPLE_NOTES) {
+      const pitch = 12 * (octave + 1) + semitone;
+      if (pitch < 21 || pitch > 108 || (octave === 8 && name !== "C")) continue;
+      out.push({ name: `${name}${octave}`, pitch });
+    }
+  }
+  return out;
+}
+
+/** Piano sound: sampled grand piano once loaded, a plucked triangle tone until then (or if loading fails). */
 export class Synth {
   /** Where notes go; the keyboard sink only sounds when a MIDI output is connected. */
   output: SoundOutput = "computer";
@@ -22,7 +40,9 @@ export class Synth {
   /** In-flight resume so concurrent play/click/unlock share one unlock attempt. */
   private unlocking: Promise<AudioContext | null> | null = null;
   /** Notes scheduled to start later, so they can be called off. */
-  private pending: { oscillator: OscillatorNode; gain: GainNode; start: number }[] = [];
+  private pending: { oscillator: AudioScheduledSourceNode; gain: GainNode; start: number }[] = [];
+  private samples: { pitch: number; buffer: AudioBuffer }[] = [];
+  private samplesLoading = false;
 
   /** Call from a user gesture. Browsers only allow AudioContext to leave "suspended" then. */
   unlock(): void {
@@ -98,11 +118,78 @@ export class Synth {
         return null;
       }
     }
-    return this.context.state === "running" ? this.context : null;
+    if (this.context.state !== "running") return null;
+    void this.loadSamples(this.context);
+    return this.context;
+  }
+
+  /** Fetches and decodes the piano samples once; notes use the synth tone until they arrive. */
+  private async loadSamples(context: AudioContext): Promise<void> {
+    if (this.samplesLoading) return;
+    this.samplesLoading = true;
+    const base = `${import.meta.env.BASE_URL}piano/`;
+    const loaded = await Promise.all(
+      samplePitches().map(async ({ name, pitch }) => {
+        try {
+          const response = await fetch(`${base}${name}.mp3`);
+          if (!response.ok) return null;
+          return { pitch, buffer: await context.decodeAudioData(await response.arrayBuffer()) };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    this.samples = loaded.filter((s): s is { pitch: number; buffer: AudioBuffer } => s !== null);
+  }
+
+  private nearestSample(pitch: number): { pitch: number; buffer: AudioBuffer } | null {
+    let best: { pitch: number; buffer: AudioBuffer } | null = null;
+    for (const sample of this.samples) {
+      if (!best || Math.abs(sample.pitch - pitch) < Math.abs(best.pitch - pitch)) best = sample;
+    }
+    return best;
+  }
+
+  private scheduleSample(context: AudioContext, sample: { pitch: number; buffer: AudioBuffer }, pitch: number, velocity: number, holdSeconds: number | undefined, now: number): void {
+    const source = context.createBufferSource();
+    source.buffer = sample.buffer;
+    source.playbackRate.value = 2 ** ((pitch - sample.pitch) / 12);
+    const natural = sample.buffer.duration / source.playbackRate.value;
+    const gain = context.createGain();
+    const peak = SAMPLE_GAIN * velocity;
+    gain.gain.setValueAtTime(peak, now);
+    let end: number;
+    if (holdSeconds === undefined) {
+      end = now + Math.min(natural, SAMPLE_RING_SECONDS);
+      gain.gain.setValueAtTime(peak, Math.max(now, end - 0.5));
+      gain.gain.linearRampToValueAtTime(0, end);
+    } else {
+      // The damper falls when the key is released.
+      const release = Math.min(RELEASE_SECONDS, Math.max(MIN_RELEASE_SECONDS, holdSeconds / 2));
+      end = now + Math.min(holdSeconds + release, natural);
+      const releaseAt = Math.max(now, end - release);
+      gain.gain.setValueAtTime(peak, releaseAt);
+      gain.gain.linearRampToValueAtTime(0, end);
+    }
+    source.connect(gain);
+    gain.connect(context.destination);
+    const voice = { oscillator: source, gain, start: now };
+    if (now > context.currentTime) this.pending.push(voice);
+    source.onended = () => {
+      gain.disconnect();
+      this.pending = this.pending.filter((v) => v !== voice);
+    };
+    source.start(now);
+    source.stop(end + 0.05);
   }
 
   private scheduleNote(context: AudioContext, pitch: number, velocity: number, holdSeconds?: number, at?: number): void {
     const now = Math.max(context.currentTime, at === undefined ? 0 : context.currentTime + (at - performance.now()) / 1000);
+    const sample = this.nearestSample(pitch);
+    if (sample) {
+      this.scheduleSample(context, sample, pitch, velocity, holdSeconds, now);
+      return;
+    }
     const peak = PEAK_GAIN * velocity;
     const release = holdSeconds === undefined ? 0 : Math.min(RELEASE_SECONDS, Math.max(MIN_RELEASE_SECONDS, holdSeconds / 2));
     const end = holdSeconds === undefined ? now + DECAY_SECONDS : now + holdSeconds + release;
