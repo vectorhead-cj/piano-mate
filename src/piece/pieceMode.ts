@@ -325,6 +325,7 @@ export class PieceMode {
     const scrolled = this.root.dataset.screen === this.screen.name ? this.root.scrollTop : 0;
     this.view = null;
     this.keyboard = null;
+    this.deps.keyScale.useKeyboard?.(null);
     this.examples = [];
     this.scroller = null;
     this.root.dataset.screen = this.screen.name;
@@ -992,6 +993,7 @@ export class PieceMode {
     attachScreenInput(keys, this.deps.stream);
     const keyArea = h("section", { class: "keyboard-area", "aria-label": "Keyboard" }, keys);
     this.keyboard = new KeyboardView(keys);
+    this.deps.keyScale.useKeyboard?.(this.keyboard);
     this.scroller = scroller;
 
     const hotState = h("div", { class: "hot-state", "aria-live": "polite" }, this.hotText());

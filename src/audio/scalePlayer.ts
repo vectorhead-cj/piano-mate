@@ -6,7 +6,7 @@ const HOLD_SECONDS = 0.25;
 /** How long the finished scale stays lit. */
 const LINGER_MS = 700;
 
-interface ScaleKeyboard {
+export interface ScaleKeyboard {
   visibleRange: { lowest: number; highest: number };
   setScaleLit(midi: number, on: boolean): void;
 }
@@ -18,8 +18,20 @@ export class ScalePlayer {
 
   constructor(
     private readonly synth: { play(pitch: number, velocity?: number, holdSeconds?: number): void; unlock(): void },
-    private readonly keyboard: ScaleKeyboard,
+    private readonly mainKeyboard: ScaleKeyboard,
   ) {}
+
+  private override: ScaleKeyboard | null = null;
+
+  private get keyboard(): ScaleKeyboard {
+    return this.override ?? this.mainKeyboard;
+  }
+
+  /** Lights this keyboard instead of the main one (piece practice has its own); null goes back. */
+  useKeyboard(keyboard: ScaleKeyboard | null): void {
+    this.stop();
+    this.override = keyboard;
+  }
 
   /** Lights the key's scale on the keyboard without sounding it; null (or a played scale ending) clears it. */
   preview(key: KeyInfo | null): void {

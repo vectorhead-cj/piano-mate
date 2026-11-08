@@ -165,7 +165,9 @@ async function main(): Promise<void> {
   const notationView = new NotationView(notationElement);
   const keyboard = new KeyboardView(keyboardElement);
   const scalePlayer = new ScalePlayer(synth, keyboard);
-  const keyScale = { play: (key: KeyInfo) => scalePlayer.play(key), preview: (key: KeyInfo | null) => scalePlayer.preview(key) };
+  const keyScale = { play: (key: KeyInfo) => scalePlayer.play(key), preview: (key: KeyInfo | null) => scalePlayer.preview(key),
+    useKeyboard: (view: Parameters<ScalePlayer["useKeyboard"]>[0]) => scalePlayer.useKeyboard(view),
+  };
   notationView.setKeyScale(keyScale);
   let onPhraseShown: (() => void) | undefined;
   // Refresh the MusicXML dump whenever a phrase is drawn.

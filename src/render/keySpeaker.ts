@@ -11,6 +11,8 @@ export interface KeyScaleHandlers {
   play(key: KeyInfo): void;
   /** The key to show on the keyboard while hovered, or null once the pointer leaves. */
   preview(key: KeyInfo | null): void;
+  /** Lights this keyboard instead of the main one; null goes back to the main one. */
+  useKeyboard?(keyboard: { visibleRange: { lowest: number; highest: number }; setScaleLit(midi: number, on: boolean): void } | null): void;
 }
 
 /** A speaker button above the first staff's key signature (or the empty place C and A minor leave). */
