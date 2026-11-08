@@ -121,6 +121,8 @@ export class PieceScoreView {
   private columns: Column[] = [];
   /** Played keys show as lit staff lines and spaces, behind the music; only in free play. */
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
+  /** Noteheads under the pointer, in the colour the keyboard lights them. */
+  private readonly hoverLayer = document.createElementNS(SVG_NS, "svg");
   private highlightPlayed = false;
   private freePlay = true;
   private readonly held = new Set<number>();
@@ -153,7 +155,9 @@ export class PieceScoreView {
     this.overlay.setAttribute("aria-hidden", "true");
     this.playedLayer.setAttribute("class", "piece-played");
     this.playedLayer.setAttribute("aria-hidden", "true");
-    root.replaceChildren(this.playedLayer, this.sheet, this.overlay);
+    this.hoverLayer.setAttribute("class", "piece-hover");
+    this.hoverLayer.setAttribute("aria-hidden", "true");
+    root.replaceChildren(this.playedLayer, this.sheet, this.overlay, this.hoverLayer);
     this.osmd = new OpenSheetMusicDisplay(this.sheet, {
       backend: "svg",
       autoResize: false,
@@ -327,6 +331,32 @@ export class PieceScoreView {
    * note sounding with the nearest one along the staff it's over; null away from any.
    */
   pitchesAt(clientX: number, clientY: number): number[] | null {
+    return this.hitAt(clientX, clientY)?.map((n) => n.midi) ?? null;
+  }
+
+  /** Marks the noteheads under a point, as pitchesAt picks them, and returns their pitches. */
+  hoverAt(clientX: number, clientY: number): number[] {
+    const hit = this.hitAt(clientX, clientY);
+    this.hoverLayer.replaceChildren();
+    if (!hit) return [];
+    const unit = 10 * this.osmd.Zoom;
+    for (const note of hit) {
+      const head = document.createElementNS(SVG_NS, "ellipse");
+      head.setAttribute("cx", String(note.x));
+      head.setAttribute("cy", String(note.y));
+      head.setAttribute("rx", String(HEAD_HALF_WIDTH_UNITS * unit * 0.85));
+      head.setAttribute("ry", String(HEAD_HALF_HEIGHT_UNITS * unit * 0.95));
+      head.setAttribute("class", "piece-hover-head");
+      this.hoverLayer.append(head);
+    }
+    return hit.map((n) => n.midi);
+  }
+
+  clearHover(): void {
+    this.hoverLayer.replaceChildren();
+  }
+
+  private hitAt(clientX: number, clientY: number): Column["notes"] | null {
     const origin = this.sheet.getBoundingClientRect();
     const x = clientX - origin.left;
     const y = clientY - origin.top;
@@ -338,11 +368,11 @@ export class PieceScoreView {
     for (const column of this.columns) {
       if (!over.includes(column.staff)) continue;
       const head = column.notes.find((n) => Math.abs(x - n.x) <= HEAD_HALF_WIDTH_UNITS * unit && Math.abs(y - n.y) <= HEAD_HALF_HEIGHT_UNITS * unit);
-      if (head) return [head.midi];
+      if (head) return [head];
       const distance = Math.abs(x - column.x);
       if (distance <= COLUMN_REACH_UNITS * unit && (!best || distance < best.distance)) best = { column, distance };
     }
-    return best ? best.column.notes.map((n) => n.midi) : null;
+    return best ? best.column.notes : null;
   }
 
   barBox(measure: number): BarBox | undefined {
@@ -361,6 +391,7 @@ export class PieceScoreView {
 
   private collect(): void {
     const piece = this.piece!;
+    this.clearHover();
     const unit = 10 * this.osmd.Zoom;
     const byKey = new Map<string, number>();
     // Grace notes share their main note's time, so they're told apart by being grace notes.

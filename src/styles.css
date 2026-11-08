@@ -3173,6 +3173,20 @@ dialog.account-dialog::backdrop {
   position: relative;
 }
 
+.piece-hover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* The accent the keyboard's hover tint is made from, solid so it covers the black notehead. */
+.piece-hover-head {
+  fill: var(--accent);
+}
+
 .piece-overlay {
   position: absolute;
   inset: 0;

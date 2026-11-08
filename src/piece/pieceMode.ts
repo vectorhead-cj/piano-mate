@@ -960,9 +960,12 @@ export class PieceMode {
     view.setHighlightPlayed(this.deps.highlightPlayed());
     sheet.addEventListener("pointermove", (event) => {
       if (event.pointerType === "touch") return;
-      this.keyboard?.setHover(view.pitchesAt(event.clientX, event.clientY) ?? []);
+      this.keyboard?.setHover(view.hoverAt(event.clientX, event.clientY));
     });
-    sheet.addEventListener("pointerleave", () => this.keyboard?.setHover([]));
+    sheet.addEventListener("pointerleave", () => {
+      this.keyboard?.setHover([]);
+      view.clearHover();
+    });
     // In focus mode, dragging across the notes picks out the ones to repeat, a column at a time.
     let drag: { anchor: MusicPoint; pointer: number } | null = null;
     sheet.addEventListener("pointerdown", (event) => {
