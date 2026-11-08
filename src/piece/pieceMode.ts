@@ -142,6 +142,8 @@ export interface PieceModeDependencies {
   startKey: () => number;
   /** Where passes are recorded, with the rest of practice. */
   log: Promise<EventLog>;
+  /** Told of each pass as it is recorded, for what is folded from the whole history (the activity chart). */
+  onPass?: (pass: PiecePass) => void;
   /** This page load, as practice events record it. */
   session: string;
   /** The speaker button over a score's key signature. */
@@ -1179,6 +1181,7 @@ export class PieceMode {
       notes: pass.session.targets.map((_, i) => pass.session.stateOf(i)),
     };
     this.passes.push(event);
+    this.deps.onPass?.(event);
     this.log?.append(event).catch((error) => {
       console.warn("Could not save the pass", error);
       this.notice = { tone: "error", text: "Practice on this piece couldn't be saved to your account." };

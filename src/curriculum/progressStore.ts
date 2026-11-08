@@ -56,6 +56,12 @@ export class ProgressStore {
     this.recompute();
   }
 
+  /** Takes in an event someone else is saving, so what is folded from the history includes it. */
+  observe(event: PracticeEvent): void {
+    this.events.push(event);
+    this.recompute();
+  }
+
   private save(event: PracticeEvent): void {
     this.log!.append(event).catch((error) => {
       console.warn("Could not save practice event", error);

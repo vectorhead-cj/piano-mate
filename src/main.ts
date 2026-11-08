@@ -409,6 +409,7 @@ async function main(): Promise<void> {
     startKey: () => practice.retryPitch,
     keyScale,
     log: eventLog,
+    onPass: (pass) => store.observe(pass),
     session,
     signIn: () => accountDialog.open(),
   });

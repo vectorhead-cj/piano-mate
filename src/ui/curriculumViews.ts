@@ -122,29 +122,60 @@ export function minutesText(minutes: number): string {
 /** The tallest bar stands for at least this, so a short day doesn't fill the chart. */
 const ACTIVITY_SCALE_MIN = 10;
 
-/** Minutes per day as bars, today last, phrases and flashcards stacked in their own colours. */
+/** What the chart can show, bottom of each column first. */
+const ACTIVITY_SERIES = [
+  { key: "phrases", label: "Phrases", of: "of phrases", minutes: (d: DayActivity) => d.minutes },
+  { key: "pieces", label: "Pieces", of: "of pieces", minutes: (d: DayActivity) => d.pieceMinutes },
+  { key: "cards", label: "Flashcards", of: "of flashcards", minutes: (d: DayActivity) => d.cardMinutes },
+] as const;
+
+const ACTIVITY_HIDDEN_KEY = "piano-mate.activity-hidden";
+
+/** Series the player switched off in the legend; kept for the next visit. */
+const hiddenSeries = new Set<string>(
+  (() => {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(ACTIVITY_HIDDEN_KEY) ?? "[]");
+      return Array.isArray(stored) ? stored.filter((key): key is string => typeof key === "string") : [];
+    } catch {
+      return [];
+    }
+  })(),
+);
+
+function saveHiddenSeries(): void {
+  try {
+    localStorage.setItem(ACTIVITY_HIDDEN_KEY, JSON.stringify([...hiddenSeries]));
+  } catch {
+    // Not remembered; the toggle still works for this visit.
+  }
+}
+
+/** Minutes per day as bars, today last, each series stacked in its own colour; the legend switches series on and off. */
 function activityCard(activity: readonly DayActivity[]): HTMLElement {
-  const minutes = (d: DayActivity) => d.minutes + d.cardMinutes;
+  const shown = ACTIVITY_SERIES.filter((s) => !hiddenSeries.has(s.key));
+  const minutes = (d: DayActivity) => shown.reduce((sum, s) => sum + s.minutes(d), 0);
   const total = activity.reduce((sum, d) => sum + minutes(d), 0);
   const daysPlayed = activity.filter((d) => minutes(d) > 0).length;
   const scale = Math.max(ACTIVITY_SCALE_MIN, ...activity.map(minutes));
   const dayLabel = (d: DayActivity) => {
     const date = new Date(d.day).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
     if (minutes(d) === 0) return `${date}: nothing`;
-    return `${date}: ${[d.minutes > 0 && `${minutesText(d.minutes)} of phrases`, d.cardMinutes > 0 && `${minutesText(d.cardMinutes)} of flashcards`].filter(Boolean).join(", ")}`;
+    return `${date}: ${shown.filter((s) => s.minutes(d) > 0).map((s) => `${minutesText(s.minutes(d))} ${s.of}`).join(", ")}`;
   };
   // A quarter of a day's width between Sunday and Monday.
   const startsWeek = (i: number) => i > 0 && new Date(activity[i].day).getDay() === 1;
   const bars = activity.flatMap((d, i) => {
     const date = new Date(d.day);
-    const phrases = h("span", { class: "activity-bar", "data-none": d.minutes > 0 ? undefined : "true" });
-    phrases.style.height = `${(d.minutes / scale) * 100}%`;
-    const cards = h("span", { class: "activity-bar cards", "data-none": d.cardMinutes > 0 ? undefined : "true" });
-    cards.style.height = `${(d.cardMinutes / scale) * 100}%`;
+    const segments = shown.map((s) => {
+      const bar = h("span", { class: `activity-bar ${s.key}`, "data-none": s.minutes(d) > 0 ? undefined : "true" });
+      bar.style.height = `${(s.minutes(d) / scale) * 100}%`;
+      return bar;
+    });
     const day = h(
       "span",
       { class: "activity-day", title: dayLabel(d), "data-today": i === activity.length - 1 ? "true" : undefined, "data-empty": minutes(d) > 0 ? undefined : "true" },
-      h("span", { class: "activity-column" }, phrases, cards),
+      h("span", { class: "activity-column" }, ...segments),
       h("span", { class: "activity-weekday", "data-weekday": String(date.getDay()), "aria-hidden": "true" }, date.toLocaleDateString(undefined, { weekday: "narrow" })),
     );
     return startsWeek(i) ? [h("span", { class: "activity-week-gap", "aria-hidden": "true" }), day] : [day];
@@ -152,9 +183,11 @@ function activityCard(activity: readonly DayActivity[]): HTMLElement {
   const columns = activity.map((_, i) => `${startsWeek(i) ? "0.25fr " : ""}1fr`).join(" ");
   const summary =
     daysPlayed === 0
-      ? `Nothing played in the last ${activity.length} days`
+      ? shown.length === 0
+        ? "Every series is switched off"
+        : `Nothing played in the last ${activity.length} days`
       : `${minutesText(total)} over the last ${activity.length} days · ${daysPlayed} ${daysPlayed === 1 ? "day" : "days"} played`;
-  return h(
+  const card = h(
     "article",
     { class: "menu-card home-activity" },
     h("div", { class: "home-activity-head" }, h("h2", { class: "menu-card-title" }, "Recent practice"), h("span", { class: "menu-muted" }, summary)),
@@ -163,8 +196,21 @@ function activityCard(activity: readonly DayActivity[]): HTMLElement {
       { class: "activity-chart", style: `grid-template-columns: ${columns}`, role: "img", "aria-label": `Minutes per day. ${activity.map(dayLabel).join(". ")}` },
       ...bars,
     ),
-    h("div", { class: "activity-legend", "aria-hidden": "true" }, h("span", {}, "Phrases"), h("span", { class: "cards" }, "Flashcards")),
+    h(
+      "div",
+      { class: "activity-legend", role: "group", "aria-label": "Series shown" },
+      ...ACTIVITY_SERIES.map((s) => {
+        const button = h("button", { type: "button", class: `activity-toggle ${s.key}`, "aria-pressed": hiddenSeries.has(s.key) ? "false" : "true" }, s.label);
+        button.addEventListener("click", () => {
+          if (!hiddenSeries.delete(s.key)) hiddenSeries.add(s.key);
+          saveHiddenSeries();
+          card.replaceWith(activityCard(activity));
+        });
+        return button;
+      }),
+    ),
   );
+  return card;
 }
 
 /** A stroked 24×24 icon; `body` is fixed SVG markup from this file. */

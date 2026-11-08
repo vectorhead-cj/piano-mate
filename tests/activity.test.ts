@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CARD_MAX_MS, dailyMinutes } from "../src/curriculum/activity";
-import { playedMs, type CardAnswered, type PhraseCompleted } from "../src/curriculum/events";
+import { CARD_MAX_MS, PASS_MAX_MS, dailyMinutes } from "../src/curriculum/activity";
+import { playedMs, type CardAnswered, type PhraseCompleted, type PiecePass } from "../src/curriculum/events";
 
 function phrase(at: number, startedAt?: number, time?: PhraseCompleted["config"]["time"]): PhraseCompleted {
   return {
@@ -66,5 +66,29 @@ describe("dailyMinutes", () => {
     const [today] = dailyMinutes(events, 1, now);
     expect(today.cardMinutes).toBeCloseTo((15_000 + CARD_MAX_MS) / 60_000);
     expect(today.minutes).toBe(1);
+  });
+
+  it("counts piece passes apart, from the count-in to the grading but no longer than the cap", () => {
+    const pass = (graded: number, began: number): PiecePass => ({
+      type: "piece-pass",
+      v: 1,
+      id: `x${graded}`,
+      at: graded,
+      startedAt: began,
+      session: "s",
+      pieceId: "piece",
+      scoreHash: "h",
+      place: { kind: "full" },
+      tempo: 60,
+      streak: 1,
+      misses: 0,
+      clean: true,
+      notes: ["correct"],
+    });
+    const events = [pass(at(0, 9), at(0, 9) - 30_000), pass(at(0, 10), at(0, 10) - 60 * 60_000)];
+    const [today] = dailyMinutes(events, 1, now);
+    expect(today.pieceMinutes).toBeCloseTo((30_000 + PASS_MAX_MS) / 60_000);
+    expect(today.minutes).toBe(0);
+    expect(today.cardMinutes).toBe(0);
   });
 });

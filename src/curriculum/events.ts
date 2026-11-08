@@ -179,7 +179,7 @@ export type PracticeEvent = PhraseCompleted | IntroCompleted | TrackStarted | Pi
  * What ProgressStore loads: the events curriculum progress, the flashcard schedule and the
  * activity chart are folded from.
  */
-export const PROGRESS_EVENT_TYPES = ["phrase-completed", "intro-completed", "track-started", "card-answered"] as const satisfies readonly PracticeEvent["type"][];
+export const PROGRESS_EVENT_TYPES = ["phrase-completed", "intro-completed", "track-started", "card-answered", "piece-pass"] as const satisfies readonly PracticeEvent["type"][];
 
 const ALTER_TEXT: Record<Alter, string> = { [-1]: "b", 0: "", 1: "#" };
 
