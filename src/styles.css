@@ -1586,6 +1586,36 @@ dialog.account-dialog::backdrop {
   -webkit-user-select: text;
 }
 
+.account-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.account-step[hidden] {
+  display: none;
+}
+
+.account-field input:read-only {
+  color: var(--muted);
+}
+
+.account-switch {
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .account-message {
   margin: 0;
   min-height: 1.2em;

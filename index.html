@@ -317,21 +317,39 @@
       <form class="account-form" data-account-form>
         <h2 id="account-title" class="account-title">Sign in</h2>
         <p class="menu-muted">
-          Your progress then follows you to every device you sign in on. Piano Mate is in alpha, so new
-          accounts aren't available yet.
+          Your progress then follows you to every device you sign in on. Piano Mate is in alpha and
+          invite-only for now.
         </p>
         <label class="account-field">
           Email
-          <input type="email" name="email" autocomplete="email" required />
+          <input type="email" name="email" autocomplete="email" required data-account-email />
         </label>
-        <label class="account-field">
-          Password
-          <input type="password" name="password" autocomplete="current-password" minlength="6" required />
-        </label>
+        <fieldset class="account-step" data-account-step="code" hidden disabled>
+          <p class="menu-muted" data-account-code-hint></p>
+          <label class="account-field">
+            Code
+            <input
+              type="text"
+              name="code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="[0-9]{6,10}"
+              maxlength="10"
+              required
+            />
+          </label>
+        </fieldset>
+        <fieldset class="account-step" data-account-step="password" hidden disabled>
+          <label class="account-field">
+            Password
+            <input type="password" name="password" autocomplete="current-password" minlength="6" required />
+          </label>
+        </fieldset>
         <p class="account-message" data-account-message role="status"></p>
         <div class="account-actions">
+          <button type="button" class="account-switch" data-account-switch>Use a password instead</button>
           <button type="button" class="btn-secondary" data-account-cancel>Cancel</button>
-          <button type="submit" class="btn-primary" value="sign-in">Sign in</button>
+          <button type="submit" class="btn-primary" data-account-submit>Email me a code</button>
         </div>
       </form>
     </dialog>

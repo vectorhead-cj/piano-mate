@@ -33,6 +33,31 @@ export async function signIn(email: string, password: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Emails a one-time sign-in code. Only existing accounts get one: sign-ups are closed, and
+ * shouldCreateUser keeps this from making an account for a stranger's email.
+ */
+export async function requestSignInCode(email: string): Promise<void> {
+  const { error } = await (await supabase()).auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+  if (error) throw new Error(signInCodeMessage(error.message));
+}
+
+/** Signs in with the code from the email, in this browser. */
+export async function verifySignInCode(email: string, code: string): Promise<void> {
+  const { error } = await (await supabase()).auth.verifyOtp({ email, token: code, type: "email" });
+  if (error) throw new Error(signInCodeMessage(error.message));
+}
+
+/** Supabase's wording for the cases a tester is likely to hit, in plainer words. */
+export function signInCodeMessage(message: string): string {
+  if (/signups? not allowed/i.test(message)) {
+    return "There's no account for that email. Piano Mate is invite-only for now.";
+  }
+  if (/expired|invalid/i.test(message)) return "That code is wrong or has expired. Ask for a new one.";
+  if (/rate limit|security purposes/i.test(message)) return "Too many emails just now. Try again in a few minutes.";
+  return message;
+}
+
 export async function signOut(): Promise<void> {
   const { error } = await (await supabase()).auth.signOut();
   if (error) throw error;
