@@ -60,15 +60,25 @@ export function graceLead(graces: readonly PieceNote[], main: number): number {
 }
 
 /**
- * The span through `order`. Tied-on notes aren't pressed again. Grace notes aren't graded, but
- * sound on the beat and push the note they lead into later; ornamented notes aren't graded.
+ * The span through `order`. Tied-on notes aren't pressed again, unless the span doesn't play the
+ * bar their tie comes from just before (it starts on them, or a repeat jumps to them): then nothing
+ * is sounding yet and they're struck afresh. Grace notes aren't graded, but sound on the beat and
+ * push the note they lead into later; ornamented notes aren't graded.
  */
 export function playSpan(piece: Piece, order: readonly number[], hand: HandChoice): PlaySpan {
   const byMeasure = new Map<number, number[]>();
+  /** Tied-on notes by bar, with the bar their tie comes from. */
+  const heldByMeasure = new Map<number, { index: number; from: number }[]>();
   /** Grace notes by the bar, hand and time they lead into. */
   const graceAt = new Map<string, number[]>();
   const place = (note: PieceNote) => `${note.measure}|${note.hand}|${note.offset}`;
   piece.notes.forEach((note, i) => {
+    if (note.tieNext !== undefined && note.tieNext >= 0) {
+      const held = piece.notes[note.tieNext];
+      const list = heldByMeasure.get(held.measure) ?? [];
+      list.push({ index: note.tieNext, from: note.measure });
+      heldByMeasure.set(held.measure, list);
+    }
     if (note.grace) {
       graceAt.set(place(note), [...(graceAt.get(place(note)) ?? []), i]);
       return;
@@ -99,7 +109,9 @@ export function playSpan(piece: Piece, order: readonly number[], hand: HandChoic
   let at = 0;
   order.forEach((measure, slot) => {
     slotStarts.push(at);
-    for (const index of byMeasure.get(measure) ?? []) {
+    const restruck = (heldByMeasure.get(measure) ?? []).filter((held) => slot === 0 || order[slot - 1] !== held.from);
+    const pressed = [...(byMeasure.get(measure) ?? []), ...restruck.map((held) => held.index)].sort((a, b) => a - b);
+    for (const index of pressed) {
       const note = piece.notes[index];
       const notes = [index];
       let length = note.length;

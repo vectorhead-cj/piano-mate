@@ -128,6 +128,21 @@ describe("PieceSession", () => {
     expect(span.targets[0]).toMatchObject({ length: 8, notes: [0, 1] });
   });
 
+  it("strikes a tied note afresh when the span doesn't play the bar its tie comes from", () => {
+    const tied: Piece = {
+      ...piece(),
+      notes: [n("right", 72, 0, 4, { tieNext: 1 }), n("right", 72, 4, 2, { tiedFrom: true }), n("right", 74, 6, 2)],
+    };
+    // Starting on the held note's bar: nothing is sounding, so it's pressed for what's left of it.
+    const span = playSpan(tied, [1], "right");
+    expect(span.targets.map((t) => t.notes)).toEqual([[1], [2]]);
+    expect(span.targets[0]).toMatchObject({ pitch: 72, due: 0, length: 2 });
+    // Looping the bar: each time round it's struck again.
+    expect(playSpan(tied, [1, 1], "right").targets.map((t) => t.notes)).toEqual([[1], [2], [1], [2]]);
+    // Coming from the bar the tie starts in, it's still held on.
+    expect(playSpan(tied, [0, 1], "right").targets.map((t) => t.notes)).toEqual([[0, 1], [2]]);
+  });
+
   it("doesn't grade a trill, and lets its keys be played any way", () => {
     const trilled: Piece = {
       ...piece(),
