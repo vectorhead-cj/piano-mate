@@ -78,6 +78,7 @@ import {
 } from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
 import { bindKeyboardHeight } from "./ui/keyboardHeight";
+import { restorePieceWide } from "./ui/pieceWidth";
 import { bindPrefsPopover, bindTheme } from "./ui/theme";
 
 /** Time to see a clean intro example turn green before the next one comes up. */
@@ -997,6 +998,7 @@ async function main(): Promise<void> {
 
   bindTheme(element<HTMLFormElement>("settings"), () => notationView.refreshTheme());
   bindKeyboardHeight(element<HTMLFormElement>("settings"));
+  restorePieceWide();
   bindPrefsPopover(element<HTMLButtonElement>("prefs-toggle"), element("prefs"));
 
   bindSettingsBar(element<HTMLFormElement>("settings"), DEFAULT_SETTINGS, (next, changed) => {

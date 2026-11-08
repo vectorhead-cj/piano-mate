@@ -8,6 +8,7 @@ import { newId, type PiecePass } from "../curriculum/events";
 import type { NoteStream } from "../input/noteStream";
 import { attachScreenInput } from "../input/screenInput";
 import { midiNoteName } from "../music/pitch";
+import { pieceWide, setPieceWide } from "../ui/pieceWidth";
 import type { NoteEvent } from "../music/types";
 import { pieceFeatures, type FeatureScore, type PieceFeature } from "./features";
 import { applyPieceEvent, deviceState, openPieceLibrary, setDeviceState, type PieceChange, type PieceEvent, type PieceLibrary, type PieceRecord } from "./pieceLibrary";
@@ -896,6 +897,14 @@ export class PieceMode {
           )
         : null;
 
+    // Full width gives long scores more measures per line; it only differs from the menu's width on a wide window.
+    const widthToggle = button(pieceWide() ? "Narrow" : "Widen", () => {
+      setPieceWide(!pieceWide());
+      widthToggle.textContent = pieceWide() ? "Narrow" : "Widen";
+      widthToggle.setAttribute("aria-pressed", String(pieceWide()));
+      this.fitKeyboard(info.piece);
+    }, "btn-secondary piece-width", { "aria-pressed": String(pieceWide()), title: "Switch between the menu's width and the full window" });
+
     const startButton = button(this.looping ? "Stop" : "Start", () => this.toggle(), "btn-secondary piece-start");
     const nextPhrase =
       place.kind === "phrase" && place.phrase < phrases.length - 1
@@ -1005,7 +1014,7 @@ export class PieceMode {
           "div",
           { class: "practice-bar" },
           h("div", { class: "practice-bar-title" }, h("span", { class: "practice-bar-name" }, info.title), h("span", { class: "practice-bar-number" }, `${record.title} · ${info.detail}`)),
-          chips,
+          h("div", { class: "practice-bar-tools" }, chips, widthToggle),
         ),
         h(
           "div",

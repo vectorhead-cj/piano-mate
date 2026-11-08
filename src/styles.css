@@ -263,9 +263,39 @@ body::before {
   width: 100%;
 }
 
-/* The piece practice screen uses the full-width stage, like practice elsewhere. */
-.app[data-view="pieces"]:has(.piece-practice) .topbar {
+/* Piece practice keeps the menu's width unless the player widens it (up to a cap on very large
+   screens); the header buttons follow the stage either way. */
+.piece-practice {
+  width: 100%;
+  max-width: 980px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+:root[data-piece-wide] .app[data-view="pieces"]:has(.piece-practice) {
+  max-width: 1800px;
+}
+
+:root[data-piece-wide] .piece-practice {
   max-width: none;
+}
+
+:root[data-piece-wide] .app[data-view="pieces"]:has(.piece-practice) .topbar {
+  max-width: none;
+}
+
+.practice-bar-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* Below this the window is no wider than the menu, so there is nothing to widen. */
+@media (max-width: 1060px) {
+  .piece-width {
+    display: none;
+  }
 }
 
 /* Logo lockup: three keys (the first lit), a hairline, then the script name. */
