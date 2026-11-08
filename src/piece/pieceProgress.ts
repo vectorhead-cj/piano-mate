@@ -15,8 +15,10 @@ export interface PieceSettings {
   plan: Plan;
   /** Passes a step's streak counts. */
   streak: number;
-  /** Passes in the streak that may go wrong. */
+  /** Passes in the streak that may fail. */
   misses: number;
+  /** Onsets (a note or a chord) in a pass that may go wrong and still let it count. */
+  slips: number;
   /** The standard tempo, quarter beats per minute: the file's own until changed. */
   tempo: number;
   /** The slow tempo, quarter beats per minute: what "slow" means for this piece. */
@@ -38,7 +40,7 @@ export const MAX_TEMPO = 240;
 const DEFAULT_SLOW_SHARE = 0.6;
 
 export function defaultSettings(tempo = DEFAULT_TEMPO): PieceSettings {
-  return { plan: "slow-first", streak: 10, misses: 1, tempo: Math.round(tempo), slowTempo: slowTempoFor(tempo), otherHand: true, metronome: true, fingerings: true, highlightPlayed: false };
+  return { plan: "slow-first", streak: 10, misses: 1, slips: 1, tempo: Math.round(tempo), slowTempo: slowTempoFor(tempo), otherHand: true, metronome: true, fingerings: true, highlightPlayed: false };
 }
 
 function slowTempoFor(tempo: number, share = DEFAULT_SLOW_SHARE): number {
@@ -108,6 +110,7 @@ const KEPT = 30;
 
 export const STREAK_CHOICES = [3, 5, 10, 15, 20] as const;
 export const MISS_CHOICES = [0, 1, 2, 3] as const;
+export const SLIP_CHOICES = [0, 1, 2] as const;
 
 /** The full piece is its last stage: both hands at the standard tempo, played through clean once. */
 export const FULL_STREAK = 1;

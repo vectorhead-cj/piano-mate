@@ -141,6 +141,9 @@ export interface PiecePass {
   /** The streak the step asked for when this was played, and the misses it allowed. */
   streak: number;
   misses: number;
+  /** Wrong onsets (notes or chords) the pass was allowed; absent on passes from before it was offered. */
+  slips?: number;
+  /** Whether the pass counted: nothing went wrong beyond its `slips`. */
   clean: boolean;
   /** Each graded note, in the order they fall: "pending" was never played. */
   notes: ("pending" | "correct" | "late" | "wrong")[];

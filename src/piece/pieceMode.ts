@@ -17,6 +17,7 @@ import { playOrder, type HandChoice, type Piece } from "./piece";
 import {
   FULL_STREAK,
   MISS_CHOICES,
+  SLIP_CHOICES,
   nextPlace,
   phrasesOf,
   pieceDone,
@@ -120,6 +121,8 @@ interface Practice {
   tempo: number;
   streak: number;
   misses: number;
+  /** Wrong onsets a pass may have and still count. */
+  slips: number;
   title: string;
   detail: string;
 }
@@ -723,10 +726,16 @@ export class PieceMode {
         select<Plan>("Plan", settings.plan, (Object.keys(PLAN_LABELS) as Plan[]).map((plan) => ({ value: plan, label: PLAN_LABELS[plan] })), (plan) => update({ plan })),
         select("Streak", settings.streak, STREAK_CHOICES.map((n) => ({ value: n, label: `${n} passes` })), (streak) => update({ streak, misses: Math.min(settings.misses, streak - 1) })),
         select(
-          "Misses allowed",
+          "Failed passes allowed",
           settings.misses,
           MISS_CHOICES.filter((n) => n < settings.streak).map((n) => ({ value: n, label: n === 0 ? "None" : `${n} per ${settings.streak}` })),
           (misses) => update({ misses }),
+        ),
+        select(
+          "Wrong notes per pass",
+          settings.slips,
+          SLIP_CHOICES.map((n) => ({ value: n, label: n === 0 ? "None" : n === 1 ? "1 note or chord" : `${n} notes or chords` })),
+          (slips) => update({ slips }),
         ),
         standard.field,
         settings.plan === "slow-first" && slow.field,
@@ -844,6 +853,7 @@ export class PieceMode {
         tempo,
         streak: 1,
         misses: 0,
+        slips: 0,
         title: `Intro · ${feature.title}`,
         detail: `${drill.label} · ♩ = ${tempo}`,
       };
@@ -858,6 +868,7 @@ export class PieceMode {
         tempo: settings.tempo,
         streak: FULL_STREAK,
         misses: 0,
+        slips: 0,
         title: "Full piece",
         detail: `Both hands · ♩ = ${settings.tempo}`,
       };
@@ -872,6 +883,7 @@ export class PieceMode {
       tempo: stepTempo(settings, place.step.speed),
       streak: settings.streak,
       misses: settings.misses,
+      slips: settings.slips,
       title: `Phrase ${place.phrase + 1} of ${phrases.length} · ${this.barsText(phrase)}`,
       // The step is already shown by the selected chip above.
       detail: `♩ = ${stepTempo(settings, place.step.speed)}`,
@@ -1295,7 +1307,8 @@ export class PieceMode {
   /** The streak as the curriculum draws it: clean passes out of what's needed, and what that takes. */
   private streakStat(progress: StepProgress | undefined, info: Practice): HTMLElement {
     const marks = streakMarks(progress, info.streak);
-    const caption = progress?.passedAt !== undefined ? "Passed ✓" : info.misses > 0 ? `${info.misses} may go wrong` : "";
+    const leeway = [info.misses > 0 && `${info.misses} may fail`, info.slips > 0 && `${info.slips} wrong note${info.slips > 1 ? "s" : ""} a pass`].filter(Boolean).join(" · ");
+    const caption = progress?.passedAt !== undefined ? "Passed ✓" : leeway;
     return h(
       "div",
       { class: "score-stat score-streak" },
@@ -1443,7 +1456,7 @@ export class PieceMode {
     this.metronome.stop();
     const place = this.screen.place;
     const info = this.placeOf(place);
-    const result = pass.session.result();
+    const result = pass.session.result(info.slips);
     const open = this.open;
     const before = this.progressAt(place);
     const phrase = place.kind === "phrase" ? open.phrases[place.phrase] : undefined;
@@ -1460,6 +1473,7 @@ export class PieceMode {
       tempo: info.tempo,
       streak: info.streak,
       misses: info.misses,
+      slips: info.slips,
       clean: result.clean,
       notes: pass.session.targets.map((_, i) => pass.session.stateOf(i)),
     };

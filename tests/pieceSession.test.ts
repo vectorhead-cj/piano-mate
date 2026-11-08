@@ -64,6 +64,24 @@ describe("PieceSession", () => {
     expect(s.result()).toMatchObject({ clean: true, hits: 8, total: 8 });
   });
 
+  it("lets a pass go wrong at as many onsets as it allows, a chord counting once", () => {
+    // Beat 1 is a chord with the melody (72, 48, 55): miss all three.
+    const missChord = (wrongAt?: number) => {
+      const s = session("both");
+      s.targets.forEach((t) => {
+        if (t.due !== 0) s.play(t.pitch, 4000 + t.due * 1000);
+        if (wrongAt !== undefined && t.due === 1) s.play(61, wrongAt);
+      });
+      s.tick(20_000);
+      return s;
+    };
+    expect(missChord().result(1)).toMatchObject({ clean: true, slips: 1, hits: 5 });
+    expect(missChord().result()).toMatchObject({ clean: false, slips: 1 });
+    // A wrong key on beat 2 as well.
+    expect(missChord(5000).result(1)).toMatchObject({ clean: false, slips: 2 });
+    expect(missChord(5000).result(2).clean).toBe(true);
+  });
+
   it("counts a late but accepted note as played", () => {
     const s = session("right");
     playAll(s, 300);

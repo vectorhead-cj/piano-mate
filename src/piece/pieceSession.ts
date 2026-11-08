@@ -15,7 +15,10 @@ export type PiecePlay =
 export type FaultKind = "wrong" | "early" | "missed";
 
 export interface PassResult {
+  /** Nothing went wrong beyond the onsets the pass was allowed to slip on. */
   clean: boolean;
+  /** Onsets (a note, or a chord's notes struck together) where something went wrong. */
+  slips: number;
   total: number;
   hits: number;
   /** The first thing that went wrong, by when it was due. */
@@ -27,7 +30,8 @@ export interface PassResult {
  * matched to the nearest unplayed note at that pitch, inside its window: the app's usual
  * window, narrowed where the same key comes again sooner. As in rhythm mode, a wrong key,
  * a right key before its window, or a note left unplayed spoils the pass; a hit outside
- * the on-time window is late but counts.
+ * the on-time window is late but counts. A pass may be allowed a few slips: onsets (one
+ * note, or a chord's notes due together) where something went wrong.
  */
 export class PieceSession {
   readonly targets: readonly Target[];
@@ -178,11 +182,17 @@ export class PieceSession {
     return { kind: "wrong", index: nearest };
   }
 
-  result(): PassResult {
+  /** How the pass went, clean if it went wrong at no more than `allowed` onsets. */
+  result(allowed = 0): PassResult {
     const hits = this.states.filter((s, i) => this.settled[i] && s !== "wrong").length;
     const first = this.faults.findIndex((f) => f !== undefined);
+    const slipped = new Set<number>();
+    this.targets.forEach((target, i) => {
+      if (this.faults[i] !== undefined || !this.settled[i] || this.states[i] === "wrong") slipped.add(Math.round(target.due * 1e6));
+    });
     return {
-      clean: first < 0 && hits === this.targets.length,
+      clean: slipped.size <= allowed,
+      slips: slipped.size,
       total: this.targets.length,
       hits,
       ...(first >= 0 && { fault: { kind: this.faults[first]!, slot: this.targets[first].slot } }),
