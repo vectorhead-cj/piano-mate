@@ -76,7 +76,8 @@ interface Column {
   x: number;
   /** Quarter beats from its bar's start. */
   offset: number;
-  notes: { midi: number; x: number; y: number }[];
+  /** Each with its index into the piece's notes. */
+  notes: { index: number; midi: number; x: number; y: number }[];
 }
 
 /** Staff spaces around a staff that still count as on it for the pointer. */
@@ -376,25 +377,25 @@ export class PieceScoreView {
   }
 
   /**
-   * The pitches under a point on the screen: the one note if it's on a notehead, otherwise every
+   * The notes under a point on the screen, as indices into the piece's notes: the one note if it's on a notehead, otherwise every
    * note sounding with the nearest one along the staff it's over; null away from any.
    */
-  pitchesAt(clientX: number, clientY: number): number[] | null {
-    return this.hitAt(clientX, clientY)?.map((n) => n.midi) ?? null;
+  notesAt(clientX: number, clientY: number): number[] | null {
+    return this.hitAt(clientX, clientY)?.map((n) => n.index) ?? null;
   }
 
   /**
-   * Marks the noteheads under a point, as pitchesAt picks them, and returns their pitches, with
-   * whether they're other notes than the last call marked.
+   * Marks the noteheads under a point, as notesAt picks them, and returns them as indices into the
+   * piece's notes, with whether they're other notes than the last call marked.
    */
-  hoverAt(clientX: number, clientY: number): { pitches: number[]; fresh: boolean } {
+  hoverAt(clientX: number, clientY: number): { notes: number[]; fresh: boolean } {
     const hit = this.hitAt(clientX, clientY) ?? [];
     const last = this.hovered;
     this.hovered = hit;
     const fresh = hit.length !== last.length || hit.some((note, i) => note !== last[i]);
-    if (!fresh) return { pitches: hit.map((n) => n.midi), fresh };
+    if (!fresh) return { notes: hit.map((n) => n.index), fresh };
     this.hoverLayer.replaceChildren();
-    if (hit.length === 0) return { pitches: [], fresh };
+    if (hit.length === 0) return { notes: [], fresh };
     const unit = 10 * this.osmd.Zoom;
     for (const note of hit) {
       const head = document.createElementNS(SVG_NS, "ellipse");
@@ -405,7 +406,7 @@ export class PieceScoreView {
       head.setAttribute("class", "piece-hover-head");
       this.hoverLayer.append(head);
     }
-    return { pitches: hit.map((n) => n.midi), fresh };
+    return { notes: hit.map((n) => n.index), fresh };
   }
 
   clearHover(): void {
@@ -482,7 +483,7 @@ export class PieceScoreView {
               if (index === undefined) continue;
               this.drawn.set(index, [...(this.drawn.get(index) ?? []), note]);
               const at = note.PositionAndShape.AbsolutePosition;
-              column.notes.push({ midi: piece.notes[index].midi, x: at.x * unit, y: at.y * unit });
+              column.notes.push({ index, midi: piece.notes[index].midi, x: at.x * unit, y: at.y * unit });
             }
           }
           if (column.notes.length > 0) this.columns.push(column);

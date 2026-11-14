@@ -458,10 +458,25 @@ export class PieceMode {
     });
   }
 
-  /** Sounds the score notes the pointer picked out, together. */
-  private playPitches(pitches: readonly number[]): void {
+  /**
+   * Sounds the score notes the pointer picked out, together, each held its written length at the
+   * step's tempo, through any ties, and let go a little early unless slurred, as Listen plays them.
+   */
+  private playScoreNotes(info: Practice, notes: readonly number[]): void {
     this.deps.synth.unlock();
-    for (const pitch of pitches) this.deps.synth.play(pitch);
+    const beatMs = 60_000 / info.tempo;
+    for (const index of notes) {
+      let note = info.piece.notes[index];
+      let beats = note.length;
+      while (note.tieNext !== undefined) {
+        note = info.piece.notes[note.tieNext];
+        beats += note.length;
+      }
+      // A grace note takes no time of its own in the score; give it a sixteenth's.
+      if (beats === 0) beats = 0.25;
+      const hold = Math.max(MIN_HOLD_SECONDS, (beats * beatMs * (note.slurred ? 1 : DETACHED)) / 1000);
+      this.deps.synth.play(info.piece.notes[index].midi, 0.8, hold);
+    }
   }
 
   private changeSettings(patch: Partial<PieceSettings>): void {
@@ -981,11 +996,11 @@ export class PieceMode {
     view.setHighlightPlayed(this.deps.highlightPlayed());
     sheet.addEventListener("pointermove", (event) => {
       if (event.pointerType === "touch") return;
-      const { pitches, fresh } = view.hoverAt(event.clientX, event.clientY);
+      const { notes, fresh } = view.hoverAt(event.clientX, event.clientY);
       if (!fresh) return;
-      this.keyboard?.setHover(pitches);
+      this.keyboard?.setHover(notes.map((i) => info.piece.notes[i].midi));
       // With hover picked, reaching other notes plays them, as a click would; a pass being graded stays quiet.
-      if (this.deps.scoreSound() === "hover" && pitches.length > 0 && !this.focusMode && !drag && !this.looping) this.playPitches(pitches);
+      if (this.deps.scoreSound() === "hover" && notes.length > 0 && !this.focusMode && !drag && !this.looping) this.playScoreNotes(info, notes);
     });
     sheet.addEventListener("pointerleave", () => {
       this.keyboard?.setHover([]);
@@ -1024,11 +1039,11 @@ export class PieceMode {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (this.focusMode) return;
       if (event.pointerType !== "touch" && this.deps.scoreSound() === "hover") return;
-      const pitches = view.pitchesAt(event.clientX, event.clientY);
-      if (!pitches || this.looping) return;
-      this.playPitches(pitches);
+      const notes = view.notesAt(event.clientX, event.clientY);
+      if (!notes || this.looping) return;
+      this.playScoreNotes(info, notes);
       if (event.pointerType === "touch") {
-        this.keyboard?.setHover(pitches);
+        this.keyboard?.setHover(notes.map((i) => info.piece.notes[i].midi));
         window.setTimeout(() => this.keyboard?.setHover([]), 400);
       }
     });
