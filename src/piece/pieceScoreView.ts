@@ -123,6 +123,8 @@ export class PieceScoreView {
   private readonly playedLayer = document.createElementNS(SVG_NS, "svg");
   /** Noteheads under the pointer, in the colour the keyboard lights them. */
   private readonly hoverLayer = document.createElementNS(SVG_NS, "svg");
+  /** The notes hoverAt last marked, to tell when the pointer reaches others. */
+  private hovered: Column["notes"] = [];
   private highlightPlayed = false;
   private freePlay = true;
   private readonly held = new Set<number>();
@@ -381,11 +383,18 @@ export class PieceScoreView {
     return this.hitAt(clientX, clientY)?.map((n) => n.midi) ?? null;
   }
 
-  /** Marks the noteheads under a point, as pitchesAt picks them, and returns their pitches. */
-  hoverAt(clientX: number, clientY: number): number[] {
-    const hit = this.hitAt(clientX, clientY);
+  /**
+   * Marks the noteheads under a point, as pitchesAt picks them, and returns their pitches, with
+   * whether they're other notes than the last call marked.
+   */
+  hoverAt(clientX: number, clientY: number): { pitches: number[]; fresh: boolean } {
+    const hit = this.hitAt(clientX, clientY) ?? [];
+    const last = this.hovered;
+    this.hovered = hit;
+    const fresh = hit.length !== last.length || hit.some((note, i) => note !== last[i]);
+    if (!fresh) return { pitches: hit.map((n) => n.midi), fresh };
     this.hoverLayer.replaceChildren();
-    if (!hit) return [];
+    if (hit.length === 0) return { pitches: [], fresh };
     const unit = 10 * this.osmd.Zoom;
     for (const note of hit) {
       const head = document.createElementNS(SVG_NS, "ellipse");
@@ -396,10 +405,11 @@ export class PieceScoreView {
       head.setAttribute("class", "piece-hover-head");
       this.hoverLayer.append(head);
     }
-    return hit.map((n) => n.midi);
+    return { pitches: hit.map((n) => n.midi), fresh };
   }
 
   clearHover(): void {
+    this.hovered = [];
     this.hoverLayer.replaceChildren();
   }
 

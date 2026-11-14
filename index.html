@@ -100,6 +100,13 @@
                     <input type="range" name="keyboardVolume" min="20" max="150" step="5" value="100" />
                   </label>
                 </div>
+                <div class="field" role="radiogroup" aria-labelledby="score-sound-caption">
+                  <span class="field-caption" id="score-sound-caption">Play piece notes on</span>
+                  <div class="segmented">
+                    <label><input type="radio" name="scoreSound" value="tap" checked /><span>Tap/click</span></label>
+                    <label><input type="radio" name="scoreSound" value="hover" /><span>Hover</span></label>
+                  </div>
+                </div>
                 <label class="toggle">
                   <input type="checkbox" name="namesOnNotes" />
                   <span>Names on notes</span>

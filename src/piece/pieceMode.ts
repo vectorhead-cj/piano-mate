@@ -45,6 +45,7 @@ import { scoreXml } from "./scoreXml";
 import { soundsOf, type Sound } from "./sounding";
 import { focusPlan, type FocusPlan } from "./focusLoop";
 import { barRange, clipSpan, onsets, playSpan, type PlaySpan } from "./targets";
+import type { ScoreSound } from "../ui/scoreSound";
 
 /** Rest between one pass and the next one's count-in. */
 const PASS_GAP_MS = 1500;
@@ -144,6 +145,8 @@ export interface PieceModeDependencies {
   soundMidiKeys: () => boolean;
   /** Played keys light the staff in free play (the display setting). */
   highlightPlayed: () => boolean;
+  /** Whether the score sounds the notes under the pointer on a tap/click or on hover. */
+  scoreSound: () => ScoreSound;
   /** The MIDI key that starts and stops, as elsewhere in the app. */
   startKey: () => number;
   /** Where passes are recorded, with the rest of practice. */
@@ -453,6 +456,12 @@ export class PieceMode {
       console.warn("Could not save the piece", error);
       this.notice = { tone: "error", text: "A change to this piece couldn't be saved to your account." };
     });
+  }
+
+  /** Sounds the score notes the pointer picked out, together. */
+  private playPitches(pitches: readonly number[]): void {
+    this.deps.synth.unlock();
+    for (const pitch of pitches) this.deps.synth.play(pitch);
   }
 
   private changeSettings(patch: Partial<PieceSettings>): void {
@@ -972,7 +981,11 @@ export class PieceMode {
     view.setHighlightPlayed(this.deps.highlightPlayed());
     sheet.addEventListener("pointermove", (event) => {
       if (event.pointerType === "touch") return;
-      this.keyboard?.setHover(view.hoverAt(event.clientX, event.clientY));
+      const { pitches, fresh } = view.hoverAt(event.clientX, event.clientY);
+      if (!fresh) return;
+      this.keyboard?.setHover(pitches);
+      // With hover picked, reaching other notes plays them, as a click would; a pass being graded stays quiet.
+      if (this.deps.scoreSound() === "hover" && pitches.length > 0 && !this.focusMode && !drag && !this.looping) this.playPitches(pitches);
     });
     sheet.addEventListener("pointerleave", () => {
       this.keyboard?.setHover([]);
@@ -1005,14 +1018,15 @@ export class PieceMode {
     };
     sheet.addEventListener("pointerup", endDrag);
     sheet.addEventListener("pointercancel", endDrag);
-    // Clicking the highlighted notes plays them together; a pass being graded stays quiet.
+    // Clicking the highlighted notes plays them together, unless hovering already does; touch has
+    // no hover, so a tap always plays. A pass being graded stays quiet.
     sheet.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (this.focusMode) return;
+      if (event.pointerType !== "touch" && this.deps.scoreSound() === "hover") return;
       const pitches = view.pitchesAt(event.clientX, event.clientY);
       if (!pitches || this.looping) return;
-      this.deps.synth.unlock();
-      for (const pitch of pitches) this.deps.synth.play(pitch);
+      this.playPitches(pitches);
       if (event.pointerType === "touch") {
         this.keyboard?.setHover(pitches);
         window.setTimeout(() => this.keyboard?.setHover([]), 400);

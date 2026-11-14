@@ -77,6 +77,7 @@ import {
   type ResultTone,
 } from "./ui/curriculumViews";
 import { bindSettingsBar } from "./ui/settingsBar";
+import { bindScoreSound } from "./ui/scoreSound";
 import { bindKeyboardHeight } from "./ui/keyboardHeight";
 import { restorePieceWide } from "./ui/pieceWidth";
 import { bindPrefsPopover, bindTheme } from "./ui/theme";
@@ -411,6 +412,7 @@ async function main(): Promise<void> {
     synth,
     soundMidiKeys: () => soundMidiKeys.checked,
     highlightPlayed: () => highlightPlayed.checked,
+    scoreSound: bindScoreSound(element<HTMLFormElement>("settings")),
     startKey: () => practice.retryPitch,
     keyScale,
     log: eventLog,
