@@ -131,6 +131,9 @@ export class PieceScoreView {
   private keySpeaker: KeySpeaker | null = null;
   private firstMeasure = 0;
   private colors = readColors();
+  /** Notes marked other than pending, so a theme change can draw them again in its colours. */
+  private readonly marks = new Map<number, NoteMark>();
+  private xml: string | null = null;
   private width = 0;
   private generation = 0;
   /** Phrases shaded in turn and numbered, with bars being picked out over them. */
@@ -187,6 +190,38 @@ export class PieceScoreView {
       rules.PageLeftMargin = 0.5;
       rules.PageRightMargin = 0.5;
     }
+    this.followTheme();
+  }
+
+  /** Redraws in the new theme's ink when it changes, until the score leaves the page. */
+  private followTheme(): void {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const observer = new MutationObserver(() => onTheme());
+    const onTheme = () => {
+      if (!this.root.isConnected && this.piece) {
+        media.removeEventListener("change", onTheme);
+        observer.disconnect();
+        return;
+      }
+      void this.refreshTheme();
+    };
+    media.addEventListener("change", onTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-app-theme"] });
+  }
+
+  private async refreshTheme(): Promise<void> {
+    const colors = readColors();
+    if (colors.pending === this.colors.pending && colors.correct === this.colors.correct) return;
+    this.colors = colors;
+    this.osmd.EngravingRules.applyDefaultColorMusic(colors.pending);
+    const piece = this.piece;
+    if (!piece || this.xml === null) return;
+    // Staff lines, clefs and bar numbers take the new ink only from a fresh load.
+    const generation = ++this.generation;
+    await this.osmd.load(this.xml);
+    if (generation !== this.generation) return;
+    this.width = 0;
+    this.draw();
   }
 
   /** Draws the score's fingering numbers or leaves them out, laying the music out again if it's drawn. */
@@ -249,6 +284,8 @@ export class PieceScoreView {
     const generation = ++this.generation;
     this.piece = piece;
     this.firstMeasure = firstMeasure;
+    this.xml = xml;
+    this.marks.clear();
     this.colors = readColors();
     this.osmd.EngravingRules.applyDefaultColorMusic(this.colors.pending);
     await this.osmd.load(xml);
@@ -266,17 +303,27 @@ export class PieceScoreView {
     this.osmd.Zoom = this.zoom ?? Math.min(1.15, Math.max(0.6, width / BASE_WIDTH_PX));
     this.osmd.render();
     this.collect();
+    for (const [index, mark] of this.marks) this.paint(index, mark);
     this.drawMarks();
     this.drawPlayed();
     this.placeKeySpeaker();
   }
 
   setMark(noteIndices: readonly number[], mark: NoteMark): void {
-    for (const index of noteIndices) for (const note of this.drawn.get(index) ?? []) note.setColor(this.colors[mark], COLOR_OPTS);
+    for (const index of noteIndices) {
+      if (mark === "pending") this.marks.delete(index);
+      else this.marks.set(index, mark);
+      this.paint(index, mark);
+    }
   }
 
   clearMarks(): void {
+    this.marks.clear();
     for (const notes of this.drawn.values()) for (const note of notes) note.setColor(this.colors.pending, COLOR_OPTS);
+  }
+
+  private paint(index: number, mark: NoteMark): void {
+    for (const note of this.drawn.get(index) ?? []) note.setColor(this.colors[mark], COLOR_OPTS);
   }
 
   /** Shades each phrase's bars, alternating, with its number at its start. */
